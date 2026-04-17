@@ -456,63 +456,66 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
   const allCharacters = await db.getAll('characters');
   const activeCharacters = allCharacters.filter(c => !c.deletedAt);
   
+  // Precompute cleaned strings for faster O(N^2) matching
+  const precomputed = activeCharacters.map(char => {
+    const data = char.data?.data || char.data || {};
+    const firstMes = data.first_mes || '';
+    const desc = data.description || '';
+    const name = (char.name || data.name || '').trim().toLowerCase();
+    
+    return {
+      char,
+      id: char.id,
+      name,
+      firstMes,
+      desc,
+      descClean: desc.replace(/\s+/g, ''),
+      firstClean: firstMes.replace(/\s+/g, '')
+    };
+  });
+  
   const groups: CharacterCard[][] = [];
   const processedIds = new Set<string>();
   
-  for (let i = 0; i < activeCharacters.length; i++) {
-    const charA = activeCharacters[i];
-    if (processedIds.has(charA.id)) continue;
+  for (let i = 0; i < precomputed.length; i++) {
+    const itemA = precomputed[i];
+    if (processedIds.has(itemA.id)) continue;
     
-    const duplicates: CharacterCard[] = [charA];
+    const duplicates: CharacterCard[] = [itemA.char];
     
-    const aData = charA.data?.data || charA.data || {};
-    const aFirstMes = aData.first_mes || '';
-    const aDesc = aData.description || '';
-    const aName = (charA.name || aData.name || '').trim().toLowerCase();
-
-    for (let j = i + 1; j < activeCharacters.length; j++) {
-      const charB = activeCharacters[j];
-      if (processedIds.has(charB.id)) continue;
-      
-      const bData = charB.data?.data || charB.data || {};
-      const bFirstMes = bData.first_mes || '';
-      const bDesc = bData.description || '';
-      const bName = (charB.name || bData.name || '').trim().toLowerCase();
+    for (let j = i + 1; j < precomputed.length; j++) {
+      const itemB = precomputed[j];
+      if (processedIds.has(itemB.id)) continue;
       
       let isDup = false;
       
-      const aDescClean = aDesc.replace(/\s+/g, '');
-      const bDescClean = bDesc.replace(/\s+/g, '');
-      const aFirstClean = aFirstMes.replace(/\s+/g, '');
-      const bFirstClean = bFirstMes.replace(/\s+/g, '');
-      
-      if (aName && bName && aName === bName) {
+      if (itemA.name && itemB.name && itemA.name === itemB.name) {
         // Same name: Check if major fields are identical (ignoring whitespace)
-        if (aDescClean && bDescClean && aDescClean === bDescClean) {
+        if (itemA.descClean && itemB.descClean && itemA.descClean === itemB.descClean) {
           isDup = true;
-        } else if (aFirstClean && bFirstClean && aFirstClean === bFirstClean) {
+        } else if (itemA.firstClean && itemB.firstClean && itemA.firstClean === itemB.firstClean) {
           isDup = true;
-        } else if (!aDescClean && !bDescClean && !aFirstClean && !bFirstClean) {
+        } else if (!itemA.descClean && !itemB.descClean && !itemA.firstClean && !itemB.firstClean) {
           // Empty cards with same name
           isDup = true;
         }
       } else {
         // Different name: Only duplicate if BOTH description and first message are substantial and completely match
-        if (aDescClean && bDescClean && aFirstClean && bFirstClean && 
-            aDescClean === bDescClean && aFirstClean === bFirstClean && 
-            aDescClean.length > 50) {
+        if (itemA.descClean && itemB.descClean && itemA.firstClean && itemB.firstClean && 
+            itemA.descClean === itemB.descClean && itemA.firstClean === itemB.firstClean && 
+            itemA.descClean.length > 50) {
           isDup = true;
         }
       }
       
       if (isDup) {
-        duplicates.push(charB);
-        processedIds.add(charB.id);
+        duplicates.push(itemB.char);
+        processedIds.add(itemB.id);
       }
     }
     
     if (duplicates.length > 1) {
-      processedIds.add(charA.id);
+      processedIds.add(itemA.id);
       groups.push(duplicates);
     }
   }
