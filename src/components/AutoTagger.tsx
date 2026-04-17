@@ -127,11 +127,13 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
     taggedCharacters,
     retagReviewQueue,
     batchSize,
-    apiKeyMissing
+    apiKeyMissing,
+    logsExpanded
   } = useTaggerState();
 
-  const [activeTab, setActiveTab] = useState<'untagged' | 'tagged'>('untagged');
-  const [logsExpanded, setLogsExpanded] = useState(true);
+  const [activeTab, setActiveTab] = useState<'untagged' | 'tagged'>(
+    taggingMode === 'tagged' ? 'tagged' : 'untagged'
+  );
 
   useEffect(() => {
     taggerState.loadCharacters();
@@ -168,7 +170,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
         {logs.length > 0 && (
           <div className="bg-black/40 border border-white/10 rounded-2xl overflow-hidden">
             <button 
-              onClick={() => setLogsExpanded(!logsExpanded)}
+              onClick={() => taggerState.setLogsExpanded(!logsExpanded)}
               className="w-full px-6 py-4 border-b border-white/5 flex justify-between items-center bg-white/5 hover:bg-white/10 transition-colors"
             >
               <div className="flex items-center gap-2">

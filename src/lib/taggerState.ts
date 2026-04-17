@@ -35,6 +35,7 @@ class TaggerState {
   taggedCharacters: any[] = [];
   retagReviewQueue: RetagReviewItem[] = [];
   batchSize = 10;
+  logsExpanded = true;
   
   listeners: Set<() => void> = new Set();
   errorCallback: ((msg: string) => void) | null = null;
@@ -77,6 +78,11 @@ class TaggerState {
       }
     });
 
+    this.notify();
+  }
+
+  setLogsExpanded(expanded: boolean) {
+    this.logsExpanded = expanded;
     this.notify();
   }
 
@@ -364,7 +370,8 @@ export function useTaggerState() {
     taggedCharacters: taggerState.taggedCharacters,
     retagReviewQueue: taggerState.retagReviewQueue,
     batchSize: taggerState.batchSize,
-    apiKeyMissing: taggerState.apiKeyMissing
+    apiKeyMissing: taggerState.apiKeyMissing,
+    logsExpanded: taggerState.logsExpanded
   });
 
   useEffect(() => {
@@ -379,7 +386,8 @@ export function useTaggerState() {
         taggedCharacters: [...taggerState.taggedCharacters],
         retagReviewQueue: [...taggerState.retagReviewQueue],
         batchSize: taggerState.batchSize,
-        apiKeyMissing: taggerState.apiKeyMissing
+        apiKeyMissing: taggerState.apiKeyMissing,
+        logsExpanded: taggerState.logsExpanded
       });
     };
     return taggerState.subscribe(update);

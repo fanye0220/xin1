@@ -159,7 +159,10 @@ export default function App() {
             
             <FolderSidebar 
               selectedFolderId={selectedFolderId}
-              onSelectFolder={setSelectedFolderId}
+              onSelectFolder={(id) => {
+                setSelectedFolderId(id);
+                setSelectedCharId(null);
+              }}
               onClose={() => setIsSidebarOpen(false)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onFolderChanged={() => setRefreshKey(prev => prev + 1)}
@@ -191,7 +194,10 @@ export default function App() {
             folderId={selectedFolderId}
             onSelect={setSelectedCharId}
             onImport={() => setIsImportModalOpen(true)}
-            onSelectFolder={setSelectedFolderId}
+            onSelectFolder={(id) => {
+              setSelectedFolderId(id);
+              setSelectedCharId(null);
+            }}
             onOpenSidebar={() => setIsSidebarOpen(true)}
             refreshTrigger={refreshKey}
           />
@@ -226,7 +232,13 @@ export default function App() {
 
       <AnimatePresence>
         {selectedFolderId !== 'autotagger' && (
-          <TaggerWidget onClick={() => setSelectedFolderId('autotagger')} />
+          <TaggerWidget onClick={() => {
+            setSelectedCharId(null);
+            setIsSidebarOpen(false);
+            setIsImportModalOpen(false);
+            setIsSettingsOpen(false);
+            setSelectedFolderId('autotagger');
+          }} />
         )}
       </AnimatePresence>
     </div>
