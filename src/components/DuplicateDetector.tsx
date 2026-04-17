@@ -422,8 +422,11 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
                           </div>
                           <div className="flex-1 min-w-0 pr-6 sm:pr-0">
                             <h4 className="font-bold text-white truncate text-base">{char.name}</h4>
-                            <p className="text-xs text-white/40 mt-1 truncate">
-                              修改于: {modifiedDate.toLocaleDateString()}
+                            <p className="text-[11px] text-white/50 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                              <span>修改: {modifiedDate.toLocaleDateString()}</span>
+                              <span title="设定字数">描: {(targetData.description || '').length}字</span>
+                              {targetData.alternate_greetings?.length > 0 && <span>备用开场白: {targetData.alternate_greetings.length}</span>}
+                              {(targetData.character_book?.entries?.length > 0) && <span>世界书: {targetData.character_book.entries.length}项</span>}
                             </p>
                             <div className="flex flex-wrap gap-1.5 mt-2">
                               <span className="text-[10px] px-2 py-0.5 bg-orange-500/20 text-orange-300 rounded-md font-bold shrink-0">

@@ -481,20 +481,28 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
       
       let isDup = false;
       
+      const aDescClean = aDesc.replace(/\s+/g, '');
+      const bDescClean = bDesc.replace(/\s+/g, '');
+      const aFirstClean = aFirstMes.replace(/\s+/g, '');
+      const bFirstClean = bFirstMes.replace(/\s+/g, '');
+      
       if (aName && bName && aName === bName) {
-        // Same name, check if they share content
-        if (aDesc === bDesc || aFirstMes === bFirstMes) {
+        // Same name: Check if major fields are identical (ignoring whitespace)
+        if (aDescClean && bDescClean && aDescClean === bDescClean) {
           isDup = true;
-        } else if (aDesc.length > 50 && bDesc.length > 50 && (aDesc.includes(bDesc.slice(0, 50)) || bDesc.includes(aDesc.slice(0, 50)))) {
+        } else if (aFirstClean && bFirstClean && aFirstClean === bFirstClean) {
           isDup = true;
-        } else if (aFirstMes.length > 50 && bFirstMes.length > 50 && (aFirstMes.includes(bFirstMes.slice(0, 50)) || bFirstMes.includes(aFirstMes.slice(0, 50)))) {
-          isDup = true;
-        } else if (aDesc.length < 50 && bDesc.length < 50) {
+        } else if (!aDescClean && !bDescClean && !aFirstClean && !bFirstClean) {
+          // Empty cards with same name
           isDup = true;
         }
       } else {
-        if (aDesc && bDesc && aDesc === bDesc && aDesc.length > 50) isDup = true;
-        else if (aFirstMes && bFirstMes && aFirstMes === bFirstMes && aFirstMes.length > 50) isDup = true;
+        // Different name: Only duplicate if BOTH description and first message are substantial and completely match
+        if (aDescClean && bDescClean && aFirstClean && bFirstClean && 
+            aDescClean === bDescClean && aFirstClean === bFirstClean && 
+            aDescClean.length > 50) {
+          isDup = true;
+        }
       }
       
       if (isDup) {
@@ -565,33 +573,33 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
           }
         }
         if (isIdenticalToPrev) {
-          reasons.push('内容完全相同');
+          reasons.push('内容重复');
         } else {
-          reasons.push('内容基本相同');
+          reasons.push('基本相同');
         }
       } else {
         if (cFirst !== oFirst) {
-          if (cFirst.length > oFirst.length + 20) reasons.push('开场白更长');
-          else if (cFirst.length < oFirst.length - 20) reasons.push('开场白较短');
-          else reasons.push('开场白有修改');
+          if (cFirst.length > oFirst.length + 20) reasons.push('开场白长');
+          else if (cFirst.length < oFirst.length - 20) reasons.push('开场白短');
+          else reasons.push('改开场白');
         }
         if (cDesc !== oDesc) {
-          if (cDesc.length > oDesc.length + 50) reasons.push('设定更丰富');
-          else if (cDesc.length < oDesc.length - 50) reasons.push('设定较少');
-          else reasons.push('设定有修改');
+          if (cDesc.length > oDesc.length + 50) reasons.push('设定较长');
+          else if (cDesc.length < oDesc.length - 50) reasons.push('设定较短');
+          else reasons.push('改设定');
         }
-        if (cBook > oBook) reasons.push(`世界书更多(+${cBook - oBook})`);
-        else if (cBook < oBook) reasons.push(`世界书较少`);
+        if (cBook > oBook) reasons.push(`世界书+${cBook - oBook}`);
+        else if (cBook < oBook && cBook > 0) reasons.push(`世界书-${oBook - cBook}`);
         
-        if (cAlt > oAlt) reasons.push(`备用开场白更多(+${cAlt - oAlt})`);
+        if (cAlt > oAlt) reasons.push(`备用开场+${cAlt - oAlt}`);
         
         if (cMesExample !== oMesExample) {
-           if (cMesExample.length > oMesExample.length + 50) reasons.push('对话示例更多');
+           if (cMesExample.length > oMesExample.length + 50) reasons.push('示例较长');
         }
       }
       
       if (reasons.length === 0) {
-        reasons.push('细节有微调');
+        reasons.push('微调细节');
       }
       
       analyzedChars.push({ char: current, reason: reasons.join('，') });
