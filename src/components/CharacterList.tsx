@@ -170,12 +170,10 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
     if (isFilterOpen || isSortOpen) {
       document.addEventListener('click', handleGlobalClick);
-      document.addEventListener('touchstart', handleGlobalClick);
     }
 
     return () => {
       document.removeEventListener('click', handleGlobalClick);
-      document.removeEventListener('touchstart', handleGlobalClick);
     };
   }, [isFilterOpen, isSortOpen]);
 
@@ -511,13 +509,15 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 
                 <AnimatePresence>
                   {isSortOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute right-0 top-full mt-2 w-48 bg-slate-800 border border-white/10 rounded-2xl shadow-xl z-50 p-2 overflow-hidden"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setIsSortOpen(false); }} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute right-0 top-full mt-2 w-48 bg-slate-800 border border-white/10 rounded-2xl shadow-xl z-50 p-2 overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {[
                           { value: 'newest_import', label: '最新导入' },
                           { value: 'oldest_import', label: '最旧导入' },
@@ -540,7 +540,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                             {option.label}
                           </button>
                         ))}
-                    </motion.div>
+                      </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
@@ -562,13 +563,15 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 
                 <AnimatePresence>
                   {isFilterOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute right-0 top-full mt-2 w-72 bg-slate-800 border border-white/10 rounded-2xl shadow-xl z-50 p-4 max-h-[60vh] overflow-y-auto overscroll-contain touch-pan-y"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setIsFilterOpen(false); setIsEditingTags(false); setEditingTagValue(null); }} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute right-0 top-full mt-2 w-72 bg-slate-800 border border-white/10 rounded-2xl shadow-xl z-50 p-4 max-h-[60vh] overflow-y-auto overscroll-contain"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex items-center justify-between mb-3">
                           <h3 className="font-semibold text-white">按标签筛选</h3>
                           <div className="flex items-center gap-2">
@@ -690,7 +693,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                             })}
                           </div>
                         )}
-                    </motion.div>
+                      </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
