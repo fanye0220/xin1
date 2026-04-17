@@ -216,51 +216,51 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
       <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden ring-1 ring-white/10">
         <div className="p-5 sm:p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02] backdrop-blur-md">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            {selectionMode ? (
-              <button onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition shrink-0 active:scale-90">
-                <X className="w-6 h-6" />
-              </button>
-            ) : (
-              <div className="p-2 sm:p-2.5 bg-purple-500/20 rounded-xl text-purple-400 shrink-0">
-                <Copy className="w-6 h-6 sm:w-7 sm:h-7" />
+                {selectionMode ? (
+                  <button onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition shrink-0 active:scale-90">
+                    <X className="w-6 h-6" />
+                  </button>
+                ) : (
+                  <div className="p-2 sm:p-2.5 bg-purple-500/20 rounded-xl text-purple-400 shrink-0">
+                    <Copy className="w-6 h-6 sm:w-7 sm:h-7" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-bold text-white truncate leading-tight">
+                    {selectionMode ? `已选择 ${selectedIds.size} 项` : '重复卡检测'}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-white/50 truncate">
+                    {selectionMode ? '请确认要删除的重复卡片' : '基于开场白、设定和世界书对比'}
+                  </p>
+                </div>
               </div>
-            )}
-            <div className="min-w-0">
-              <h2 className="text-xl sm:text-2xl font-bold text-white truncate leading-tight">
-                {selectionMode ? `已选择 ${selectedIds.size} 项` : '重复卡检测'}
-              </h2>
-              <p className="text-xs sm:text-sm text-white/50 truncate">
-                {selectionMode ? '请确认要删除的重复卡片' : '基于开场白、设定和世界书对比'}
-              </p>
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                {!loading && duplicateGroups.length > 0 && !selectionMode && (
+                  <button 
+                    onClick={() => setSelectionMode(true)}
+                    className="px-4 py-2 bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 rounded-xl text-sm font-bold transition active:scale-95 shadow-lg shadow-purple-500/10"
+                  >
+                    批量操作
+                  </button>
+                )}
+                {selectionMode && (
+                  <button 
+                    onClick={handleBatchDelete}
+                    disabled={selectedIds.size === 0}
+                    className="px-4 py-2 bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 rounded-xl text-sm font-bold transition flex items-center gap-2 active:scale-95 shadow-lg shadow-red-500/30"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="hidden xs:inline text-sm">删除选中副本</span>
+                    <span className="xs:hidden text-sm">删除</span>
+                  </button>
+                )}
+                {!selectionMode && (
+                  <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition text-white/60 hover:text-white active:scale-90">
+                    <X className="w-6 h-6" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {!loading && duplicateGroups.length > 0 && !selectionMode && (
-              <button 
-                onClick={() => setSelectionMode(true)}
-                className="px-4 py-2 bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 rounded-xl text-sm font-bold transition active:scale-95 shadow-lg shadow-purple-500/10"
-              >
-                批量操作
-              </button>
-            )}
-            {selectionMode && (
-              <button 
-                onClick={handleBatchDelete}
-                disabled={selectedIds.size === 0}
-                className="px-4 py-2 bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 rounded-xl text-sm font-bold transition flex items-center gap-2 active:scale-95 shadow-lg shadow-red-500/30"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span className="hidden xs:inline text-sm">删除选中副本</span>
-                <span className="xs:hidden text-sm">删除</span>
-              </button>
-            )}
-            {!selectionMode && (
-              <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition text-white/60 hover:text-white active:scale-90">
-                <X className="w-6 h-6" />
-              </button>
-            )}
-          </div>
-        </div>
         
         {selectionMode && (
           <div className="sm:hidden grid grid-cols-2 border-b border-white/5 bg-slate-900 shadow-inner">
@@ -311,16 +311,18 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
             </div>
           ) : duplicateGroups.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-white/40">
-              <CheckCircle2 className="w-16 h-16 mb-4 opacity-50 text-green-400" />
+               <CheckCircle2 className="w-16 h-16 mb-4 opacity-50 text-green-400" />
               <p>太棒了！没有发现重复卡片</p>
             </div>
           ) : (
             <div className="space-y-8">
               {paginatedGroups.map((group) => (
                 <div key={group.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 overflow-hidden shadow-sm">
-                  <div className="flex items-center gap-2 mb-4 text-orange-400">
-                    <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-                    <h3 className="font-semibold text-sm sm:text-base">疑似重复卡片 ({group.characters.length})</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2 text-orange-400">
+                      <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+                      <h3 className="font-semibold text-sm sm:text-base">疑似重复卡片 ({group.characters.length})</h3>
+                    </div>
                   </div>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
