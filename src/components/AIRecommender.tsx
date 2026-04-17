@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Sparkles, Loader2, AlertCircle, Play, Terminal, Dices } from 'lucide-react';
-import { getCharacters, CharacterCard } from '../lib/db';
+import { getCharacters, CharacterCard, getCharacter } from '../lib/db';
 import { callAI } from '../lib/ai';
 import { motion } from 'framer-motion';
 
@@ -32,7 +32,7 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
     setApiKeyMissing(false);
     
     try {
-      const response = await getCharacters(1, 10000, 'all');
+      const response = await getCharacters(1, 10000, 'all', '', [], 'newest_import', false);
       let allChars = response.characters;
       
       // 过滤掉预设、美化卡和独立世界书
@@ -55,8 +55,14 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
       await new Promise(resolve => setTimeout(resolve, 800));
       
       const randomChar = allChars[Math.floor(Math.random() * allChars.length)];
+      let charWithBlob = randomChar;
+      if (charWithBlob.hasBlobsSeparated && !charWithBlob.avatarBlob) {
+        const fetched = await getCharacter(charWithBlob.id);
+        if (fetched) charWithBlob = fetched;
+      }
+      
       setResults([{
-        char: randomChar,
+        char: charWithBlob,
         reason: "🎲 命运的指引！今天就决定是你了！"
       }]);
     } catch (e: any) {
@@ -76,7 +82,7 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
 
     try {
       addLog('开始分析您的需求...');
-      const response = await getCharacters(1, 10000, 'all');
+      const response = await getCharacters(1, 10000, 'all', '', [], 'newest_import', false);
       let allChars = response.characters;
 
       // 过滤掉预设、美化卡和独立世界书
@@ -161,6 +167,15 @@ ${candidateInfo}
         char: candidates.find(c => c.id === r.id),
         reason: r.reason || r.推荐理由 || r.description || "符合您的需求"
       })).filter((r: any) => r.char);
+
+      for (const result of finalResults) {
+        if (result.char.hasBlobsSeparated && !result.char.avatarBlob) {
+          const charWithBlob = await getCharacter(result.char.id);
+          if (charWithBlob) {
+            result.char = charWithBlob;
+          }
+        }
+      }
 
       setResults(finalResults);
       addLog(`推荐完成！共为您找到 ${finalResults.length} 个角色。`, 'success');

@@ -162,7 +162,8 @@ export async function getCharacters(
   folderId?: string | null, 
   searchQuery: string = '', 
   tags: string[] = [],
-  sortBy: SortOption = 'newest_import'
+  sortBy: SortOption = 'newest_import',
+  includeBlobs: boolean = true
 ): Promise<{ characters: CharacterCard[], total: number }> {
   const db = await initDB();
   const tx = db.transaction('characters', 'readonly');
@@ -227,13 +228,15 @@ export async function getCharacters(
   const characters = allCharacters.slice((page - 1) * pageSize, page * pageSize);
   
   // Load blobs only for the paginated characters
-  for (const char of characters) {
-    if (char.hasBlobsSeparated) {
-      const blobs = await db.get('blobs', char.id);
-      if (blobs) {
-        char.avatarBlob = blobs.avatarBlob;
-        char.originalFile = blobs.originalFile;
-        char.avatarHistory = blobs.avatarHistory;
+  if (includeBlobs) {
+    for (const char of characters) {
+      if (char.hasBlobsSeparated) {
+        const blobs = await db.get('blobs', char.id);
+        if (blobs) {
+          char.avatarBlob = blobs.avatarBlob;
+          char.originalFile = blobs.originalFile;
+          char.avatarHistory = blobs.avatarHistory;
+        }
       }
     }
   }
@@ -374,18 +377,20 @@ export async function restoreCharacter(id: string): Promise<void> {
   }
 }
 
-export async function getTrashedCharacters(): Promise<CharacterCard[]> {
+export async function getTrashedCharacters(includeBlobs: boolean = false): Promise<CharacterCard[]> {
   const db = await initDB();
   const allCharacters = await db.getAll('characters');
   const trashed = allCharacters.filter(c => c.deletedAt).sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
   
-  for (const char of trashed) {
-    if (char.hasBlobsSeparated) {
-      const blobs = await db.get('blobs', char.id);
-      if (blobs) {
-        char.avatarBlob = blobs.avatarBlob;
-        char.originalFile = blobs.originalFile;
-        char.avatarHistory = blobs.avatarHistory;
+  if (includeBlobs) {
+    for (const char of trashed) {
+      if (char.hasBlobsSeparated) {
+        const blobs = await db.get('blobs', char.id);
+        if (blobs) {
+          char.avatarBlob = blobs.avatarBlob;
+          char.originalFile = blobs.originalFile;
+          char.avatarHistory = blobs.avatarHistory;
+        }
       }
     }
   }

@@ -219,7 +219,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   };
 
   const handleSelectAll = async () => {
-    const { characters: allChars } = await getCharacters(1, 100000, folderId, searchQuery, selectedTags, sortBy);
+    const { characters: allChars } = await getCharacters(1, 100000, folderId, searchQuery, selectedTags, sortBy, false);
     const totalItems = allChars.length + (!searchQuery && selectedTags.length === 0 ? folders.length : 0);
     
     if (selectedIds.size === totalItems) {

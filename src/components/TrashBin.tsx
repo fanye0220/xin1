@@ -31,8 +31,17 @@ const TrashedCharacterCard = ({
       const url = URL.createObjectURL(char.avatarBlob);
       setAvatarUrl(url);
       return () => URL.revokeObjectURL(url);
+    } else if (char.hasBlobsSeparated) {
+      import('../lib/db').then(({ getCharacter }) => {
+        getCharacter(char.id).then(fullChar => {
+          if (fullChar && fullChar.avatarBlob) {
+             const url = URL.createObjectURL(fullChar.avatarBlob);
+             setAvatarUrl(url);
+          }
+        });
+      });
     }
-  }, [char.avatarBlob]);
+  }, [char.avatarBlob, char.id, char.hasBlobsSeparated]);
 
   const daysLeft = Math.ceil((7 * 24 * 60 * 60 * 1000 - (Date.now() - (char.deletedAt || 0))) / (1000 * 60 * 60 * 24));
 

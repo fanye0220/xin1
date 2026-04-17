@@ -44,7 +44,7 @@ class TaggerState {
   }
 
   async loadCharacters() {
-    const response = await getCharacters(1, 10000, 'all');
+    const response = await getCharacters(1, 10000, 'all', '', [], 'newest_import', false);
     const allChars = response.characters;
     this.untaggedCharacters = allChars.filter(c => {
       const data = c.data?.data || c.data;
