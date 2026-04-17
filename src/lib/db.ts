@@ -331,13 +331,22 @@ export async function saveCharacters(characters: CharacterCard[]): Promise<void>
       character.updatedAt = Date.now();
     }
     
-    const blobs = {
+    let finalBlobs = {
       avatarBlob: character.avatarBlob,
       originalFile: character.originalFile,
       avatarHistory: character.avatarHistory
     };
+
+    if (existing?.hasBlobsSeparated) {
+      const existingBlobs = await blobStore.get(character.id);
+      if (existingBlobs) {
+        finalBlobs.avatarBlob = character.avatarBlob !== undefined ? character.avatarBlob : existingBlobs.avatarBlob;
+        finalBlobs.originalFile = character.originalFile !== undefined ? character.originalFile : existingBlobs.originalFile;
+        finalBlobs.avatarHistory = character.avatarHistory !== undefined ? character.avatarHistory : existingBlobs.avatarHistory;
+      }
+    }
     
-    await blobStore.put(blobs, character.id);
+    await blobStore.put(finalBlobs, character.id);
     
     const charToSave = { ...character, hasBlobsSeparated: true };
     delete charToSave.avatarBlob;
