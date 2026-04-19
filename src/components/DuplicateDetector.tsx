@@ -157,17 +157,40 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
   const handleSelectDuplicates = (keep: 'earliest' | 'newest' = 'newest') => {
     const newSet = new Set<string>();
     duplicateGroups.forEach(group => {
-      // Find the one to keep
       const chars = group.characters.map(c => c.char);
-      const sorted = [...chars].sort((a, b) => a.createdAt - b.createdAt);
+      const sorted = [...chars].sort((a, b) => b.createdAt - a.createdAt); // newest first
       
-      const charToKeep = keep === 'earliest' ? sorted[0] : sorted[sorted.length - 1];
+      const charToKeep = keep === 'newest' ? sorted[0] : sorted[sorted.length - 1];
       
-      chars.forEach(c => {
-        if (c.id !== charToKeep.id) {
-          newSet.add(c.id);
+      for (let i = 0; i < sorted.length; i++) {
+        const c = sorted[i];
+        if (c.id === charToKeep.id) continue;
+        
+        const cData = c.data?.data || c.data || {};
+        const kData = charToKeep.data?.data || charToKeep.data || {};
+        
+        const sameName = (c.name || cData.name || '').trim() === (charToKeep.name || kData.name || '').trim();
+        const sameDesc = (cData.description || '').trim() === (kData.description || '').trim();
+        const sameFirst = (cData.first_mes || '').trim() === (kData.first_mes || '').trim();
+        const samePersonality = (cData.personality || '').trim() === (kData.personality || '').trim();
+        const sameScenario = (cData.scenario || '').trim() === (kData.scenario || '').trim();
+        const sameMesExample = (cData.mes_example || '').trim() === (kData.mes_example || '').trim();
+        
+        const cWorldbook = JSON.stringify(cData.character_book?.entries || cData.extensions?.character_book?.entries || []);
+        const kWorldbook = JSON.stringify(kData.character_book?.entries || kData.extensions?.character_book?.entries || []);
+        const sameWorldbook = cWorldbook === kWorldbook;
+        
+        const hasSpecificQR = (cData.extensions?.quick_replies?.length || 0) > 0;
+        const cQR = JSON.stringify(cData.extensions?.quick_replies || []);
+        const kQR = JSON.stringify(kData.extensions?.quick_replies || []);
+        const sameQR = cQR === kQR;
+        
+        const isExactlySameData = sameName && sameDesc && sameFirst && samePersonality && sameScenario && sameMesExample;
+        
+        if (isExactlySameData && sameWorldbook && (!hasSpecificQR || sameQR)) {
+           newSet.add(c.id);
         }
-      });
+      }
     });
     setSelectedIds(newSet);
     setSelectionMode(true);
@@ -266,37 +289,38 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
           <div className="sm:hidden grid grid-cols-2 border-b border-white/5 bg-slate-900 shadow-inner">
             <button 
               onClick={() => handleSelectDuplicates('newest')}
-              className="py-4 text-blue-400 active:bg-blue-400/10 text-xs font-bold transition border-r border-white/5"
+              className="py-4 text-blue-400 active:bg-blue-400/10 text-[10px] sm:text-xs font-bold transition border-r border-white/5 whitespace-nowrap overflow-hidden text-ellipsis px-1"
             >
-              保留最新导入
+              保留最新
             </button>
             <button 
               onClick={() => handleSelectDuplicates('earliest')}
-              className="py-4 text-purple-400 active:bg-purple-400/10 text-xs font-bold transition"
+              className="py-4 text-purple-400 active:bg-purple-400/10 text-[10px] sm:text-xs font-bold transition whitespace-nowrap overflow-hidden text-ellipsis px-1"
             >
-              保留最旧导入
+              保留最旧
             </button>
           </div>
         )}
         
         {selectionMode && (
-          <div className="hidden sm:flex items-center gap-4 px-6 py-3 border-b border-white/5 bg-black/20">
-            <span className="text-xs text-white/40 font-medium">智能选择助手:</span>
+          <div className="hidden sm:flex items-center gap-2 sm:gap-4 px-4 sm:px-6 py-3 border-b border-white/5 bg-black/20 overflow-x-auto hide-scrollbar">
+            <span className="text-xs text-white/40 font-medium shrink-0">快捷选择:</span>
             <button 
               onClick={() => handleSelectDuplicates('newest')}
-              className="px-3 py-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg text-xs font-bold transition"
+              className="px-3 py-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg text-xs font-bold transition shrink-0"
+              title="保留最新，仅智能选中数据一致的旧版"
             >
               保留最新导入
             </button>
             <button 
               onClick={() => handleSelectDuplicates('earliest')}
-              className="px-3 py-1.5 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-lg text-xs font-bold transition"
+              className="px-3 py-1.5 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-lg text-xs font-bold transition shrink-0"
             >
               保留最旧导入
             </button>
             <button 
               onClick={() => setSelectedIds(new Set())}
-              className="ml-auto px-3 py-1.5 text-white/40 hover:text-white/60 text-xs transition"
+              className="ml-auto px-3 py-1.5 text-white/40 hover:text-white/60 text-xs transition shrink-0"
             >
               清空选择
             </button>

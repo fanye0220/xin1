@@ -51,67 +51,113 @@ function RetagReviewCard({ item }: { item: RetagReviewItem }) {
         </button>
       </div>
 
-      <div className="flex-1 flex flex-col gap-4">
-        <div className="bg-black/40 border border-white/10 rounded-2xl p-3 focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/50 transition-all cursor-text min-h-[120px] flex content-start flex-wrap gap-2" onClick={() => document.getElementById(`tag-input-${item.char.id}`)?.focus()}>
-          <AnimatePresence>
-            {activeTags.map(tag => (
-              <motion.span 
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                key={tag} 
-                className="bg-purple-500/20 text-purple-200 border border-purple-500/30 pl-2.5 pr-1 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm group"
-              >
-                {tag}
-                <button onClick={(e) => { e.stopPropagation(); handleRemove(tag); }} className="p-0.5 rounded-lg hover:bg-purple-500/40 transition text-purple-300 pointer-events-auto">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </motion.span>
-            ))}
-          </AnimatePresence>
-          <input 
-            id={`tag-input-${item.char.id}`}
-            value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ',') {
-                e.preventDefault();
-                handleAdd(inputValue);
-              } else if (e.key === 'Backspace' && inputValue === '' && activeTags.length > 0) {
-                handleRemove(activeTags[activeTags.length - 1]);
-              }
-            }}
-            className="bg-transparent border-none outline-none text-sm text-white min-w-[120px] flex-1 py-1"
-            placeholder={activeTags.length === 0 ? "输入新标签并回车..." : "添加更多标签..."}
-          />
+      <div className="flex-1 flex flex-col gap-5">
+        {/* 旧标签对照区 */}
+        <div className="flex flex-col gap-2 bg-white/5 border border-white/10 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-white/50 px-1 border-b border-white/10 pb-1.5">
+            <span>旧标签</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 min-h-[32px] content-start">
+            {item.oldTags.length === 0 ? (
+              <span className="text-white/30 text-xs italic mt-1 ml-1">无原始标签</span>
+            ) : (
+              item.oldTags.map(tag => {
+                const isKept = activeTags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => isKept ? handleRemove(tag) : handleAdd(tag)}
+                    className={`px-2 py-1.5 rounded-md text-xs border transition-all flex items-center gap-1.5 ${
+                      isKept 
+                        ? 'bg-blue-500/30 text-blue-200 border-blue-400/60 shadow-[0_0_8px_rgba(59,130,246,0.3)] font-medium active:scale-95 cursor-pointer' 
+                        : 'bg-white/10 hover:bg-white/20 text-white/70 border-white/5 active:scale-95 cursor-pointer'
+                    }`}
+                  >
+                    <span className="truncate max-w-[120px]">{tag}</span>
+                    {isKept ? <X className="w-3.5 h-3.5 opacity-80" /> : <span className="opacity-50 font-bold">+</span>}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* 新标签可编辑区 */}
+        <div className="flex flex-col gap-2 bg-blue-500/10 border border-blue-500/30 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-blue-400 px-1 border-b border-blue-500/20 pb-1.5">
+            <span>AI 生成新标签</span>
+          </div>
+          <div 
+            className="focus-within:border-blue-500/50 transition-all cursor-text min-h-[60px] flex content-start flex-wrap gap-2" 
+            onClick={() => document.getElementById(`tag-input-${item.char.id}`)?.focus()}
+          >
+            <AnimatePresence>
+              {activeTags.map(tag => {
+                const isShared = item.oldTags.includes(tag);
+                return (
+                  <motion.span 
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.8, opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    key={tag} 
+                    className={`pl-2.5 pr-1 py-1.5 rounded-lg text-xs flex items-center gap-1.5 group border ${
+                      isShared 
+                        ? 'bg-blue-500/30 text-blue-200 border-blue-400/60 shadow-[0_0_8px_rgba(59,130,246,0.3)] font-medium' 
+                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                    }`}
+                  >
+                    <span className="truncate max-w-[140px]">{tag}</span>
+                    <button onClick={(e) => { e.stopPropagation(); handleRemove(tag); }} className={`p-0.5 rounded-md transition pointer-events-auto ${isShared ? 'hover:bg-blue-400/30 text-blue-200' : 'hover:bg-blue-500/20 text-blue-400/70'}`}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </motion.span>
+                );
+              })}
+            </AnimatePresence>
+            <input 
+              id={`tag-input-${item.char.id}`}
+              value={inputValue}
+              onChange={e => setInputValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault();
+                  handleAdd(inputValue);
+                } else if (e.key === 'Backspace' && inputValue === '' && activeTags.length > 0) {
+                  handleRemove(activeTags[activeTags.length - 1]);
+                }
+              }}
+              className="bg-transparent border-none outline-none text-sm text-white min-w-[120px] flex-1 py-1"
+              placeholder={activeTags.length === 0 ? "输入新标签并回车..." : "添加更多标签..."}
+            />
+          </div>
         </div>
         
-        <div className="flex flex-col gap-2 mt-1">
-          {unusedOldTags.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-white/40">
-                <History className="w-3.5 h-3.5" />
-                <span>原有的旧标签 (点击可加回)</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {unusedOldTags.map(tag => (
-                  <button key={tag} onClick={() => handleAdd(tag)} className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-white/50 hover:text-white/80 rounded-lg text-xs border border-white/10 transition flex items-center gap-1 active:scale-95 text-left text-wrap leading-tight">
-                     + {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
-      <button
-        onClick={() => taggerState.approveRetag(item.char.id, activeTags)}
-        className="w-full py-3.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-bold text-sm transition active:scale-95 shadow-[0_0_15px_rgba(168,85,247,0.3)] hover:shadow-[0_0_25px_rgba(168,85,247,0.5)] mt-2 flex justify-center items-center gap-2"
-      >
-        <CheckCircle2 className="w-4 h-4" /> 确认保存
-      </button>
+      <div className="border-t border-white/5 pt-4 mt-2 grid grid-cols-3 sm:flex sm:justify-end gap-2 sm:gap-3">
+        <button
+          onClick={() => taggerState.rejectRetag(item.char.id)}
+          className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5"
+        >
+          <X className="w-3.5 h-3.5 hidden sm:block" /> 丢弃
+        </button>
+        <button
+          onClick={() => {
+            const combined = Array.from(new Set([...item.oldTags, ...activeTags]));
+            taggerState.approveRetag(item.char.id, combined);
+          }}
+          className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-bold transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+        >
+          <Tag className="w-3.5 h-3.5 hidden sm:block" /> 合并
+        </button>
+        <button
+          onClick={() => taggerState.approveRetag(item.char.id, activeTags)}
+          className="w-full sm:w-auto justify-center px-2 sm:px-5 py-2.5 sm:py-2 rounded-lg bg-blue-500 hover:bg-blue-400 text-white text-xs sm:text-sm font-bold transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+        >
+          <CheckCircle2 className="w-3.5 h-3.5 hidden sm:block" /> 替换
+        </button>
+      </div>
     </div>
   );
 }
@@ -341,8 +387,8 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
                           onClick={togglePause}
                           className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all whitespace-nowrap ${
                             isPaused 
-                              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' 
-                              : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                              ? 'bg-blue-500 hover:bg-blue-400 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]' 
+                              : 'bg-white/10 hover:bg-white/20 text-white'
                           }`}
                         >
                           {isPaused ? <PlayCircle className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
@@ -350,7 +396,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
                         </button>
                         <button
                           onClick={stopTagging}
-                          className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-xl font-medium transition-all whitespace-nowrap"
+                          className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 text-red-400 hover:text-red-300 rounded-xl font-medium transition-all whitespace-nowrap border border-transparent hover:border-red-500/30"
                         >
                           <Square className="w-5 h-5" />
                           停止
@@ -405,8 +451,8 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
                           onClick={togglePause}
                           className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all whitespace-nowrap ${
                             isPaused 
-                              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' 
-                              : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                              ? 'bg-blue-500 hover:bg-blue-400 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]' 
+                              : 'bg-white/10 hover:bg-white/20 text-white'
                           }`}
                         >
                           {isPaused ? <PlayCircle className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
@@ -414,7 +460,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
                         </button>
                         <button
                           onClick={stopTagging}
-                          className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-xl font-medium transition-all whitespace-nowrap"
+                          className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 text-red-400 hover:text-red-300 rounded-xl font-medium transition-all whitespace-nowrap border border-transparent hover:border-red-500/30"
                         >
                           <Square className="w-5 h-5" />
                           停止
@@ -429,20 +475,28 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
 
               {retagReviewQueue.length > 0 && (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between mt-8 mb-4">
-                    <h3 className="font-bold text-lg text-white">待确认更替 ({retagReviewQueue.length})</h3>
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-8 mb-4 gap-4">
+                    <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                       <span className="text-yellow-400">✨</span> 待确认替换标签 / 合并 ({retagReviewQueue.length})
+                    </h3>
+                    <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-2">
                        <button
                          onClick={() => taggerState.rejectAllRetags()}
-                         className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white/80 text-xs font-medium transition active:scale-95"
+                         className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
                        >
-                         全部拒绝
+                         <X className="w-3.5 h-3.5 hidden sm:block" /> 全部丢弃
+                       </button>
+                       <button
+                         onClick={() => taggerState.mergeAllRetags()}
+                         className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+                       >
+                         <Tag className="w-3.5 h-3.5 hidden sm:block" /> 全部合并
                        </button>
                        <button
                          onClick={() => taggerState.approveAllRetags()}
-                         className="px-3 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-xs font-bold transition active:scale-95 border border-purple-500/30"
+                         className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-blue-500 hover:bg-blue-400 text-white text-xs sm:text-sm font-bold transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
                        >
-                         全部接受AI建议
+                         <CheckCircle2 className="w-3.5 h-3.5 hidden sm:block" /> 全部替换
                        </button>
                     </div>
                   </div>

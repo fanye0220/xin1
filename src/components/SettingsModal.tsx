@@ -34,7 +34,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
     const newId = Date.now().toString();
     setSettings(prev => ({
       ...prev,
-      customEndpoints: [...prev.customEndpoints, { id: newId, name: `新接口 ${prev.customEndpoints.length + 1}`, url: 'https://api.openai.com/v1', key: '', model: 'gpt-3.5-turbo' }],
+      customEndpoints: [...prev.customEndpoints, { id: newId, name: `新接口 ${prev.customEndpoints.length + 1}`, url: '', key: '', model: '' }],
       activeCustomId: newId
     }));
     setApiStatus('idle');

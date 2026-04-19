@@ -26,9 +26,9 @@ export function getAISettings(): AISettings {
           customEndpoints: [{
             id: 'default',
             name: '默认接口',
-            url: parsed.customUrl || 'https://api.openai.com/v1',
+            url: parsed.customUrl || '',
             key: parsed.customKey || '',
-            model: parsed.customModel || 'gpt-3.5-turbo'
+            model: parsed.customModel || ''
           }],
           activeCustomId: 'default'
         };
@@ -47,9 +47,9 @@ export function getAISettings(): AISettings {
     customEndpoints: [{
       id: 'default',
       name: '默认接口',
-      url: 'https://api.openai.com/v1',
+      url: '',
       key: '',
-      model: 'gpt-3.5-turbo'
+      model: ''
     }],
     activeCustomId: 'default'
   };
@@ -114,7 +114,7 @@ export async function testConnection(settings: AISettings): Promise<{success: bo
   }
 }
 
-export async function callAI(prompt: string, expectJson: boolean = false): Promise<string> {
+export async function callAI(prompt: string, expectJson: boolean = false, maxRetries = 5): Promise<string> {
   const settings = getAISettings();
   
   const endpoint = settings.customEndpoints.find(e => e.id === settings.activeCustomId) || settings.customEndpoints[0];
@@ -126,28 +126,45 @@ export async function callAI(prompt: string, expectJson: boolean = false): Promi
   
   const finalPrompt = expectJson ? prompt + "\n\nIMPORTANT: You must respond ONLY with valid JSON. Do not include markdown formatting like ```json." : prompt;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${endpoint.key}`
-    },
-    body: JSON.stringify({
-      model: endpoint.model || 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: finalPrompt }]
-    })
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API Error ${res.status}: ${errText.substring(0, 200)}`);
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${endpoint.key}`
+        },
+        body: JSON.stringify({
+          model: endpoint.model || 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: finalPrompt }]
+        })
+      });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`API Error ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      
+      const data = await res.json();
+      let content = data.choices?.[0]?.message?.content || '';
+      
+      if (expectJson) {
+         content = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      }
+      return content;
+    } catch (e: any) {
+      lastError = e;
+      console.warn(`AI request failed (attempt ${attempt}/${maxRetries}):`, e);
+      if (attempt < maxRetries) {
+        // Wait exponentially before retrying: 1.5s, 3s, 4.5s, 6s...
+        await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+      }
+    }
   }
-  const data = await res.json();
-  let content = data.choices?.[0]?.message?.content || '';
-  
-  if (expectJson) {
-     content = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-  }
-  return content;
+
+  throw lastError;
 }
 
 export async function generateTagsForCharacters(characters: any[]): Promise<string[][]> {

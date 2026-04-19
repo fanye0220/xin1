@@ -253,6 +253,23 @@ class TaggerState {
     this.notify();
   }
 
+  async mergeAllRetags() {
+    if (this.retagReviewQueue.length === 0) return;
+    for (const item of this.retagReviewQueue) {
+      const updatedChar = { ...item.char };
+      const combined = Array.from(new Set([...item.oldTags, ...item.newTags]));
+      if (updatedChar.data.data) {
+        updatedChar.data.data.tags = combined;
+      } else {
+        updatedChar.data.tags = combined;
+      }
+      await saveCharacter(updatedChar);
+      this.taggedCharacters = this.taggedCharacters.filter(c => c.id !== item.char.id);
+    }
+    this.retagReviewQueue = [];
+    this.notify();
+  }
+
   rejectAllRetags() {
     for (const item of this.retagReviewQueue) {
       this.taggedCharacters = this.taggedCharacters.filter(c => c.id !== item.char.id);
