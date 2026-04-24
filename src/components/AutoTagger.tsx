@@ -34,7 +34,7 @@ function RetagReviewCard({ item }: { item: RetagReviewItem }) {
   }, [item.char.avatarBlob]);
 
   return (
-    <div className="bg-slate-800/80 border border-white/10 rounded-3xl p-5 flex flex-col gap-5 shadow-xl transition-all h-full">
+    <div className="bg-slate-800/80 border border-white/10 rounded-3xl p-5 flex flex-col gap-5 shadow-xl transition-all">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
            <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-inner ring-1 ring-white/10">
@@ -135,7 +135,7 @@ function RetagReviewCard({ item }: { item: RetagReviewItem }) {
         
       </div>
 
-      <div className="mt-auto border-t border-white/5 pt-4 flex justify-end gap-2 sm:gap-3">
+      <div className="border-t border-white/5 pt-4 mt-2 flex justify-end gap-2 sm:gap-3">
         <button
           onClick={() => taggerState.rejectRetag(item.char.id)}
           className="flex-1 sm:flex-none justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap min-w-0"
@@ -482,24 +482,24 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
                     <h3 className="font-bold text-lg text-white flex items-center gap-2">
                        <span className="text-yellow-400">✨</span> 待确认替换标签 / 合并 ({retagReviewQueue.length})
                     </h3>
-                    <div className="flex justify-end items-center gap-2">
+                    <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-2">
                        <button
                          onClick={() => taggerState.rejectAllRetags()}
-                         className="flex-1 sm:flex-none justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap min-w-0"
+                         className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
                        >
-                         <X className="w-3.5 h-3.5 hidden sm:block flex-shrink-0" /> <span className="truncate">全部丢弃</span>
+                         <X className="w-3.5 h-3.5 hidden sm:block" /> 全部丢弃
                        </button>
                        <button
                          onClick={() => taggerState.mergeAllRetags()}
-                         className="flex-1 sm:flex-none justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap min-w-0"
+                         className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs sm:text-sm font-medium transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
                        >
-                         <Tag className="w-3.5 h-3.5 hidden sm:block flex-shrink-0" /> <span className="truncate">全部合并</span>
+                         <Tag className="w-3.5 h-3.5 hidden sm:block" /> 全部合并
                        </button>
                        <button
                          onClick={() => taggerState.approveAllRetags()}
-                         className="flex-1 sm:flex-none justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-blue-500 hover:bg-blue-400 text-white text-xs sm:text-sm font-bold transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap min-w-0"
+                         className="w-full sm:w-auto justify-center px-2 sm:px-4 py-2.5 sm:py-2 rounded-lg bg-blue-500 hover:bg-blue-400 text-white text-xs sm:text-sm font-bold transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
                        >
-                         <CheckCircle2 className="w-3.5 h-3.5 hidden sm:block flex-shrink-0" /> <span className="truncate">全部替换</span>
+                         <CheckCircle2 className="w-3.5 h-3.5 hidden sm:block" /> 全部替换
                        </button>
                     </div>
                   </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown } from 'lucide-react';
+import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard } from 'lucide-react';
 import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import JSZip from 'jszip';
@@ -24,7 +24,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(() => Number(localStorage.getItem('tavern_pageSize')) || 50);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'masonry'>('grid');
   const [sortBy, setSortBy] = useState<SortOption>(() => (localStorage.getItem('tavern_sortBy') as SortOption) || 'newest_import');
   const [isSortOpen, setIsSortOpen] = useState(false);
   
@@ -33,6 +33,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isEditingTags, setIsEditingTags] = useState(false);
   const [editingTagValue, setEditingTagValue] = useState<{old: string, new: string} | null>(null);
+  const [tagSearchQuery, setTagSearchQuery] = useState('');
+  const [isTagSearchOpen, setIsTagSearchOpen] = useState(false);
   
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -427,7 +429,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         initial={{ y: 0 }}
         animate={{ y: isHeaderVisible ? 0 : '-100%' }}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-white/10 p-4 mb-6 cursor-pointer"
+        className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-white/10 px-4 pt-6 pb-4 mb-6 cursor-pointer"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             scrollToTop();
@@ -496,10 +498,10 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
               </div>
               
               <button 
-                onClick={() => setViewMode(v => v === 'grid' ? 'list' : 'grid')}
+                onClick={() => setViewMode(v => v === 'grid' ? 'masonry' : v === 'masonry' ? 'list' : 'grid')}
                 className="p-2 bg-white/5 border border-white/10 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition shrink-0"
               >
-                {viewMode === 'grid' ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
+                {viewMode === 'grid' ? <LayoutGrid className="w-5 h-5" /> : viewMode === 'masonry' ? <LayoutDashboard className="w-5 h-5" /> : <List className="w-5 h-5" />}
               </button>
               
               <div ref={sortRef} className="relative shrink-0">
@@ -572,35 +574,63 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                       exit={{ opacity: 0, y: 10 }}
                       className="absolute right-0 top-full mt-2 w-72 bg-slate-800 border border-white/10 rounded-2xl shadow-xl z-50 p-4 max-h-[60vh] overflow-y-auto overscroll-contain touch-pan-y"
                     >
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="font-semibold text-white">按标签筛选</h3>
-                          <div className="flex items-center gap-2">
-                            {selectedTags.length > 0 && (
-                              <button 
-                                onClick={() => setSelectedTags([])}
-                                className="text-xs text-red-400 hover:text-red-300 transition"
+                        <div className="flex items-center justify-between mb-3 relative h-6">
+                            {!isTagSearchOpen ? (
+                              <div className="absolute inset-0 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold text-white">按标签筛选</h3>
+                                  <button onClick={() => setIsTagSearchOpen(true)} className="text-white/40 hover:text-white transition">
+                                    <Search className="w-4 h-4" />
+                                  </button>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {selectedTags.length > 0 && (
+                                    <button 
+                                      onClick={() => setSelectedTags([])}
+                                      className="text-xs text-red-400 hover:text-red-300 transition"
+                                    >
+                                      清除选中
+                                    </button>
+                                  )}
+                                  {allTags.length > 0 && (
+                                    <button 
+                                      onClick={() => {
+                                        setIsEditingTags(!isEditingTags);
+                                        setEditingTagValue(null);
+                                      }}
+                                      className="text-xs text-purple-400 hover:text-purple-300 transition"
+                                    >
+                                      {isEditingTags ? '完成' : '编辑'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <motion.div 
+                                initial={{ width: 0, opacity: 0 }}
+                                animate={{ width: '100%', opacity: 1 }}
+                                className="absolute right-0 flex items-center bg-white/10 rounded-lg overflow-hidden h-full"
                               >
-                                清除选中
-                              </button>
+                                <Search className="w-3.5 h-3.5 text-white/40 ml-2 shrink-0" />
+                                <input 
+                                  autoFocus
+                                  type="text"
+                                  placeholder="搜索标签..."
+                                  value={tagSearchQuery}
+                                  onChange={(e) => setTagSearchQuery(e.target.value)}
+                                  className="w-full bg-transparent text-sm text-white px-2 py-1 outline-none min-w-0"
+                                />
+                                <button onClick={() => { setIsTagSearchOpen(false); setTagSearchQuery(''); }} className="p-1 hover:bg-white/10 rounded-md mr-0.5 text-white/60 hover:text-white transition shrink-0">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </motion.div>
                             )}
-                            {allTags.length > 0 && (
-                              <button 
-                                onClick={() => {
-                                  setIsEditingTags(!isEditingTags);
-                                  setEditingTagValue(null);
-                                }}
-                                className="text-xs text-purple-400 hover:text-purple-300 transition"
-                              >
-                                {isEditingTags ? '完成' : '编辑'}
-                              </button>
-                            )}
-                          </div>
                         </div>
                         {allTags.length === 0 ? (
                           <p className="text-sm text-white/40">无可用标签</p>
                         ) : (
                           <div className="flex flex-wrap gap-2">
-                            {allTags.map(tag => {
+                            {allTags.filter(tag => tag.toLowerCase().includes(tagSearchQuery.toLowerCase())).map(tag => {
                               const isSelected = selectedTags.includes(tag);
                               
                               if (isEditingTags) {
@@ -710,27 +740,31 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         </div>
       ) : (
         <div className="px-4">
-          <div className={viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4" : "flex flex-col gap-2"}>
+          <div className={
+            viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4" : 
+            viewMode === 'masonry' ? "columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4 space-y-4" : 
+            "flex flex-col gap-2"
+          }>
             
             {!searchQuery && selectedTags.length === 0 && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setIsCreatingFolder(true)}
-                className={viewMode === 'grid' 
-                  ? "flex flex-col items-center gap-2 cursor-pointer group"
-                  : "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition border border-dashed border-white/20"
+                className={viewMode === 'list' 
+                  ? "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition border border-dashed border-white/20"
+                  : "flex flex-col items-center gap-2 cursor-pointer group break-inside-avoid"
                 }
               >
-                <div className={viewMode === 'grid'
-                  ? "w-full aspect-square bg-white/5 border-2 border-dashed border-white/20 rounded-3xl flex items-center justify-center group-hover:bg-white/10 group-hover:border-white/40 transition"
-                  : "w-12 h-12 bg-white/5 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center shrink-0"
+                <div className={viewMode === 'list'
+                  ? "w-12 h-12 bg-white/5 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center shrink-0"
+                  : "w-full aspect-square bg-white/5 border-2 border-dashed border-white/20 rounded-3xl flex items-center justify-center group-hover:bg-white/10 group-hover:border-white/40 transition"
                 }>
                   <Plus className="w-8 h-8 text-white/40 group-hover:text-white/60 transition" />
                 </div>
-                <span className={viewMode === 'grid'
-                  ? "text-xs font-medium text-center truncate w-full text-white/60 group-hover:text-white/80"
-                  : "font-medium text-white/60"
+                <span className={viewMode === 'list'
+                  ? "font-medium text-white/60"
+                  : "text-xs font-medium text-center truncate w-full text-white/60 group-hover:text-white/80"
                 }>
                   新建文件夹
                 </span>
@@ -803,9 +837,9 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                       onSelectFolder?.(folder.id);
                     }
                   }}
-                  className={viewMode === 'grid' 
-                    ? "flex flex-col items-center gap-2 cursor-pointer group relative select-none"
-                    : "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition relative group select-none"
+                  className={viewMode === 'list' 
+                    ? "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition relative group select-none"
+                    : "flex flex-col items-center gap-2 cursor-pointer group relative select-none break-inside-avoid"
                   }
                 >
                   {selectionMode && (
@@ -819,9 +853,9 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                       </div>
                     </div>
                   )}
-                  <div className={viewMode === 'grid'
-                    ? "w-full aspect-square bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/20 group-hover:bg-white/20 transition shadow-sm overflow-hidden p-3 relative"
-                    : "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden p-1.5"
+                  <div className={viewMode === 'list'
+                    ? "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden p-1.5"
+                    : "w-full aspect-square bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/20 group-hover:bg-white/20 transition shadow-sm overflow-hidden p-3 relative"
                   }>
                     {previews.length > 0 ? (
                       <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-1 pointer-events-none">
@@ -837,9 +871,9 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                       <FolderIcon className="w-1/2 h-1/2 text-white/50 pointer-events-none" />
                     )}
                   </div>
-                  <span className={viewMode === 'grid'
-                    ? "text-xs font-medium text-center truncate w-full text-white/80 group-hover:text-white"
-                    : "font-medium text-white/90 flex-1"
+                  <span className={viewMode === 'list'
+                    ? "font-medium text-white/90 flex-1"
+                    : "text-xs font-medium text-center truncate w-full text-white/80 group-hover:text-white"
                   }>
                     {folder.name}
                   </span>
@@ -1114,7 +1148,7 @@ function CharacterCardItem({
   onLongPress: () => void,
   selectionMode: boolean,
   isSelected: boolean,
-  viewMode: 'grid' | 'list',
+  viewMode: 'grid' | 'list' | 'masonry',
   folderName?: string
 }) {
   const [url, setUrl] = useState<string>(char.avatarUrlFallback || '');
@@ -1151,6 +1185,9 @@ function CharacterCardItem({
     onClick();
   };
 
+  const charTags = char.data?.data?.tags || char.data?.tags;
+  const hasTags = charTags && Array.isArray(charTags) && charTags.length > 0;
+
   if (viewMode === 'list') {
     return (
       <motion.div
@@ -1169,11 +1206,22 @@ function CharacterCardItem({
           <img src={url} alt={char.name} className="w-full h-full object-cover pointer-events-none" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-white/90 truncate">{char.name}</h3>
           <div className="flex items-center gap-2">
+            <h3 className="font-medium text-white/90 truncate">{char.name}</h3>
+            {hasTags && (
+              <div className="flex gap-1 overflow-hidden shrink-0">
+                {charTags.slice(0, 3).map((t: string) => (
+                  <span key={t} className="text-[9px] bg-white/10 text-white/60 px-1.5 py-0.5 rounded-sm flex-shrink-0 whitespace-nowrap">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
             {char.data?.creator && <p className="text-xs text-white/40 truncate">by {char.data.creator}</p>}
             {folderName && (
-              <span className="text-[10px] bg-white/10 text-white/60 px-1.5 py-0.5 rounded-md border border-white/10 truncate max-w-[100px]">
+              <span className="text-[10px] bg-white/10 text-white/60 px-1.5 py-0.5 rounded-md border border-white/10 flex-shrink-0 whitespace-nowrap">
                 📁 {folderName}
               </span>
             )}
@@ -1213,21 +1261,30 @@ function CharacterCardItem({
       onMouseDown={handleTouchStart}
       onMouseUp={handleTouchEnd}
       onMouseLeave={handleTouchEnd}
-      className={`relative aspect-[3/4] rounded-2xl overflow-hidden cursor-pointer shadow-lg border transition-all duration-300 group select-none ${isSelected ? 'border-purple-500 ring-2 ring-purple-500' : 'border-white/10'}`}
+      className={`relative ${viewMode === 'masonry' ? 'break-inside-avoid w-full h-auto mb-4' : 'aspect-[2/3]'} rounded-2xl overflow-hidden cursor-pointer shadow-lg border transition-all duration-300 group select-none ${isSelected ? 'border-purple-500 ring-2 ring-purple-500' : 'border-white/10'}`}
     >
       <motion.img
         animate={{ scale: isSelected ? 0.9 : 1 }}
         transition={{ duration: 0.2 }}
         src={url}
         alt={char.name}
-        className="w-full h-full object-cover pointer-events-none"
+        className={`w-full ${viewMode === 'masonry' ? 'h-auto block' : 'h-full'} object-cover pointer-events-none`}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3 pointer-events-none">
-        <h3 className="font-semibold text-white truncate drop-shadow-md">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3 pointer-events-none">
+        <h3 className="font-semibold text-white text-sm sm:text-base leading-tight drop-shadow-md break-words truncate">
           {char.name}
         </h3>
+        {hasTags && (
+          <div className="flex flex-wrap gap-1 mt-1.5 h-[1.125rem] overflow-hidden -mr-1">
+            {charTags.map((t: string) => (
+              <span key={t} className="text-[9px] bg-white/20 backdrop-blur-md text-white px-1 py-0.5 rounded-sm truncate max-w-[60px]">
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
         {folderName && (
-          <span className="text-[10px] bg-black/40 backdrop-blur-md text-white/80 px-1.5 py-0.5 rounded-md border border-white/20 truncate w-fit mt-1">
+          <span className="text-[10px] bg-black/40 backdrop-blur-md text-white/80 px-1.5 py-0.5 rounded-md border border-white/20 truncate w-fit mt-1.5">
             📁 {folderName}
           </span>
         )}
