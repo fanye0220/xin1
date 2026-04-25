@@ -305,23 +305,13 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
       await saveCharacter(updatedChar);
       
-      // Optionally delete the QR character card if it was only a payload
-      if (confirm(`是否删除已绑定的快速回复 "${qrChar.name}"？`)) {
-        await deleteCharacter(qrCharId);
-        setSelectedIds(prev => {
-          const next = new Set(prev);
-          next.delete(qrCharId);
-          return next;
-        });
-      }
-      
       setIsBindModalOpen(false);
       setSelectionMode(false);
       setSelectedIds(new Set());
       loadCharacters(); // Refresh the list
     } catch (e) {
       console.error(e);
-      alert('绑定失败，请查看控制台');
+      try { alert('绑定失败，请查看控制台: ' + e); } catch (err) {}
     }
   };
 
