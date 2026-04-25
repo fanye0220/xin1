@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Upload, FileJson, QrCode, Trash2, Download, Library } from 'lucide-react';
+import { Upload, FileJson, QrCode, Trash2, Download } from 'lucide-react';
 import { CharacterCard, saveCharacter } from '../lib/db';
-import { SelectQRModal } from './SelectQRModal';
 
 interface Props {
   character: CharacterCard;
@@ -11,42 +10,11 @@ interface Props {
 export function QuickRepliesSection({ character, onUpdate }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [isSelectModalOpen, setIsSelectModalOpen] = useState(false);
 
   const hasQuickReplies = (() => {
     const targetData = character.data.data ? character.data.data : character.data;
     return targetData.extensions?.quick_replies && targetData.extensions.quick_replies.length > 0;
   })();
-
-  const handleLibrarySelection = async (qrChar: CharacterCard) => {
-    try {
-      const qrData = qrChar.data || {};
-      let newQRs = [];
-      if (Array.isArray(qrData)) {
-        newQRs = qrData;
-      } else if (qrData.qrList && Array.isArray(qrData.qrList)) {
-        newQRs = qrData.qrList;
-      } else if (qrData.quick_replies && Array.isArray(qrData.quick_replies)) {
-        newQRs = qrData.quick_replies;
-      }
-
-      const updatedChar = { ...character };
-      let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
-      
-      targetData.extensions = { 
-        ...(targetData.extensions || {}), 
-        quick_replies: newQRs,
-        qr_filename: `${qrChar.name}.json`
-      };
-
-      await saveCharacter(updatedChar);
-      onUpdate(updatedChar);
-      setIsSelectModalOpen(false);
-    } catch (e) {
-      console.error(e);
-      try { alert('绑定失败: ' + e); } catch (err) {}
-    }
-  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -132,14 +100,16 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
               </div>
               <button 
                 onClick={async () => {
-                  const updatedChar = { ...character };
-                  let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
-                  if (targetData.extensions?.quick_replies) {
-                    delete targetData.extensions.quick_replies;
+                  if (confirm('确定要清除快速回复配置吗？')) {
+                    const updatedChar = { ...character };
+                    let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
+                    if (targetData.extensions?.quick_replies) {
+                      delete targetData.extensions.quick_replies;
+                    }
+                    await saveCharacter(updatedChar);
+                    onUpdate(updatedChar);
+                    setFileName(null);
                   }
-                  await saveCharacter(updatedChar);
-                  onUpdate(updatedChar);
-                  setFileName(null);
                 }}
                 className="text-white/40 hover:text-red-400 transition"
               >
@@ -151,26 +121,12 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
               <span className="truncate">{displayFileName}</span>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2 mt-2">
-              <button 
-                onClick={handleDownload}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center justify-center gap-2"
-              >
-                <Download className="w-4 h-4" /> 下载 
-              </button>
-              <button 
-                onClick={() => setIsSelectModalOpen(true)}
-                className="flex-1 py-3 bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 rounded-xl font-medium transition flex items-center justify-center gap-2"
-              >
-                <Library className="w-4 h-4" /> 替换 (库)
-              </button>
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center justify-center gap-2"
-              >
-                <Upload className="w-4 h-4" /> 替换 (本地)
-              </button>
-            </div>
+            <button 
+              onClick={handleDownload}
+              className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center justify-center gap-2 mt-2"
+            >
+              <Download className="w-4 h-4" /> 下载 JSON
+            </button>
           </div>
         ) : (
           <div className="text-center py-4">
@@ -178,28 +134,14 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
               <Upload className="w-8 h-8" />
             </div>
             <p className="text-white/60 mb-6 font-medium text-sm">未导入快速回复配置</p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center gap-2"
-              >
-                <Upload className="w-4 h-4" /> 本地导入
-              </button>
-              <button 
-                onClick={() => setIsSelectModalOpen(true)}
-                className="px-6 py-2.5 bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 rounded-xl font-medium transition flex items-center gap-2"
-              >
-                <Library className="w-4 h-4" /> 从库中选择
-              </button>
-            </div>
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center gap-2 mx-auto"
+            >
+              <Upload className="w-4 h-4" /> 导入 JSON
+            </button>
           </div>
         )}
-
-        <SelectQRModal 
-          isOpen={isSelectModalOpen}
-          onClose={() => setIsSelectModalOpen(false)}
-          onSelect={handleLibrarySelection}
-        />
 
         <input 
           type="file" 
