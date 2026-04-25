@@ -31,11 +31,14 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       }
 
       const updatedChar = { ...character };
+      // Deep clone data to avoid IDB clone errors
+      updatedChar.data = JSON.parse(JSON.stringify(updatedChar.data || {}));
+      
       let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
       
       targetData.extensions = { 
         ...(targetData.extensions || {}), 
-        quick_replies: newQRs,
+        quick_replies: JSON.parse(JSON.stringify(newQRs)),
         qr_filename: `${qrChar.name}.json`
       };
 
@@ -44,7 +47,7 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       setIsSelectModalOpen(false);
     } catch (e) {
       console.error(e);
-      try { alert('绑定失败: ' + e); } catch (err) {}
+      try { alert('绑定失败: ' + (e instanceof Error ? e.message : String(e))); } catch (err) {}
     }
   };
 

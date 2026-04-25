@@ -296,10 +296,13 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       }
 
       const updatedChar = { ...targetChar };
-      let updatedData = updatedChar.data.data || updatedChar.data;
+      // Deep clone data to ensure it is fully writable and clonable by IDB
+      updatedChar.data = JSON.parse(JSON.stringify(updatedChar.data || {}));
+      
+      let updatedData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
       updatedData.extensions = {
         ...(updatedData.extensions || {}),
-        quick_replies: newQRs,
+        quick_replies: JSON.parse(JSON.stringify(newQRs)),
         qr_filename: `${qrChar.name}.json`
       };
 
@@ -311,7 +314,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       loadCharacters(); // Refresh the list
     } catch (e) {
       console.error(e);
-      try { alert('绑定失败，请查看控制台: ' + e); } catch (err) {}
+      try { alert('绑定失败，请查看控制台: ' + (e instanceof Error ? e.message : String(e))); } catch (err) {}
     }
   };
 
