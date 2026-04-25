@@ -229,7 +229,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
       transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
       className="fixed top-0 left-0 bottom-0 w-72 bg-slate-900/95 border-r border-white/10 flex flex-col backdrop-blur-xl z-50 shadow-2xl"
     >
-      <div className="pt-8 pb-6 px-6 flex items-center justify-between border-b border-white/5">
+      <div className="pt-10 pb-6 px-6 flex items-center justify-between border-b border-white/5">
         <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
           文件夹管理
         </h1>

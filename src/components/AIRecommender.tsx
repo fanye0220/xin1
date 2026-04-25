@@ -194,7 +194,7 @@ ${candidateInfo}
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
-      <header className="sticky top-0 p-4 sm:p-6 flex items-center gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 px-4 pb-4 pt-10 sm:px-6 sm:pb-6 sm:pt-10 flex items-center gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
         <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
           <ArrowLeft className="w-6 h-6" />
         </button>
@@ -326,7 +326,7 @@ ${candidateInfo}
                       className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 hover:bg-white/10 transition group"
                     >
                       <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 rounded-xl overflow-hidden bg-black/40">
-                        {url && <img src={url} alt={data.name} className="w-full h-full object-cover" />}
+                        {url ? <img src={url} alt={data.name} className="w-full h-full object-cover" /> : null}
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col">
                         <div className="flex items-start justify-between gap-4">

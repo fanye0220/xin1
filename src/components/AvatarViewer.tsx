@@ -309,7 +309,7 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
                 onClick={() => handleSelectHistory(item.blob)}
                 className={`group relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden cursor-pointer snap-start transition-all ${isPreviewed ? 'ring-2 ring-purple-500 scale-105' : 'ring-1 ring-white/10 hover:ring-white/30 opacity-70 hover:opacity-100'}`}
               >
-                <img src={item.url} alt={`History ${index}`} className="w-full h-full object-cover" />
+                <img src={item.url || undefined} alt={`History ${index}`} className="w-full h-full object-cover" />
                 {isActualCurrent && (
                   <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
                     <div className="bg-purple-500 rounded-full p-1">

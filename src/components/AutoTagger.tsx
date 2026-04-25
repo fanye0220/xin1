@@ -38,7 +38,7 @@ function RetagReviewCard({ item }: { item: RetagReviewItem }) {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
            <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-inner ring-1 ring-white/10">
-             <img src={avatarUrl} alt={charName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+             <img src={avatarUrl || undefined} alt={charName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
            </div>
            <h4 className="font-bold text-lg text-white truncate">{charName}</h4>
         </div>
@@ -289,7 +289,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
-      <header className="sticky top-0 p-4 sm:p-6 flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 px-4 pb-4 pt-10 sm:px-6 sm:pb-6 sm:pt-10 flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
         <div className="flex items-center gap-4">
           <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />

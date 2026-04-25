@@ -234,7 +234,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 pt-10 sm:p-4 sm:pt-10 bg-black/60 backdrop-blur-sm"
     >
       <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden ring-1 ring-white/10">
         <div className="p-5 sm:p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02] backdrop-blur-md">
@@ -440,7 +440,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
                           )}
                           <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-black/50 mt-1 shadow-inner ring-1 ring-white/5">
                             <img 
-                              src={char.avatarBlob ? URL.createObjectURL(char.avatarBlob) : char.avatarUrlFallback} 
+                              src={char.avatarBlob ? URL.createObjectURL(char.avatarBlob) : (char.avatarUrlFallback || undefined)} 
                               alt={char.name} 
                               className="w-full h-full object-cover" 
                               referrerPolicy="no-referrer"

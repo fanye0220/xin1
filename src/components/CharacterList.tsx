@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard } from 'lucide-react';
+import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link } from 'lucide-react';
 import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
 import { MoveToFolderModal } from './MoveToFolderModal';
+import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
 import { injectTavernData } from '../lib/png';
 
@@ -43,6 +44,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
+  const [isBindModalOpen, setIsBindModalOpen] = useState(false);
   const longPressRef = useRef<{ timer: NodeJS.Timeout | null, triggered: boolean, startY?: number }>({ timer: null, triggered: false });
 
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -269,6 +271,60 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     return parentPath ? `${parentPath}/${getSafeFilename(folder.name)}` : getSafeFilename(folder.name);
   };
 
+  const checkIsQR = (char: CharacterCard) => {
+    const data = char.data || {};
+    return Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : (data.quick_replies !== undefined || data.qrList !== undefined);
+  };
+
+  const handleBindQR = async (targetCharId: string) => {
+    const qrCharId = Array.from(selectedIds)[0];
+    const qrChar = characters.find(c => c.id === qrCharId);
+    if (!qrChar) return;
+
+    try {
+      const targetChar = await getCharacter(targetCharId);
+      if (!targetChar) return;
+
+      const qrData = qrChar.data || {};
+      let newQRs = [];
+      if (Array.isArray(qrData)) {
+        newQRs = qrData;
+      } else if (qrData.qrList && Array.isArray(qrData.qrList)) {
+        newQRs = qrData.qrList;
+      } else if (qrData.quick_replies && Array.isArray(qrData.quick_replies)) {
+        newQRs = qrData.quick_replies;
+      }
+
+      const updatedChar = { ...targetChar };
+      let updatedData = updatedChar.data.data || updatedChar.data;
+      updatedData.extensions = {
+        ...(updatedData.extensions || {}),
+        quick_replies: newQRs,
+        qr_filename: `${qrChar.name}.json`
+      };
+
+      await saveCharacter(updatedChar);
+      
+      // Optionally delete the QR character card if it was only a payload
+      if (confirm(`是否删除已绑定的快速回复 "${qrChar.name}"？`)) {
+        await deleteCharacter(qrCharId);
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          next.delete(qrCharId);
+          return next;
+        });
+      }
+      
+      setIsBindModalOpen(false);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+      loadCharacters(); // Refresh the list
+    } catch (e) {
+      console.error(e);
+      alert('绑定失败，请查看控制台');
+    }
+  };
+
   const addCharacterToZip = async (char: CharacterCard, zipFolder: JSZip) => {
     const safeName = getSafeFilename(char.name);
     const exportFileName = `${safeName}.png`;
@@ -429,7 +485,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         initial={{ y: 0 }}
         animate={{ y: isHeaderVisible ? 0 : '-100%' }}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-white/10 px-4 pt-6 pb-4 mb-6 cursor-pointer"
+        className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-white/10 px-4 pt-8 pb-4 mb-6 cursor-pointer"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             scrollToTop();
@@ -971,6 +1027,14 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         onMove={handleMoveToFolder}
       />
 
+      <BindQRModal 
+        isOpen={isBindModalOpen}
+        onClose={() => setIsBindModalOpen(false)}
+        onBind={handleBindQR}
+        characters={characters}
+        qrChar={characters.find(c => c.id === Array.from(selectedIds)[0]) || null}
+      />
+
       <AnimatePresence>
         {showScrollTop && !selectionMode && (
           <motion.button
@@ -1039,6 +1103,24 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                     <Edit2 className="w-5 h-5" />
                   </div>
                   <span className="font-medium text-[10px]">重命名</span>
+                </button>
+              </>
+            )}
+            {selectedIds.size === 1 && (() => {
+              const charId = Array.from(selectedIds)[0];
+              const char = characters.find(c => c.id === charId);
+              return char && checkIsQR(char);
+            })() && (
+              <>
+                <div className="w-px h-8 bg-white/10" />
+                <button
+                  onClick={() => setIsBindModalOpen(true)}
+                  className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-purple-400 transition group"
+                >
+                  <div className="p-2 rounded-full bg-white/5 group-hover:bg-purple-400/20 transition">
+                    <Link className="w-5 h-5" />
+                  </div>
+                  <span className="font-medium text-[10px]">绑定</span>
                 </button>
               </>
             )}
@@ -1203,7 +1285,7 @@ function CharacterCardItem({
         className={`relative flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all select-none ${isSelected ? 'bg-purple-500/20 border-purple-500/50' : 'bg-white/5 hover:bg-white/10 border-transparent'} border`}
       >
         <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0">
-          <img src={url} alt={char.name} className="w-full h-full object-cover pointer-events-none" />
+          <img src={url || undefined} alt={char.name} className="w-full h-full object-cover pointer-events-none" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -1266,7 +1348,7 @@ function CharacterCardItem({
       <motion.img
         animate={{ scale: isSelected ? 0.9 : 1 }}
         transition={{ duration: 0.2 }}
-        src={url}
+        src={url || undefined}
         alt={char.name}
         className={`w-full ${viewMode === 'masonry' ? 'h-auto block' : 'h-full'} object-cover pointer-events-none`}
       />

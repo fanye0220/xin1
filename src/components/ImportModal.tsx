@@ -84,9 +84,10 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           const isTheme = data.blur_strength !== undefined || data.main_text_color !== undefined || data.chat_display !== undefined;
           const isAIPreset = data.temperature !== undefined || data.prompts !== undefined || data.top_p !== undefined;
           const isWorldbook = data.entries !== undefined || (data.data && data.data.entries !== undefined);
-          const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !!(data.name || data.data?.name);
+          const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined;
+          const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !!(data.name || data.data?.name);
           
-          if (isTheme || isAIPreset || isWorldbook || isCharacter) {
+          if (isTheme || isAIPreset || isWorldbook || isQR || isCharacter) {
             isMain = true;
           } else {
             errorMsg = "非酒馆卡或预设格式：无法识别的数据结构。";
@@ -192,9 +193,9 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         let targetFolderId = folderId || undefined;
         let charName = 'Unknown';
         
+        let folderParts: string[] = [];
         if (item.folder) {
-          const folderParts = item.folder.split('/');
-          targetFolderId = await getOrCreateNestedFolder(folderParts);
+          folderParts = item.folder.split('/').filter(Boolean);
         }
         
         const data = item.data;
@@ -203,19 +204,33 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         const isTheme = data.blur_strength !== undefined || data.main_text_color !== undefined || data.chat_display !== undefined;
         const isAIPreset = data.temperature !== undefined || data.prompts !== undefined || data.top_p !== undefined;
         const isWorldbook = data.entries !== undefined || (data.data && data.data.entries !== undefined);
-        const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !!(data.name || data.data?.name);
+        const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined;
+        const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !!(data.name || data.data?.name);
         
+        let pathPrefix: string[] = [];
+
         if (isTheme) {
-          if (!item.folder) targetFolderId = await getOrCreateNestedFolder(['美化']);
+          pathPrefix = ['美化'];
           charName = data.name || file.name.replace(/\.[^/.]+$/, "");
         } else if (isAIPreset) {
-          if (!item.folder) targetFolderId = await getOrCreateNestedFolder(['预设']);
+          pathPrefix = ['预设'];
           charName = data.name || file.name.replace(/\.[^/.]+$/, "");
         } else if (isWorldbook) {
-          if (!item.folder) targetFolderId = await getOrCreateNestedFolder(['世界书']);
+          pathPrefix = ['世界书'];
           charName = data.name || data.data?.name || file.name.replace(/\.[^/.]+$/, "");
+        } else if (isQR) {
+          pathPrefix = ['快速回复'];
+          charName = file.name.replace(/\.[^/.]+$/, "");
         } else if (isCharacter) {
           charName = data.name || data.data?.name || 'Unknown Character';
+        }
+        
+        if (pathPrefix.length > 0) {
+          targetFolderId = await getOrCreateNestedFolder([...pathPrefix, ...folderParts]);
+        } else if (folderParts.length > 0) {
+          targetFolderId = await getOrCreateNestedFolder(folderParts);
+        } else {
+          targetFolderId = folderId || undefined;
         }
         
         const avatarUrlFallback = (file.type === 'image/png' || file.name.endsWith('.png')) 
