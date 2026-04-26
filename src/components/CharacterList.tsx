@@ -311,7 +311,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       setIsBindModalOpen(false);
       setSelectionMode(false);
       setSelectedIds(new Set());
-      loadCharacters(); // Refresh the list
+      loadData(); // Refresh the list
     } catch (e) {
       console.error(e);
       try { alert('绑定失败，请查看控制台: ' + (e instanceof Error ? e.message : String(e))); } catch (err) {}
