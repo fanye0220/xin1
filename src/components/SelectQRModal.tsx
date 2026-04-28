@@ -81,7 +81,7 @@ export function SelectQRModal({ isOpen, onClose, onSelect }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-2 custom-scrollbar overscroll-contain touch-pan-y">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-white/10 overscroll-contain touch-pan-y">
           {filteredQRs.length === 0 ? (
              <div className="flex flex-col items-center justify-center h-40 text-center">
                <p className="text-white/50 text-sm">暂无匹配的快速回复</p>

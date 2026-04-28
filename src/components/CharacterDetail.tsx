@@ -596,7 +596,7 @@ export function CharacterDetail({ id, onBack }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto custom-scrollbar sticky top-16 z-20 bg-black/40 backdrop-blur-md border-b border-t border-white/5">
+        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-16 z-20 bg-black/40 backdrop-blur-md border-b border-t border-white/5">
           {[
             ...(!isStandaloneWorldbook ? [
               { id: 'profile', icon: User, label: isPreset ? '预设条目' : '档案' },
@@ -954,7 +954,7 @@ function FullScreenTextModal({
           )
         )}
       </header>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-slate-900 flex flex-col">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar bg-slate-900 flex flex-col">
         <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
           {isEditing ? (
             <textarea 

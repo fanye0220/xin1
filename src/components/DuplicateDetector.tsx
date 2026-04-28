@@ -303,7 +303,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
         )}
         
         {selectionMode && (
-          <div className="hidden sm:flex items-center gap-2 sm:gap-4 px-4 sm:px-6 py-3 border-b border-white/5 bg-black/20 overflow-x-auto custom-scrollbar">
+          <div className="hidden sm:flex items-center gap-2 sm:gap-4 px-4 sm:px-6 py-3 border-b border-white/5 bg-black/20 overflow-x-auto hide-scrollbar">
             <span className="text-xs text-white/40 font-medium shrink-0">快捷选择:</span>
             <button 
               onClick={() => handleSelectDuplicates('newest')}
