@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft } from 'lucide-react';
+import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -183,46 +183,26 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-900 relative overflow-hidden">
-      {!activeChatId && isMainHeaderExpanded && (
-        <div className="flex-none p-6 border-b border-white/10 bg-black/20 flex items-center justify-between sticky top-0 z-20 backdrop-blur-md group transition-all">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
-              <MessageSquare className="w-6 h-6 text-blue-400" />
+      {!activeChatId && (
+        <div className="flex-none p-4 sm:p-6 border-b border-white/10 bg-black/20 flex items-start sm:items-center justify-between sticky top-0 z-20 backdrop-blur-md transition-all gap-2 sm:gap-4">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center border border-blue-500/30 shrink-0">
+              <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
             </div>
-            <div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent flex items-center gap-2 flex-wrap">
                 聊天记录查看器
-                <button onClick={() => setIsMainHeaderExpanded(false)} className="opacity-0 group-hover:opacity-100 p-1 text-white/40 hover:text-white transition">
-                  <ChevronUp className="w-4 h-4" />
-                </button>
               </h2>
-              <p className="text-white/60 text-sm mt-1">
+              <p className="text-white/60 text-xs sm:text-sm mt-1 leading-relaxed">
                 查看酒馆(Tavern)导出的 JSONL 聊天记录（将显示原始文本，不带正则效果）
               </p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition"
+            className="p-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition shrink-0 mt-1 sm:mt-0"
           >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-      )}
-      {!activeChatId && !isMainHeaderExpanded && (
-        <div className="flex-none p-3 border-b border-white/10 bg-black/20 flex items-center justify-between sticky top-0 z-20 backdrop-blur-md">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-blue-400" />
-            <h2 className="text-sm font-bold text-white/80">聊天记录查看器</h2>
-            <button onClick={() => setIsMainHeaderExpanded(true)} className="p-1 text-white/40 hover:text-white transition">
-              <ChevronDown className="w-4 h-4" />
-            </button>
-          </div>
-          <button 
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition"
-          >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
       )}
@@ -234,26 +214,26 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
             initial={{ y: -50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -50, opacity: 0 }}
-            className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-full max-w-sm px-4"
+            className="absolute top-4 z-30 pointer-events-none transition-all duration-500 ease-out flex left-1/2 -translate-x-1/2 w-full max-w-sm sm:max-w-md px-4"
           >
-            <div className="pointer-events-auto bg-black/60 backdrop-blur-xl border border-white/10 rounded-full flex items-center justify-between p-1.5 shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
+            <div className="pointer-events-auto bg-black/60 backdrop-blur-xl border border-white/10 flex items-center shadow-[0_10px_40px_rgba(0,0,0,0.5)] transition-all duration-500 overflow-visible rounded-full w-full justify-between p-1.5">
               <button 
                 onClick={() => setActiveChatId(null)} 
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white/70 hover:text-white transition"
+                className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full hover:bg-white/10 text-white/70 hover:text-white transition"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
               
-              <div className="flex flex-col items-center justify-center px-2 overflow-hidden flex-1 cursor-pointer" onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}>
-                 <span className="text-sm font-bold text-white truncate max-w-full block text-center leading-tight">
+              <div className="flex flex-col items-center justify-center px-2 sm:px-4 overflow-hidden flex-1 cursor-pointer" onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}>
+                 <span className="text-sm font-bold text-white truncate w-full text-center leading-tight">
                    {activeChat.name}
                  </span>
-                 <span className="text-[11px] text-white/50 block text-center mt-0.5">
+                 <span className="text-[11px] text-white/50 block text-center mt-0.5 w-full truncate">
                    {activeChat.messages.length} 条消息
                  </span>
               </div>
               
-              <div className="relative">
+              <div className="relative flex items-center gap-1 shrink-0">
                 <button 
                   onClick={() => setIsHeaderExpanded(!isHeaderExpanded)} 
                   className={`w-10 h-10 flex items-center justify-center rounded-full transition ${isHeaderExpanded ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-white/10 text-white/70 hover:text-white'}`}
@@ -285,10 +265,10 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                         </div>
                         {activeCharacter && activeChat.characterId && (
                           <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
-                            <span className="text-xs text-green-400 flex items-center gap-1.5 font-medium">
-                              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                              已应用角色正则规则
-                            </span>
+                             <span className="text-xs text-green-400 flex items-center gap-1.5 font-medium">
+                               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                               已应用角色正则规则
+                             </span>
                           </div>
                         )}
                       </div>
@@ -363,11 +343,11 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       onClick={() => setActiveChatId(chat.id)}
-                      className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-5 cursor-pointer transition flex flex-col gap-3 group relative overflow-hidden"
+                      className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden"
                     >
                       <button 
                         onClick={(e) => handleRemoveChat(e, chat.id)}
-                        className="absolute top-4 right-4 p-2 opacity-0 group-hover:opacity-100 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition"
+                        className="absolute top-4 right-4 p-2 bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-400 rounded-lg transition z-10"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -382,9 +362,9 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                             </span>
                           )}
                         </div>
-                        <div className="flex flex-col pr-10">
-                          <h4 className="font-medium text-white/90 truncate max-w-md">{chat.name}</h4>
-                          <span className="text-xs text-white/40">{chat.messages.length} 条消息 · {new Date(chat.createdAt).toLocaleString()}</span>
+                        <div className="flex flex-col pr-10 flex-1 min-w-0">
+                          <h4 className="font-medium text-white/90 truncate w-full">{chat.name}</h4>
+                          <span className="text-xs text-white/40 truncate w-full">{chat.messages.length} 条消息 · {new Date(chat.createdAt).toLocaleString()}</span>
                         </div>
                       </div>
                       <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 prose prose-sm prose-invert max-w-none line-clamp-3 overflow-hidden">
@@ -399,7 +379,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
             )}
           </div>
         ) : (
-          <div className="space-y-4 pt-10 pb-32 relative z-0">
+          <div className="space-y-4 pt-24 pb-32 relative z-0">
               {activeChat?.messages.map((msg, i) => {
                 const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
                 return (

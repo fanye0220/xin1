@@ -50,13 +50,27 @@ interface TavernDB extends DBSchema {
     value: ChatLog;
     indexes: { 'by-character': string; 'by-date': number };
   };
+  memos: {
+    key: string;
+    value: CharacterMemo;
+    indexes: { 'by-character': string; 'by-date': number };
+  };
+}
+
+export interface CharacterMemo {
+  id: string;
+  characterId: string;
+  type: 'text' | 'image' | 'file';
+  content: string; // Markdown or File name
+  blob?: Blob;     // For images/files
+  createdAt: number;
 }
 
 let dbPromise: Promise<IDBPDatabase<TavernDB>>;
 
 export function initDB() {
   if (!dbPromise) {
-    dbPromise = openDB<TavernDB>('tavern-manager-v2', 4, {
+    dbPromise = openDB<TavernDB>('tavern-manager-v2', 5, {
       upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion < 1) {
           const store = db.createObjectStore('characters', { keyPath: 'id' });
@@ -76,6 +90,11 @@ export function initDB() {
           const chatStore = db.createObjectStore('chats', { keyPath: 'id' });
           chatStore.createIndex('by-character', 'characterId');
           chatStore.createIndex('by-date', 'createdAt');
+        }
+        if (oldVersion < 5) {
+          const memoStore = db.createObjectStore('memos', { keyPath: 'id' });
+          memoStore.createIndex('by-character', 'characterId');
+          memoStore.createIndex('by-date', 'createdAt');
         }
       },
     });
@@ -654,3 +673,20 @@ export async function deleteChat(id: string): Promise<void> {
   const db = await initDB();
   await db.delete('chats', id);
 }
+
+export async function getMemosForCharacter(characterId: string): Promise<CharacterMemo[]> {
+  const db = await initDB();
+  const memos = await db.getAllFromIndex('memos', 'by-character', characterId);
+  return memos.sort((a, b) => b.createdAt - a.createdAt); // Newest first
+}
+
+export async function saveMemo(memo: CharacterMemo): Promise<void> {
+  const db = await initDB();
+  await db.put('memos', memo);
+}
+
+export async function deleteMemo(id: string): Promise<void> {
+  const db = await initDB();
+  await db.delete('memos', id);
+}
+

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getChatsForCharacter, deleteChat, ChatLog } from '../lib/db';
-import { MessageSquare, Trash2, Calendar, FileJson, Upload } from 'lucide-react';
+import { getChatsForCharacter, deleteChat, saveChat, ChatLog } from '../lib/db';
+import { MessageSquare, Trash2, Calendar, FileJson, UploadCloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,6 +16,7 @@ interface Props {
 export function CharacterChatsSection({ characterId, characterName, regexScripts, avatar }: Props) {
   const [chats, setChats] = useState<ChatLog[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatLog | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadChats = async () => {
     const list = await getChatsForCharacter(characterId);
@@ -31,6 +32,46 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
     if(confirm('确定要删除这条聊天记录吗？')) {
       await deleteChat(id);
       if (selectedChat?.id === id) setSelectedChat(null);
+      loadChats();
+    }
+  };
+
+  const handleFileUpload = async (files: FileList | File[]) => {
+    let imported = 0;
+    
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+      try {
+        const text = await file.text();
+        let parsedMessages: any[] = [];
+
+        if (file.name.endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+          const lines = text.trim().split('\n');
+          parsedMessages = lines.map(line => {
+            try { return JSON.parse(line); } catch (e) { return null; }
+          }).filter(Boolean);
+        } else {
+          const data = JSON.parse(text);
+          if (Array.isArray(data)) parsedMessages = data;
+          else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+          else parsedMessages = [data];
+        }
+
+        await saveChat({
+          id: crypto.randomUUID(),
+          characterId: characterId,
+          name: file.name,
+          messages: parsedMessages,
+          createdAt: Date.now()
+        });
+        imported++;
+      } catch (e) {
+        console.error(e);
+        alert(`解析文件 ${file.name} 失败，请确保格式为记录导出的 jsonl 或 json 格式。`);
+      }
+    }
+
+    if (imported > 0) {
       loadChats();
     }
   };
@@ -147,20 +188,41 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
       className="space-y-6"
     >
       <div className="flex items-center justify-between">
-        <h3 className="text-xl font-bold text-white flex items-center gap-2">
-           <MessageSquare className="w-5 h-5 text-blue-400" />
-           绑定的聊天记录 ({chats.length})
-        </h3>
-        <p className="text-sm text-white/50">在左侧「查看聊天记录」工具中导入并绑定</p>
+        <div>
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-blue-400" />
+            绑定的聊天记录 ({chats.length})
+          </h3>
+          <p className="text-sm text-white/50 mt-1">在左侧「查看聊天记录」工具中导入，或在此处直接导入</p>
+        </div>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg text-sm transition flex items-center gap-2"
+        >
+          <UploadCloud className="w-4 h-4" />
+          导入记录
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".json,.jsonl"
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files?.length) handleFileUpload(e.target.files);
+          }}
+        />
       </div>
 
       {chats.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 bg-white/5 rounded-2xl border border-white/10 text-center">
+        <div className="flex flex-col items-center justify-center p-12 bg-white/5 rounded-2xl border border-white/10 text-center border-dashed border-2">
            <FileJson className="w-12 h-12 text-white/20 mb-4" />
            <h4 className="text-white/80 font-medium mb-2">暂无绑定的聊天记录</h4>
-           <p className="text-white/40 text-sm max-w-sm">
-             点击左侧边栏的「查看聊天记录」，将酒馆导出的 JSONL 文件拖入，并选择绑定至此角色。
-           </p>
+           <div className="flex flex-col items-center gap-4 mt-2">
+             <p className="text-white/40 text-sm max-w-sm">
+               点击右上角导入按钮，或直接拖拽 JSONL 文件到窗口中绑定至此角色。
+             </p>
+           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
