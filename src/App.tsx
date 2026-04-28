@@ -14,6 +14,7 @@ import { DuplicateDetector } from './components/DuplicateDetector';
 import { AutoTagger } from './components/AutoTagger';
 import { AIRecommender } from './components/AIRecommender';
 import { SettingsModal } from './components/SettingsModal';
+import { ChatViewer } from './components/ChatViewer';
 import { migrateDatabase } from './lib/db';
 import { useTaggerState } from './lib/taggerState';
 import { Tag, Loader2, AlertCircle, Pause, X } from 'lucide-react';
@@ -188,6 +189,8 @@ export default function App() {
             onSelectChar={setSelectedCharId}
             onOpenSettings={() => setIsSettingsOpen(true)} 
           />
+        ) : selectedFolderId === 'chatviewer' ? (
+          <ChatViewer onClose={() => { setSelectedFolderId(null); setRefreshKey(prev => prev + 1); }} />
         ) : (
           <CharacterList
             key={selectedFolderId}

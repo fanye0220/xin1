@@ -2,44 +2,75 @@ import React, { useRef, useState } from 'react';
 import { Upload, FileJson, QrCode, Trash2, Download, Library } from 'lucide-react';
 import { CharacterCard, saveCharacter } from '../lib/db';
 import { SelectQRModal } from './SelectQRModal';
+import { ExportQRModal } from './ExportQRModal';
+import JSZip from 'jszip';
 
 interface Props {
   character: CharacterCard;
   onUpdate: (updatedCharacter: CharacterCard) => void;
 }
 
+interface QRSet {
+  id: string;
+  sourceName: string;
+  replies: any[];
+}
+
 export function QuickRepliesSection({ character, onUpdate }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
   const [isSelectModalOpen, setIsSelectModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
-  const hasQuickReplies = (() => {
-    const targetData = character.data.data ? character.data.data : character.data;
-    return targetData.extensions?.quick_replies && targetData.extensions.quick_replies.length > 0;
-  })();
+  const targetData = character.data.data ? character.data.data : character.data;
 
-  const handleLibrarySelection = async (qrChar: CharacterCard) => {
+  const getQRSets = (): QRSet[] => {
+    if (targetData.extensions?.tavern_qr_sets) {
+       return targetData.extensions.tavern_qr_sets;
+    }
+    if (targetData.extensions?.quick_replies && targetData.extensions.quick_replies.length > 0) {
+       return [{
+          id: 'default',
+          sourceName: targetData.extensions?.qr_filename || '原有的快速回复',
+          replies: targetData.extensions.quick_replies
+       }];
+    }
+    return [];
+  };
+
+  const qrSets = getQRSets();
+  const hasQuickReplies = qrSets.length > 0;
+
+  const handleLibrarySelection = async (qrChars: CharacterCard[]) => {
     try {
-      const qrData = qrChar.data || {};
-      let newQRs = [];
-      if (Array.isArray(qrData)) {
-        newQRs = qrData;
-      } else if (qrData.qrList && Array.isArray(qrData.qrList)) {
-        newQRs = qrData.qrList;
-      } else if (qrData.quick_replies && Array.isArray(qrData.quick_replies)) {
-        newQRs = qrData.quick_replies;
+      const updatedChar = { ...character };
+      updatedChar.data = JSON.parse(JSON.stringify(updatedChar.data || {}));
+      let tData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
+      
+      let newSets = [...getQRSets()];
+
+      for (const qrChar of qrChars) {
+        const qrData = qrChar.data || {};
+        let newQRs = [];
+        if (Array.isArray(qrData)) {
+          newQRs = qrData;
+        } else if (qrData.qrList && Array.isArray(qrData.qrList)) {
+          newQRs = qrData.qrList;
+        } else if (qrData.quick_replies && Array.isArray(qrData.quick_replies)) {
+          newQRs = qrData.quick_replies;
+        }
+        
+        newSets.push({
+          id: Date.now().toString() + Math.random().toString(),
+          sourceName: qrChar.name,
+          replies: JSON.parse(JSON.stringify(newQRs))
+        });
       }
 
-      const updatedChar = { ...character };
-      // Deep clone data to avoid IDB clone errors
-      updatedChar.data = JSON.parse(JSON.stringify(updatedChar.data || {}));
-      
-      let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
-      
-      targetData.extensions = { 
-        ...(targetData.extensions || {}), 
-        quick_replies: JSON.parse(JSON.stringify(newQRs)),
-        qr_filename: `${qrChar.name}.json`
+      tData.extensions = { 
+        ...(tData.extensions || {}), 
+        tavern_qr_sets: newSets,
+        quick_replies: newSets.flatMap(s => s.replies),
+        qr_filename: newSets.length > 0 ? `${newSets[newSets.length-1].sourceName}.json` : undefined
       };
 
       await saveCharacter(updatedChar);
@@ -51,16 +82,26 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    setFileName(file.name);
+    const updatedChar = { ...character };
+    updatedChar.data = JSON.parse(JSON.stringify(updatedChar.data || {}));
+    let tData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
+    let newSets = [...getQRSets()];
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       try {
-        const json = JSON.parse(event.target?.result as string);
+        const text = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => resolve(event.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+
+        const json = JSON.parse(text);
         
         let newQRs = [];
         if (Array.isArray(json)) {
@@ -73,56 +114,122 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
           throw new Error('Invalid format');
         }
 
-        const updatedChar = { ...character };
-        let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
-        
-        targetData.extensions = { 
-          ...(targetData.extensions || {}), 
-          quick_replies: newQRs, // Overwrite instead of append based on the UI
-          qr_filename: file.name
-        };
-
-        await saveCharacter(updatedChar);
-        onUpdate(updatedChar);
+        newSets.push({
+          id: Date.now().toString() + Math.random().toString(),
+          sourceName: file.name,
+          replies: newQRs
+        });
       } catch (error) {
-        console.error("Failed to parse Quick Replies JSON", error);
-        alert("无效的 JSON 文件");
-        setFileName(null);
+        console.error(`Failed to parse Quick Replies JSON for ${file.name}`, error);
+        alert(`文件 ${file.name} 解析失败`);
       }
+    }
+
+    tData.extensions = { 
+      ...(tData.extensions || {}), 
+      tavern_qr_sets: newSets,
+      quick_replies: newSets.flatMap(s => s.replies),
+      qr_filename: newSets.length > 0 ? newSets[newSets.length-1].sourceName : undefined
     };
-    reader.readAsText(file);
+
+    await saveCharacter(updatedChar);
+    onUpdate(updatedChar);
     
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  const handleDownload = () => {
-    const targetData = character.data.data ? character.data.data : character.data;
-    const qrData = targetData.extensions?.quick_replies;
-    if (!qrData) return;
+  const handleDeleteSet = async (id: string) => {
+    const updatedChar = { ...character };
+    let tData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
+    
+    let newSets = getQRSets().filter(s => s.id !== id);
 
-    const blob = new Blob([JSON.stringify(qrData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = targetData.extensions?.qr_filename || `${character.name}_qr.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (newSets.length === 0) {
+       if (tData.extensions?.quick_replies) {
+          delete tData.extensions.quick_replies;
+       }
+       if (tData.extensions?.tavern_qr_sets) {
+          delete tData.extensions.tavern_qr_sets;
+       }
+       if (tData.extensions?.qr_filename) {
+          delete tData.extensions.qr_filename;
+       }
+    } else {
+       tData.extensions.tavern_qr_sets = newSets;
+       tData.extensions.quick_replies = newSets.flatMap(s => s.replies);
+    }
+    
+    await saveCharacter(updatedChar);
+    onUpdate(updatedChar);
   };
 
-  const displayFileName = (() => {
-    const targetData = character.data.data ? character.data.data : character.data;
-    return fileName || targetData.extensions?.qr_filename || `${character.name}_qr.json`;
-  })();
+  const handleDownloadClick = () => {
+    if (qrSets.length === 0) return;
+    if (qrSets.length === 1) {
+      exportSets([qrSets[0]]);
+    } else {
+      setIsExportModalOpen(true);
+    }
+  };
+
+  const exportSets = async (setsToExport: QRSet[]) => {
+    if (setsToExport.length === 0) return;
+
+    if (setsToExport.length === 1) {
+      const set = setsToExport[0];
+      if (!set.replies || set.replies.length === 0) return;
+      const blob = new Blob([JSON.stringify(set.replies, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      let filename = set.sourceName || `${character.name}_qr.json`;
+      if (!filename.endsWith('.json')) {
+        filename += '.json';
+      }
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      const zip = new JSZip();
+      
+      setsToExport.forEach((set, index) => {
+        if (!set.replies || set.replies.length === 0) return;
+        let filename = set.sourceName || `${character.name}_qr${index > 0 ? `_${index}` : ''}.json`;
+        if (!filename.endsWith('.json')) {
+            filename += '.json';
+        }
+        
+        let finalFilename = filename;
+        let counter = 1;
+        while (zip.file(finalFilename)) {
+            const parts = filename.split('.json');
+            finalFilename = `${parts[0]}(${counter}).json`;
+            counter++;
+        }
+        zip.file(finalFilename, JSON.stringify(set.replies, null, 2));
+      });
+      
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${character.name}_QRs.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
 
   return (
     <div className="mt-8">
       <div className="flex items-center gap-2 mb-4 text-white/80">
         <QrCode className="w-5 h-5" />
-        <h3 className="text-sm font-semibold uppercase tracking-wider">快速回复按钮 (QUICK REPLIES)</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wider">快速回复 (QUICK REPLIES)</h3>
       </div>
 
       <div className="border border-dashed border-white/20 rounded-2xl p-6 bg-white/5 relative overflow-hidden">
@@ -131,47 +238,60 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2 text-green-400">
                 <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                <span className="font-medium text-sm text-white/90">已导入快速回复配置</span>
+                <span className="font-medium text-sm text-white/90">已绑定 {qrSets.length} 个快捷回复集</span>
               </div>
               <button 
                 onClick={async () => {
                   const updatedChar = { ...character };
-                  let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
-                  if (targetData.extensions?.quick_replies) {
-                    delete targetData.extensions.quick_replies;
-                  }
+                  let tData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
+                  if (tData.extensions?.quick_replies) delete tData.extensions.quick_replies;
+                  if (tData.extensions?.tavern_qr_sets) delete tData.extensions.tavern_qr_sets;
                   await saveCharacter(updatedChar);
                   onUpdate(updatedChar);
-                  setFileName(null);
                 }}
                 className="text-white/40 hover:text-red-400 transition"
+                title="清空所有快速回复"
               >
                 <Trash2 className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-white/10 rounded-xl p-4 flex items-center text-sm text-white/80">
-              <span className="truncate">{displayFileName}</span>
+            <div className="flex flex-col gap-2">
+              {qrSets.map((set) => (
+                <div key={set.id} className="bg-white/10 hover:bg-white/15 rounded-xl p-4 flex items-center justify-between transition group">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-white/90 truncate">{set.sourceName}</div>
+                    <div className="text-white/50 text-xs mt-1">{set.replies.length} 个回复项</div>
+                  </div>
+                  <button 
+                    onClick={() => handleDeleteSet(set.id)}
+                    className="opacity-0 group-hover:opacity-100 p-2 text-white/40 hover:text-red-400 transition shrink-0"
+                    title="删除此配置"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 mt-2">
               <button 
-                onClick={handleDownload}
+                onClick={handleDownloadClick}
                 className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center justify-center gap-2"
               >
-                <Download className="w-4 h-4" /> 下载 
+                <Download className="w-4 h-4" /> 导出快速回复 
               </button>
               <button 
                 onClick={() => setIsSelectModalOpen(true)}
                 className="flex-1 py-3 bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 rounded-xl font-medium transition flex items-center justify-center gap-2"
               >
-                <Library className="w-4 h-4" /> 替换 (库)
+                <Library className="w-4 h-4" /> 添加 (库)
               </button>
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center justify-center gap-2"
               >
-                <Upload className="w-4 h-4" /> 替换 (本地)
+                <Upload className="w-4 h-4" /> 添加 (本地)
               </button>
             </div>
           </div>
@@ -180,7 +300,7 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 text-white/40">
               <Upload className="w-8 h-8" />
             </div>
-            <p className="text-white/60 mb-6 font-medium text-sm">未导入快速回复配置</p>
+            <p className="text-white/60 mb-6 font-medium text-sm">未绑定任何快速回复配置</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <button 
                 onClick={() => fileInputRef.current?.click()}
@@ -204,11 +324,19 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
           onSelect={handleLibrarySelection}
         />
 
+        <ExportQRModal
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          qrSets={qrSets}
+          onExport={exportSets}
+        />
+
         <input 
           type="file" 
           ref={fileInputRef} 
           className="hidden" 
           accept=".json" 
+          multiple
           onChange={handleFileUpload}
         />
       </div>

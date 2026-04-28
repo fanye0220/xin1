@@ -49,9 +49,14 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [isFoldersExpanded, setIsFoldersExpanded] = useState(() => localStorage.getItem('tavern_foldersExpanded') !== 'false');
   const lastScrollY = useRef(0);
   const filterRef = useRef<HTMLDivElement>(null);
   const sortRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('tavern_foldersExpanded', isFoldersExpanded.toString());
+  }, [isFoldersExpanded]);
 
   useEffect(() => {
     localStorage.setItem('tavern_pageSize', pageSize.toString());

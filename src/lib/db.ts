@@ -22,6 +22,14 @@ export interface CharacterCard {
   hasBlobsSeparated?: boolean;
 }
 
+export interface ChatLog {
+  id: string;
+  characterId: string;
+  name: string;
+  messages: any[];
+  createdAt: number;
+}
+
 interface TavernDB extends DBSchema {
   characters: {
     key: string;
@@ -37,13 +45,18 @@ interface TavernDB extends DBSchema {
     key: string;
     value: { avatarBlob?: Blob; originalFile?: File; avatarHistory?: Blob[] };
   };
+  chats: {
+    key: string;
+    value: ChatLog;
+    indexes: { 'by-character': string; 'by-date': number };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<TavernDB>>;
 
 export function initDB() {
   if (!dbPromise) {
-    dbPromise = openDB<TavernDB>('tavern-manager-v2', 3, {
+    dbPromise = openDB<TavernDB>('tavern-manager-v2', 4, {
       upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion < 1) {
           const store = db.createObjectStore('characters', { keyPath: 'id' });
@@ -58,6 +71,11 @@ export function initDB() {
         }
         if (oldVersion < 3) {
           db.createObjectStore('blobs');
+        }
+        if (oldVersion < 4) {
+          const chatStore = db.createObjectStore('chats', { keyPath: 'id' });
+          chatStore.createIndex('by-character', 'characterId');
+          chatStore.createIndex('by-date', 'createdAt');
         }
       },
     });
@@ -615,4 +633,24 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
   }
   
   return finalGroups;
+}
+
+export async function getChatsForCharacter(characterId: string): Promise<ChatLog[]> {
+  const db = await initDB();
+  return db.getAllFromIndex('chats', 'by-character', characterId);
+}
+
+export async function getAllChats(): Promise<ChatLog[]> {
+  const db = await initDB();
+  return db.getAll('chats');
+}
+
+export async function saveChat(chat: ChatLog): Promise<void> {
+  const db = await initDB();
+  await db.put('chats', chat);
+}
+
+export async function deleteChat(id: string): Promise<void> {
+  const db = await initDB();
+  await db.delete('chats', id);
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Folder as FolderIcon, Plus, MoreVertical, Edit2, Trash2, Home, X, Check, Copy, Trash, ChevronRight, Tag, Settings, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Folder as FolderIcon, Plus, MoreVertical, Edit2, Trash2, Home, X, Check, Copy, Trash, ChevronRight, Tag, Settings, Sparkles, MessageSquare } from 'lucide-react';
 import { Folder, getFolders, saveFolder, deleteFolder } from '../lib/db';
 
 interface Props {
@@ -19,6 +19,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
   const [isCreating, setIsCreating] = useState(false);
   const [creatingParentId, setCreatingParentId] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [foldersSectionExpanded, setFoldersSectionExpanded] = useState(() => localStorage.getItem('tavern_sidebarFoldersExpanded') !== 'false');
 
   const loadFolders = async () => {
     const data = await getFolders();
@@ -280,6 +281,16 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
             </button>
             <button
               onClick={() => {
+                onSelectFolder('chatviewer');
+                onClose();
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition ${selectedFolderId === 'chatviewer' ? 'bg-cyan-500/20 text-cyan-400 font-medium' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span>查看聊天记录</span>
+            </button>
+            <button
+              onClick={() => {
                 onSelectFolder('trash');
                 onClose();
               }}
@@ -303,13 +314,28 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
 
         {/* Folders Section */}
         <div>
-          <div className="flex items-center justify-between px-4 mb-2">
-            <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider">文件夹</h2>
+          <div 
+            className="flex items-center justify-between px-4 mb-2 cursor-pointer group"
+            onClick={() => {
+              const current = localStorage.getItem('tavern_sidebarFoldersExpanded') !== 'false';
+              localStorage.setItem('tavern_sidebarFoldersExpanded', (!current).toString());
+              // We need to trigger a re-render. Since we are inside the component we should use state.
+              setFoldersSectionExpanded(!current);
+            }}
+          >
+            <div className="flex items-center gap-1 group-hover:text-white transition text-white/40">
+              <div className={`transition-transform ${foldersSectionExpanded ? 'rotate-90' : ''}`}>
+                <ChevronRight className="w-4 h-4" />
+              </div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider">文件夹</h2>
+            </div>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setCreatingParentId(null);
                 setIsCreating(true);
                 setEditName('');
+                setFoldersSectionExpanded(true);
               }}
               className="p-1 text-white/40 hover:text-white hover:bg-white/10 rounded transition"
               title="新建根文件夹"
@@ -318,9 +344,18 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
             </button>
           </div>
 
-          <div className="space-y-1">
-            {renderFolderTree()}
-          </div>
+          <AnimatePresence>
+            {foldersSectionExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden space-y-1"
+              >
+                {renderFolderTree()}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </motion.div>

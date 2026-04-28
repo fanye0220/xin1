@@ -6,6 +6,7 @@ import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
 import { AvatarViewer } from './AvatarViewer';
 import { QuickRepliesSection } from './QuickRepliesSection';
+import { CharacterChatsSection } from './CharacterChatsSection';
 import JSZip from 'jszip';
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
 
 export function CharacterDetail({ id, onBack }: Props) {
   const [character, setCharacter] = useState<CharacterCard | null>(null);
-  const [activeTab, setActiveTab] = useState<'profile' | 'greetings' | 'worldbook'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'greetings' | 'worldbook' | 'chats'>('profile');
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showExportAlert, setShowExportAlert] = useState(false);
@@ -595,7 +596,7 @@ export function CharacterDetail({ id, onBack }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-4 gap-2 mb-4 overflow-x-auto hide-scrollbar">
+        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto custom-scrollbar sticky top-16 z-20 bg-black/40 backdrop-blur-md border-b border-t border-white/5">
           {[
             ...(!isStandaloneWorldbook ? [
               { id: 'profile', icon: User, label: isPreset ? '预设条目' : '档案' },
@@ -605,6 +606,9 @@ export function CharacterDetail({ id, onBack }: Props) {
             ] : []),
             ...(!isPreset ? [
               { id: 'worldbook', icon: Book, label: '世界书' },
+            ] : []),
+            ...(!isPreset && !isStandaloneWorldbook ? [
+              { id: 'chats', icon: MessageSquare, label: '聊天记录' },
             ] : []),
           ].map((tab) => (
             <button
@@ -623,7 +627,7 @@ export function CharacterDetail({ id, onBack }: Props) {
         </div>
 
         {/* Content Area - Glassmorphism Card */}
-        <div className="flex-1 px-4 pb-8">
+        <div className="flex-1 px-4 pb-32">
           <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-2xl min-h-[50vh]">
             <AnimatePresence mode="wait">
               {activeTab === 'profile' && (
@@ -870,6 +874,15 @@ export function CharacterDetail({ id, onBack }: Props) {
                   )}
                 </motion.div>
               )}
+
+              {activeTab === 'chats' && character && (
+                <CharacterChatsSection 
+                   characterId={character.id} 
+                   characterName={character.name} 
+                   regexScripts={(character.data?.data?.extensions || character.data?.extensions || {}).regex_scripts || []} 
+                   avatar={avatarUrl}
+                />
+              )}
             </AnimatePresence>
           </div>
         </div>
@@ -941,7 +954,7 @@ function FullScreenTextModal({
           )
         )}
       </header>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar bg-slate-900 flex flex-col">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-slate-900 flex flex-col">
         <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
           {isEditing ? (
             <textarea 

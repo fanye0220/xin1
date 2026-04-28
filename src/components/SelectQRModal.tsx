@@ -1,22 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search } from 'lucide-react';
+import { X, Search, Check } from 'lucide-react';
 import { CharacterCard, getCharacters } from '../lib/db';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (qrChar: CharacterCard) => void;
+  onSelect: (qrChars: CharacterCard[]) => void;
 }
 
 export function SelectQRModal({ isOpen, onClose, onSelect }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isOpen) {
       // Get all characters to find QRs
       getCharacters(1, 9999).then(res => setCharacters(res.characters));
+      setSelectedIds(new Set());
     }
   }, [isOpen]);
 
@@ -33,6 +35,21 @@ export function SelectQRModal({ isOpen, onClose, onSelect }: Props) {
     const lowerQuery = searchQuery.toLowerCase();
     return validQRs.filter(c => c.name.toLowerCase().includes(lowerQuery));
   }, [validQRs, searchQuery]);
+
+  const toggleSelection = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const handleConfirm = () => {
+    const selectedChars = validQRs.filter(c => selectedIds.has(c.id));
+    onSelect(selectedChars);
+  };
 
   if (!isOpen) return null;
 
@@ -64,29 +81,51 @@ export function SelectQRModal({ isOpen, onClose, onSelect }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-white/10">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 custom-scrollbar overscroll-contain touch-pan-y">
           {filteredQRs.length === 0 ? (
              <div className="flex flex-col items-center justify-center h-40 text-center">
                <p className="text-white/50 text-sm">暂无匹配的快速回复</p>
              </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {filteredQRs.map(char => (
-                <button
-                  key={char.id}
-                  onClick={() => onSelect(char)}
-                  className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition text-left"
-                >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-white/10">
-                    <span className="text-xl">💬</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-white text-sm truncate">{char.name}</h4>
-                  </div>
-                </button>
-              ))}
+              {filteredQRs.map(char => {
+                const isSelected = selectedIds.has(char.id);
+                return (
+                  <button
+                    key={char.id}
+                    onClick={() => toggleSelection(char.id)}
+                    className={`flex items-center gap-3 p-2 rounded-xl transition text-left ${isSelected ? 'bg-purple-500/20 shadow-inner' : 'hover:bg-white/5'}`}
+                  >
+                    <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border transition ${isSelected ? 'bg-purple-500 border-purple-500 text-white' : 'border-white/20'}`}>
+                      {isSelected && <Check className="w-3 h-3" />}
+                    </div>
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-white/10 text-white/80">
+                      <span className="text-xl">💬</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-medium text-white text-sm truncate">{char.name}</h4>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
+        </div>
+
+        <div className="p-4 border-t border-white/10 shrink-0 flex gap-3">
+           <button 
+             onClick={onClose}
+             className="flex-1 py-2.5 rounded-xl font-medium text-white/70 hover:text-white bg-white/5 hover:bg-white/10 transition"
+           >
+             取消
+           </button>
+           <button 
+             onClick={handleConfirm}
+             disabled={selectedIds.size === 0}
+             className="flex-1 py-2.5 rounded-xl font-medium text-white bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
+           >
+             确认 ({selectedIds.size})
+           </button>
         </div>
       </motion.div>
     </div>
