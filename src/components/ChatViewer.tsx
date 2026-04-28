@@ -301,7 +301,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 max-w-5xl mx-auto w-full relative overscroll-contain touch-pan-y"
+      <div className="flex-1 overflow-y-auto p-6 max-w-5xl mx-auto w-full relative"
            onDragEnter={handleDrag}
            onDragLeave={handleDrag}
            onDragOver={handleDrag}

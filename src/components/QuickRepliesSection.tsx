@@ -3,7 +3,6 @@ import { Upload, FileJson, QrCode, Trash2, Download, Library } from 'lucide-reac
 import { CharacterCard, saveCharacter } from '../lib/db';
 import { SelectQRModal } from './SelectQRModal';
 import { ExportQRModal } from './ExportQRModal';
-import JSZip from 'jszip';
 
 interface Props {
   character: CharacterCard;
@@ -194,6 +193,7 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } else {
+      const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
       
       setsToExport.forEach((set, index) => {

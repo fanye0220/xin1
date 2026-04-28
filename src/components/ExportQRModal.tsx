@@ -50,7 +50,7 @@ export function ExportQRModal({ isOpen, onClose, qrSets, onExport }: Props) {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="relative bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl max-h-[90vh]"
+        className="relative bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl"
       >
         <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
           <h3 className="text-lg font-semibold text-white">选择要导出的快速回复集</h3>
@@ -59,7 +59,7 @@ export function ExportQRModal({ isOpen, onClose, qrSets, onExport }: Props) {
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto custom-scrollbar flex-1 min-h-0 overscroll-contain touch-pan-y">
+        <div className="p-4 max-h-[60vh] overflow-y-auto custom-scrollbar flex-1">
           {qrSets.length === 0 ? (
              <div className="text-center py-8 text-white/50">没找到可导出的项</div>
           ) : (

@@ -87,7 +87,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
            </button>
         </div>
 
-        <div className="space-y-6 mt-6 pr-2 max-h-[65vh] overflow-y-auto custom-scrollbar overscroll-contain touch-pan-y">
+        <div className="space-y-6 mt-6 pr-2">
           {selectedChat.messages.map((msg, i) => {
              const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
              return (

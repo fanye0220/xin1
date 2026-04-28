@@ -432,7 +432,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
 
             {importErrors.length > 0 ? (
               <div className="py-4 flex flex-col max-h-[60vh]">
-                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y">
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex-1 overflow-y-auto">
                   <div className="flex items-center gap-2 text-red-400 mb-3 sticky top-0 bg-slate-900/90 backdrop-blur-sm py-1">
                     <AlertCircle className="w-5 h-5" />
                     <h3 className="font-bold">部分文件导入失败 ({importErrors.length})</h3>
