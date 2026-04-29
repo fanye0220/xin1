@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Upload, FileJson, QrCode, Trash2, Download, Library } from 'lucide-react';
-import { CharacterCard, saveCharacter } from '../lib/db';
+import { CharacterCard, saveCharacter, saveCharacters, getOrCreateNestedFolder } from '../lib/db';
 import { SelectQRModal } from './SelectQRModal';
 import { ExportQRModal } from './ExportQRModal';
 
@@ -94,6 +94,10 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
     updatedChar.data = JSON.parse(JSON.stringify(updatedChar.data || {}));
     let tData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
     let newSets = [...getQRSets()];
+    const charsToSave: CharacterCard[] = [];
+
+    // Get the folder ID for Quick Replies implicitly
+    const targetFolderId = await getOrCreateNestedFolder(['快速回复']);
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -127,6 +131,19 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
           replies: newQRs,
           metadata: metadata
         });
+
+        // Also save this to the library!
+        const charName = metadata?.name || file.name.replace(/\.[^/.]+$/, "");
+        charsToSave.push({
+          id: crypto.randomUUID(),
+          name: charName,
+          avatarUrlFallback: `https://api.dicebear.com/7.x/bottts/svg?seed=${charName}`,
+          data: json,
+          createdAt: Date.now(),
+          folderId: targetFolderId,
+          avatarHistory: []
+        });
+
       } catch (error) {
         console.error(`Failed to parse Quick Replies JSON for ${file.name}`, error);
         alert(`文件 ${file.name} 解析失败`);
@@ -139,6 +156,14 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       quick_replies: newSets.flatMap(s => s.replies),
       qr_filename: newSets.length > 0 ? newSets[newSets.length-1].sourceName : undefined
     };
+
+    if (charsToSave.length > 0) {
+      await saveCharacters(charsToSave);
+      // Give some visual feedback that QRs were also saved to the app library
+      try {
+          alert(`已成功绑定，并同步存入“快速回复”分类，一共 ${charsToSave.length} 个配置！`);
+      } catch (e) {}
+    }
 
     await saveCharacter(updatedChar);
     onUpdate(updatedChar);

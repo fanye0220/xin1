@@ -85,10 +85,11 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           const isTheme = data.blur_strength !== undefined || data.main_text_color !== undefined || data.chat_display !== undefined;
           const isAIPreset = data.temperature !== undefined || data.prompts !== undefined || data.top_p !== undefined;
           const isWorldbook = data.entries !== undefined || (data.data && data.data.entries !== undefined);
-          const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined;
-          const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !!(data.name || data.data?.name);
+          const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined || data.qrList !== undefined;
+          const isScript = data.type === 'script' && data.content !== undefined && data.name !== undefined;
+          const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !isScript && !!(data.name || data.data?.name);
           
-          if (isTheme || isAIPreset || isWorldbook || isQR || isCharacter) {
+          if (isTheme || isAIPreset || isWorldbook || isQR || isScript || isCharacter) {
             isMain = true;
           } else {
             errorMsg = "非酒馆卡或预设格式：无法识别的数据结构。";
@@ -225,8 +226,9 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         const isTheme = data.blur_strength !== undefined || data.main_text_color !== undefined || data.chat_display !== undefined;
         const isAIPreset = data.temperature !== undefined || data.prompts !== undefined || data.top_p !== undefined;
         const isWorldbook = data.entries !== undefined || (data.data && data.data.entries !== undefined);
-        const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined;
-        const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !!(data.name || data.data?.name);
+        const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined || data.qrList !== undefined;
+        const isScript = data.type === 'script' && data.content !== undefined && data.name !== undefined;
+        const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !isScript && !!(data.name || data.data?.name);
         
         let pathPrefix: string[] = [];
 
@@ -241,7 +243,10 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           charName = data.name || data.data?.name || file.name.replace(/\.[^/.]+$/, "");
         } else if (isQR) {
           pathPrefix = ['快速回复'];
-          charName = file.name.replace(/\.[^/.]+$/, "");
+          charName = data.name || file.name.replace(/\.[^/.]+$/, "");
+        } else if (isScript) {
+          pathPrefix = ['工具区'];
+          charName = data.name || file.name.replace(/\.[^/.]+$/, "");
         } else if (isCharacter) {
           charName = data.name || data.data?.name || 'Unknown Character';
         }

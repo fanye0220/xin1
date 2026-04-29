@@ -44,7 +44,8 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
         const tags = c.data?.tags || c.data?.data?.tags || [];
         const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
         const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
-        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR;
+        const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
+        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript;
       });
 
       if (allChars.length === 0) {
@@ -95,7 +96,8 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
         const tags = c.data?.tags || c.data?.data?.tags || [];
         const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
         const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
-        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR;
+        const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
+        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript;
       });
 
       if (allChars.length === 0) {

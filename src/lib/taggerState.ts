@@ -67,10 +67,11 @@ class TaggerState {
       const isStandaloneWorldbook = rawData.entries !== undefined;
       const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
       const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
+      const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
       const tags = data.tags || [];
       const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
       
-      if (isPreset || isBeautify || isStandaloneWorldbook || isTheme || isQR) return;
+      if (isPreset || isBeautify || isStandaloneWorldbook || isTheme || isQR || isScript) return;
       
       if (!tags || tags.length === 0) {
         this.untaggedCharacters.push(c);

@@ -33,7 +33,8 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
       const tags = c.data?.tags || c.data?.data?.tags || [];
       const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
       const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
-      return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR;
+      const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
+      return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript;
     });
 
     setDuplicateGroups(filteredGroups);
@@ -59,6 +60,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
     if (!targetData.extensions) targetData.extensions = {};
 
     let mergedQRs = [...(targetData.extensions.quick_replies || [])];
+    let mergedQRSets = [...(targetData.extensions.tavern_qr_sets || [])];
     let mergedSource = targetData.extensions.source || targetData.source || '';
     let mergedTags = [...(targetData.tags || [])];
     let mergedQrFilename = targetData.extensions.qr_filename || '';
@@ -72,6 +74,13 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
       const otherTarget = other.data.data ? other.data.data : other.data;
       
       // Merge QRs
+      const otherQRSets = otherTarget.extensions?.tavern_qr_sets || [];
+      for (const qrSet of otherQRSets) {
+        if (!mergedQRSets.some(s => s.id === qrSet.id || s.sourceName === qrSet.sourceName)) {
+          mergedQRSets.push(qrSet);
+        }
+      }
+
       const otherQRs = otherTarget.extensions?.quick_replies || [];
       for (const qr of otherQRs) {
         if (!mergedQRs.some(q => q.message === qr.message)) {
@@ -116,6 +125,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
     }
 
     targetData.extensions.quick_replies = mergedQRs;
+    targetData.extensions.tavern_qr_sets = mergedQRSets;
     targetData.extensions.source = mergedSource;
     targetData.tags = mergedTags;
     if (mergedQrFilename) {
@@ -181,14 +191,9 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
         const kWorldbook = JSON.stringify(kData.character_book?.entries || kData.extensions?.character_book?.entries || []);
         const sameWorldbook = cWorldbook === kWorldbook;
         
-        const hasSpecificQR = (cData.extensions?.quick_replies?.length || 0) > 0;
-        const cQR = JSON.stringify(cData.extensions?.quick_replies || []);
-        const kQR = JSON.stringify(kData.extensions?.quick_replies || []);
-        const sameQR = cQR === kQR;
-        
         const isExactlySameData = sameName && sameDesc && sameFirst && samePersonality && sameScenario && sameMesExample;
         
-        if (isExactlySameData && sameWorldbook && (!hasSpecificQR || sameQR)) {
+        if (isExactlySameData && sameWorldbook) {
            newSet.add(c.id);
         }
       }

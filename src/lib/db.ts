@@ -150,6 +150,31 @@ export async function getFolders(): Promise<Folder[]> {
   return db.getAllFromIndex('folders', 'by-date');
 }
 
+export async function getOrCreateNestedFolder(pathParts: string[]): Promise<string | undefined> {
+  if (pathParts.length === 0) return undefined;
+  let currentParentId: string | undefined = undefined;
+  
+  const folders = await getFolders();
+  
+  for (const part of pathParts) {
+    const existing = folders.find(f => f.name === part && f.parentId === currentParentId);
+    if (existing) {
+      currentParentId = existing.id;
+    } else {
+      const newFolder: Folder = {
+        id: crypto.randomUUID(),
+        name: part,
+        createdAt: Date.now(),
+        parentId: currentParentId
+      };
+      await saveFolder(newFolder);
+      folders.push(newFolder);
+      currentParentId = newFolder.id;
+    }
+  }
+  return currentParentId;
+}
+
 export async function getFolderPreviews(folderIds: string[]): Promise<Record<string, string[]>> {
   if (folderIds.length === 0) return {};
   const db = await initDB();
