@@ -251,7 +251,7 @@ export function CharacterDetail({ id, onBack }: Props) {
       
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header */}
-        <header className="sticky top-0 p-4 flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
+        <header className="sticky top-0 pt-10 pb-4 px-4 flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
           <button onClick={handleBack} className="p-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />
           </button>
@@ -597,7 +597,7 @@ export function CharacterDetail({ id, onBack }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-16 z-20">
+        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-[80px] z-20 bg-black/40 backdrop-blur-md border-b border-white/5">
           {[
             ...(!isStandaloneWorldbook ? [
               { id: 'profile', icon: User, label: isPreset ? '预设条目' : '档案' },

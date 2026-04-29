@@ -101,16 +101,11 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
     }
     
     // Inject current character data into the new PNG so it becomes a valid Tavern card
-    let finalFile: File;
-    if (file instanceof File) {
-      finalFile = file;
-    } else {
-      finalFile = new File([file], file.name || 'avatar.png', { type: file.type });
-    }
+    let finalFile = file;
     
     try {
       let pngBlob: Blob = file;
-      if (file.type !== 'image/png' && !(file.name && file.name.endsWith('.png'))) {
+      if (file.type !== 'image/png') {
         pngBlob = await convertToPng(file);
       }
       
@@ -219,7 +214,7 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[60] bg-black flex flex-col"
     >
-      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
+      <div className="absolute top-0 left-0 right-0 pt-10 pb-4 px-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
         <button onClick={onClose} className="p-2 rounded-full bg-black/40 text-white hover:bg-black/60 transition">
           <X className="w-6 h-6" />
         </button>
