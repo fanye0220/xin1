@@ -804,7 +804,7 @@ export function CharacterDetail({ id, onBack }: Props) {
                       <div className="flex gap-3 mt-4">
                         <button 
                           onClick={() => {
-                            const newBook = { name: '新世界书', description: '', entries: [] };
+                            const newBook = { name: '新世界书', description: '', entries: {} };
                             const updatedChar = { ...character };
                             let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
                             
@@ -831,7 +831,7 @@ export function CharacterDetail({ id, onBack }: Props) {
                                 const json = JSON.parse(text);
                                 
                                 // Handle both array format and object format (like the provided example)
-                                let entries: any = [];
+                                let entries: any[] = [];
                                 let isV3 = false;
                                 if (Array.isArray(json.entries)) {
                                   entries = json.entries;
@@ -845,14 +845,21 @@ export function CharacterDetail({ id, onBack }: Props) {
                                   isV3 = true;
                                 }
 
+                                const entriesObj: Record<string, any> = {};
+                                entries.forEach((e: any, i: number) => {
+                                  // We should preserve the 'disable' toggle EXACTLY if it exists, but also guarantee boolean
+                                  const entryUid = e.uid !== undefined ? e.uid : i;
+                                  entriesObj[String(entryUid)] = { ...e, uid: entryUid };
+                                });
+
                                 let newBook;
                                 if (isStandaloneWorldbook && isV3) {
-                                  newBook = { ...json, data: { ...json.data, entries: entries } };
+                                  newBook = { ...json, data: { ...json.data, entries: entriesObj } };
                                 } else {
                                   newBook = { 
                                     name: json.name || (json.data && json.data.name) || file.name.replace('.json', ''), 
                                     description: json.description || (json.data && json.data.description) || '', 
-                                    entries: entries 
+                                    entries: entriesObj 
                                   };
                                 }
 
@@ -1120,11 +1127,18 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
 
   // Helper to save entries in the format Tavern expects
   const saveEntries = (newEntriesArray: any[]) => {
+    // V2 and V3 format internally in Tavern expects entries to be an Object with keys as indexes/UIDs
+    const entriesObj: Record<string, any> = {};
+    newEntriesArray.forEach((e, i) => {
+      const entryUid = e.uid !== undefined ? e.uid : i;
+      entriesObj[String(entryUid)] = { ...e, uid: entryUid };
+    });
+
     if (book.data && book.data.entries) {
       // V3 format
-      onUpdate({ ...book, data: { ...book.data, entries: newEntriesArray } });
+      onUpdate({ ...book, data: { ...book.data, entries: entriesObj } });
     } else {
-      onUpdate({ ...book, entries: newEntriesArray });
+      onUpdate({ ...book, entries: entriesObj });
     }
   };
 
