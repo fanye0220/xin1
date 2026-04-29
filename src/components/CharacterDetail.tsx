@@ -776,12 +776,6 @@ export function CharacterDetail({ id, onBack }: Props) {
                           let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
                           targetData.character_book = newBook;
                           targetData.extensions = { ...(targetData.extensions || {}), character_book: newBook };
-                          if (newBook && newBook.name) {
-                            if (!targetData.extensions.world_info) targetData.extensions.world_info = [];
-                            if (!targetData.extensions.world_info.includes(newBook.name)) {
-                              targetData.extensions.world_info.push(newBook.name);
-                            }
-                          }
                         }
                         
                         saveCharacter(updatedChar).then(() => setCharacter(updatedChar));
@@ -816,10 +810,6 @@ export function CharacterDetail({ id, onBack }: Props) {
                             
                             targetData.character_book = newBook;
                             targetData.extensions = { ...(targetData.extensions || {}), character_book: newBook };
-                            if (!targetData.extensions.world_info) targetData.extensions.world_info = [];
-                            if (!targetData.extensions.world_info.includes(newBook.name)) {
-                              targetData.extensions.world_info.push(newBook.name);
-                            }
                             
                             saveCharacter(updatedChar).then(() => setCharacter(updatedChar));
                           }}
@@ -873,12 +863,6 @@ export function CharacterDetail({ id, onBack }: Props) {
                                 targetData.character_book = newBook;
                                 if (!targetData.extensions) targetData.extensions = {};
                                 targetData.extensions.character_book = newBook;
-                                if (newBook && newBook.name) {
-                                  if (!targetData.extensions.world_info) targetData.extensions.world_info = [];
-                                  if (!targetData.extensions.world_info.includes(newBook.name)) {
-                                    targetData.extensions.world_info.push(newBook.name);
-                                  }
-                                }
                                 
                                 await saveCharacter(updatedChar);
                                 setCharacter(updatedChar);
@@ -1192,9 +1176,9 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
       entry: editForm.content, // Save to 'entry' for V3 compatibility
       order: parseInt(editForm.insertion_order) || 50, // Tavern uses 'order'
       insertion_order: parseInt(editForm.insertion_order) || 50,
-      disable: !editForm.enabled, // Tavern uses 'disable'
-      enabled: editForm.enabled
+      disable: !editForm.enabled // Tavern uses 'disable'
     };
+    delete formattedForm.enabled;
 
     if (editingIndex === -1) {
       newEntries.push(formattedForm);
@@ -1218,11 +1202,12 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
     const entry = newEntries[index];
     const currentEnabled = entry.disable !== undefined ? !entry.disable : entry.enabled !== false;
     const newEnabled = !currentEnabled;
-    newEntries[index] = { 
+    const updatedEntry = { 
       ...entry, 
-      enabled: newEnabled,
       disable: !newEnabled
     };
+    delete updatedEntry.enabled;
+    newEntries[index] = updatedEntry;
     saveEntries(newEntries);
   };
 
