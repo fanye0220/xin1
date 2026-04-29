@@ -35,22 +35,16 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
       const response = await getCharacters(1, 10000, 'all', '', [], 'newest_import', false);
       let allChars = response.characters;
       
-      // 过滤掉预设、美化卡、二维码和独立世界书
+      // 过滤掉预设、美化卡和独立世界书
       allChars = allChars.filter(c => {
         const rawData = c.data;
-        const data = rawData?.data || rawData;
         const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
         const isStandaloneWorldbook = rawData.entries !== undefined;
         const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
-        const tags = data?.tags || [];
-        const isNonCharacter = tags.some((t: string) => 
-          t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || 
-          t.includes('QR') || t.includes('二维码') || t.includes('世界书') || t.includes('背景')
-        );
-        const name = (data.name || '').toLowerCase();
-        const isNonCharByName = name.includes('预设') || name.includes('主题') || name.includes('二维码') || name.includes('worldbook');
-
-        return !isPreset && !isNonCharacter && !isStandaloneWorldbook && !isTheme && !isNonCharByName;
+        const tags = c.data?.tags || c.data?.data?.tags || [];
+        const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
+        const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
+        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR;
       });
 
       if (allChars.length === 0) {
@@ -92,22 +86,16 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
       const response = await getCharacters(1, 10000, 'all', '', [], 'newest_import', false);
       let allChars = response.characters;
 
-      // 过滤掉预设、美化卡、二维码和独立世界书
+      // 过滤掉预设、美化卡和独立世界书
       allChars = allChars.filter(c => {
         const rawData = c.data;
-        const data = rawData?.data || rawData;
         const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
         const isStandaloneWorldbook = rawData.entries !== undefined;
         const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
-        const tags = data?.tags || [];
-        const isNonCharacter = tags.some((t: string) => 
-          t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || 
-          t.includes('QR') || t.includes('二维码') || t.includes('世界书') || t.includes('背景')
-        );
-        const name = (data.name || '').toLowerCase();
-        const isNonCharByName = name.includes('预设') || name.includes('主题') || name.includes('二维码') || name.includes('worldbook');
-
-        return !isPreset && !isNonCharacter && !isStandaloneWorldbook && !isTheme && !isNonCharByName;
+        const tags = c.data?.tags || c.data?.data?.tags || [];
+        const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
+        const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
+        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR;
       });
 
       if (allChars.length === 0) {
@@ -208,7 +196,7 @@ ${candidateInfo}
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
-      <header className="sticky top-0 px-4 pb-4 pt-10 sm:px-6 sm:pb-6 sm:pt-10 flex items-center gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 px-4 pb-4 pt-7 sm:px-6 sm:pb-6 sm:pt-7 flex items-center gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
         <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
           <ArrowLeft className="w-6 h-6" />
         </button>

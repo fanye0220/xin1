@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload, X } from 'lucide-react';
+import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
@@ -9,9 +9,6 @@ import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
 import { CharacterMemosSection } from './CharacterMemosSection';
 import JSZip from 'jszip';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 
 interface Props {
   id: string;
@@ -37,8 +34,6 @@ export function CharacterDetail({ id, onBack }: Props) {
   const [tempCreator, setTempCreator] = useState<string>('');
   const [isEditingVersion, setIsEditingVersion] = useState(false);
   const [tempVersion, setTempVersion] = useState<string>('');
-  const [isEditingMemo, setIsEditingMemo] = useState(false);
-  const [memoDraft, setMemoDraft] = useState('');
 
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const savePromiseRef = useRef<Promise<void> | null>(null);
@@ -133,20 +128,6 @@ export function CharacterDetail({ id, onBack }: Props) {
     savePromiseRef.current = promise;
     await promise;
     setCharacter(updatedChar);
-  };
-
-  const handleSaveMemo = async () => {
-    if (!character) return;
-    const updatedChar = { ...character };
-    if (!updatedChar.data) updatedChar.data = {};
-    if (!updatedChar.data.data) updatedChar.data.data = {};
-    updatedChar.data.data.creator_notes = memoDraft;
-    updatedChar.data.creator_notes = memoDraft; // Sync root
-    const promise = saveCharacter(updatedChar);
-    savePromiseRef.current = promise;
-    await promise;
-    setCharacter(updatedChar);
-    setIsEditingMemo(false);
   };
 
   const updateField = async (field: string, value: any) => {
@@ -270,7 +251,7 @@ export function CharacterDetail({ id, onBack }: Props) {
       
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header */}
-        <header className="sticky top-0 pt-7 pb-4 px-4 flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
+        <header className="sticky top-0 p-4 pt-7 sm:pt-7 flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
           <button onClick={handleBack} className="p-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />
           </button>
@@ -616,7 +597,7 @@ export function CharacterDetail({ id, onBack }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-[68px] z-20 bg-black/40 backdrop-blur-md border-b border-white/5">
+        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-16 z-20">
           {[
             ...(!isStandaloneWorldbook ? [
               { id: 'profile', icon: User, label: isPreset ? '预设条目' : '档案' },
@@ -855,18 +836,18 @@ export function CharacterDetail({ id, onBack }: Props) {
                                 if (Array.isArray(json.entries)) {
                                   entries = json.entries;
                                 } else if (json.entries && typeof json.entries === 'object') {
-                                  entries = json.entries; // Keep as object!
+                                  entries = Array.isArray(json.entries) ? json.entries : (json.entries ? Object.values(json.entries) : []);
                                 } else if (Array.isArray(json)) {
                                   entries = json;
                                 } else if (json.data && json.data.entries) {
                                   // Handle Tavern V3 Worldbook format
-                                  entries = json.data.entries;
+                                  entries = Array.isArray(json.data.entries) ? json.data.entries : Object.values(json.data.entries);
                                   isV3 = true;
                                 }
 
                                 let newBook;
                                 if (isV3) {
-                                  newBook = json; // Keep the whole V3 structure
+                                  newBook = { ...json, data: { ...json.data, entries: entries } };
                                 } else {
                                   newBook = { 
                                     name: json.name || file.name.replace('.json', ''), 
@@ -908,48 +889,7 @@ export function CharacterDetail({ id, onBack }: Props) {
               )}
 
               {activeTab === 'memos' && character && (
-                <motion.div
-                  key="memos"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className="space-y-6"
-                >
-                  <header className="flex items-center justify-between mb-4">
-                    <h3 className="text-white/40 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                      <StickyNote className="w-3.5 h-3.5" />
-                      角色备注 / 备忘录
-                    </h3>
-                  </header>
-                  <div 
-                    onClick={() => {
-                      setMemoDraft(character.data?.data?.creator_notes || character.data?.creator_notes || '');
-                      setIsEditingMemo(true);
-                    }}
-                    className="bg-black/20 rounded-2xl p-5 border border-white/5 min-h-[160px] cursor-pointer hover:bg-black/30 transition group flex flex-col"
-                  >
-                    {character.data?.data?.creator_notes || character.data?.creator_notes ? (
-                      <div className="prose prose-invert prose-sm max-w-none text-white/70">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                          {character.data?.data?.creator_notes || character.data?.creator_notes}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex flex-col items-center justify-center py-6 text-white/20">
-                        <Plus className="w-8 h-8 mb-2 opacity-30 transition-transform group-hover:scale-110" />
-                        <p className="text-sm">点击开始编写角色备忘录...</p>
-                      </div>
-                    )}
-                    <div className="mt-4 pt-4 border-t border-white/5 flex justify-end">
-                      <span className="text-[10px] text-white/20 font-bold uppercase tracking-widest flex items-center gap-1 group-hover:text-white/40 transition">
-                        <Edit2 className="w-3 h-3" /> 点击进入全屏编辑
-                      </span>
-                    </div>
-                  </div>
-                  <div className="pt-6">
-                    <CharacterMemosSection characterId={character.id} />
-                  </div>
-                </motion.div>
+                <CharacterMemosSection characterId={character.id} />
               )}
             </AnimatePresence>
           </div>
@@ -969,54 +909,6 @@ export function CharacterDetail({ id, onBack }: Props) {
               }
             }}
           />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isEditingMemo && (
-          <motion.div
-            initial={{ opacity: 0, y: 100 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
-            className="fixed inset-0 z-[100] bg-slate-950 flex flex-col overflow-hidden"
-          >
-            <div className="flex-none pt-7 pb-4 px-4 border-b border-white/10 flex items-center justify-between bg-black/40 backdrop-blur-xl">
-              <button 
-                onClick={() => setIsEditingMemo(false)}
-                className="p-2 -ml-2 rounded-full hover:bg-white/10 transition text-white/60"
-              >
-                <XIcon className="w-6 h-6" />
-              </button>
-              <h2 className="text-white font-medium">编辑备忘录</h2>
-              <button 
-                onClick={handleSaveMemo}
-                className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-purple-900/40 active:scale-95 transition-transform"
-              >
-                完成
-              </button>
-            </div>
-            
-            <div className="flex-1 p-4 sm:p-8 overflow-hidden flex flex-col">
-              <textarea
-                autoFocus
-                value={memoDraft}
-                onChange={(e) => setMemoDraft(e.target.value)}
-                className="flex-1 w-full bg-transparent border-none text-white/90 text-lg sm:text-xl focus:ring-0 resize-none p-0 leading-relaxed placeholder:text-white/10"
-                placeholder="在这里输入角色设定、创作思路、剧情大纲或任何备忘信息..."
-              />
-            </div>
-            
-            <div className="flex-none p-4 pb-8 border-t border-white/5 bg-black/20">
-              <div className="flex items-center justify-between gap-4 max-w-4xl mx-auto w-full">
-                <span className="text-[10px] text-white/30 uppercase tracking-widest font-bold">
-                  支持 Markdown 格式 · 写完点右上角完成
-                </span>
-                <span className="text-[10px] text-white/20">
-                  {memoDraft.length} 字符
-                </span>
-              </div>
-            </div>
-          </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
@@ -1053,7 +945,7 @@ function FullScreenTextModal({
       exit={{ opacity: 0, y: 50 }}
       className="fixed inset-0 z-[100] bg-slate-900 flex flex-col"
     >
-      <header className="sticky top-0 p-4 flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 p-4 pt-7 sm:pt-7 flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border-b border-white/10 z-20">
         <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition">
           <ArrowLeft className="w-6 h-6" />
         </button>
@@ -1226,22 +1118,13 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
     entries = Array.isArray(book.data.entries) ? book.data.entries : Object.values(book.data.entries);
   }
 
-  // Helper to save entries in the format Tavern expects (object with string indices)
+  // Helper to save entries in the format Tavern expects
   const saveEntries = (newEntriesArray: any[]) => {
     if (book.data && book.data.entries) {
       // V3 format
       onUpdate({ ...book, data: { ...book.data, entries: newEntriesArray } });
     } else {
-      const isOriginallyObject = !Array.isArray(book.entries);
-      if (isOriginallyObject) {
-        const entriesObj: Record<string, any> = {};
-        newEntriesArray.forEach((entry, idx) => {
-          entriesObj[String(idx)] = { ...entry, uid: entry.uid !== undefined ? entry.uid : idx };
-        });
-        onUpdate({ ...book, entries: entriesObj });
-      } else {
-        onUpdate({ ...book, entries: newEntriesArray });
-      }
+      onUpdate({ ...book, entries: newEntriesArray });
     }
   };
 
@@ -1321,78 +1204,89 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
     saveEntries(newEntries);
   };
 
-  if (editingIndex !== null) {
+  const renderEditForm = () => {
+    if (editingIndex === null) return null;
     return (
-      <div className="space-y-4 bg-white/5 p-4 rounded-xl border border-white/10">
-        <div className="flex justify-between items-center mb-2">
-          <h3 className="text-lg font-semibold">{editingIndex === -1 ? '新增世界书条目' : '编辑世界书条目'}</h3>
-          <button onClick={() => setEditingIndex(null)} className="p-1 hover:bg-white/10 rounded-full">
-            <XIcon className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div>
-          <label className="block text-xs text-white/60 mb-1">标题 / 备注 (Comment)</label>
-          <input 
-            type="text" 
-            value={editForm.comment || editForm.name || ''} 
-            onChange={e => setEditForm({...editForm, comment: e.target.value})}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
-            placeholder="例如: 角色背景、设定1"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs text-white/60 mb-1">关键词 (用逗号分隔)</label>
-          <input 
-            type="text" 
-            value={editForm.keys} 
-            onChange={e => setEditForm({...editForm, keys: e.target.value})}
-            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
-            placeholder="例如: 酒馆, 老板, 饮料"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs text-white/60 mb-1">内容</label>
-          <textarea 
-            value={editForm.content} 
-            onChange={e => setEditForm({...editForm, content: e.target.value})}
-            className="w-full h-32 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500 resize-none"
-            placeholder="条目内容..."
-          />
-        </div>
-
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <label className="block text-xs text-white/60 mb-1">插入顺序 (Insertion Order)</label>
-            <input 
-              type="number" 
-              value={editForm.insertion_order} 
-              onChange={e => setEditForm({...editForm, insertion_order: e.target.value})}
-              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
-            />
+      <div className="fixed inset-0 z-[110] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6" onClick={() => setEditingIndex(null)}>
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          className="bg-slate-900 flex flex-col w-full h-full sm:h-auto sm:border border-white/10 sm:rounded-2xl shadow-2xl sm:max-w-2xl sm:max-h-[85vh] overflow-hidden"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
+            <h3 className="text-lg font-semibold">{editingIndex === -1 ? '新增世界书条目' : '编辑世界书条目'}</h3>
+            <button onClick={() => setEditingIndex(null)} className="p-1 hover:bg-white/10 rounded-full">
+              <XIcon className="w-5 h-5" />
+            </button>
           </div>
-          <div className="flex items-end pb-2">
-            <label className="flex items-center gap-2 cursor-pointer">
+          
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-900 flex flex-col gap-4">
+            <div>
+              <label className="block text-xs text-white/60 mb-1">标题 / 备注 (Comment)</label>
               <input 
-                type="checkbox" 
-                checked={editForm.enabled} 
-                onChange={e => setEditForm({...editForm, enabled: e.target.checked})}
-                className="rounded border-white/10 bg-black/40 text-purple-500 focus:ring-purple-500"
+                type="text" 
+                value={editForm.comment || editForm.name || ''} 
+                onChange={e => setEditForm({...editForm, comment: e.target.value})}
+                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
+                placeholder="例如: 角色背景、设定1"
               />
-              <span className="text-sm">启用 (Enabled)</span>
-            </label>
-          </div>
-        </div>
+            </div>
 
-        <div className="flex justify-end gap-2 mt-4">
-          <button onClick={() => setEditingIndex(null)} className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm transition">取消</button>
-          <button onClick={handleSave} className="px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm transition">保存</button>
-        </div>
+            <div>
+              <label className="block text-xs text-white/60 mb-1">关键词 (用逗号分隔)</label>
+              <input 
+                type="text" 
+                value={editForm.keys} 
+                onChange={e => setEditForm({...editForm, keys: e.target.value})}
+                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
+                placeholder="例如: 酒馆, 老板, 饮料"
+              />
+            </div>
+
+            <div className="flex-1 flex flex-col min-h-0">
+              <label className="block text-xs text-white/60 mb-1">内容</label>
+              <textarea 
+                value={editForm.content} 
+                onChange={e => setEditForm({...editForm, content: e.target.value})}
+                className="w-full flex-1 min-h-[150px] bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500 resize-none"
+                placeholder="条目内容..."
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <label className="block text-xs text-white/60 mb-1">插入顺序 (Insertion Order)</label>
+                <input 
+                  type="number" 
+                  value={editForm.insertion_order} 
+                  onChange={e => setEditForm({...editForm, insertion_order: e.target.value})}
+                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-2 cursor-pointer bg-white/5 py-2 px-4 rounded-lg border border-white/10 w-full sm:w-auto">
+                  <input 
+                    type="checkbox" 
+                    checked={editForm.enabled} 
+                    onChange={e => setEditForm({...editForm, enabled: e.target.checked})}
+                    className="rounded border-white/10 bg-black/40 text-purple-500 focus:ring-purple-500"
+                  />
+                  <span className="text-sm">启用 (Enabled)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-none p-4 sm:p-6 border-t border-white/10 flex justify-end gap-2 bg-black/20">
+            <button onClick={() => setEditingIndex(null)} className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-sm transition">取消</button>
+            <button onClick={handleSave} className="px-5 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 text-white text-sm transition font-medium">保存</button>
+          </div>
+        </motion.div>
       </div>
     );
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -1532,6 +1426,9 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
             onClose={() => setViewingEntryIndex(null)} 
           />
         )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {renderEditForm()}
       </AnimatePresence>
     </div>
   );

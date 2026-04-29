@@ -5,6 +5,8 @@ import { StickyNote, Image as ImageIcon, File, Trash2, Plus, Download, X, Pin, E
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+
 export function CharacterMemosSection({ characterId }: { characterId: string }) {
   const [memos, setMemos] = useState<CharacterMemo[]>([]);
   const [isAddingMode, setIsAddingMode] = useState(false);
@@ -157,36 +159,59 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
         />
       </div>
 
+      <AnimatePresence>
       {isAddingMode && (
           <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-black/30 border border-white/10 rounded-xl p-4 space-y-3"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6"
+            onClick={() => setIsAddingMode(false)}
           >
-              <textarea 
-                className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white resize-none min-h-[120px] focus:outline-none focus:border-purple-500/50"
-                placeholder="在这里写下脑洞、小剧场或设定补充（支持 Markdown）"
-                value={newText}
-                onChange={e => setNewText(e.target.value)}
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="bg-slate-900 sm:border border-white/10 sm:rounded-2xl flex flex-col w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-3xl overflow-hidden shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
+                 <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                    <Plus className="w-5 h-5 text-purple-400" />
+                    新建笔记
+                 </h3>
+                 <button onClick={() => setIsAddingMode(false)} className="p-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-xl transition">
+                    <X className="w-5 h-5" />
+                 </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-900 flex flex-col gap-4">
+                <textarea 
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl p-4 text-white resize-none min-h-[200px] focus:outline-none focus:border-purple-500/50"
+                  placeholder="在这里写下脑洞、小剧场或设定补充（支持 Markdown）"
+                  value={newText}
+                  onChange={e => setNewText(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="flex-none p-4 sm:p-6 border-t border-white/10 flex justify-end gap-2 bg-black/20">
                   <button 
                     onClick={() => setIsAddingMode(false)}
-                    className="px-4 py-2 rounded-lg text-sm bg-white/5 hover:bg-white/10 text-white/70 transition"
+                    className="px-5 py-2.5 rounded-xl text-sm bg-white/5 hover:bg-white/10 text-white/70 transition"
                   >
                       取消
                   </button>
                   <button 
                     onClick={handleCreateTextMemo}
-                    className="px-4 py-2 rounded-lg text-sm bg-purple-500 hover:bg-purple-600 text-white transition font-medium shadow-lg shadow-purple-500/20 disabled:opacity-50"
+                    className="px-5 py-2.5 rounded-xl text-sm bg-purple-500 hover:bg-purple-600 text-white transition font-medium shadow-lg shadow-purple-500/20 disabled:opacity-50"
                     disabled={!newText.trim()}
                   >
-                      保存
+                      保存笔记
                   </button>
               </div>
+            </motion.div>
           </motion.div>
       )}
+      </AnimatePresence>
 
       {memos.length === 0 && !isAddingMode ? (
          <div className="flex flex-col items-center justify-center p-12 bg-white/5 rounded-2xl border border-white/10 text-center border-dashed border-2">
@@ -288,14 +313,14 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
              initial={{ opacity: 0 }}
              animate={{ opacity: 1 }}
              exit={{ opacity: 0 }}
-             className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
+             className="fixed inset-0 z-[100] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6"
              onClick={() => setReadingMemo(null)}
            >
              <motion.div
-               initial={{ opacity: 0, y: 50, scale: 0.95 }}
-               animate={{ opacity: 1, y: 0, scale: 1 }}
-               exit={{ opacity: 0, y: 20, scale: 0.95 }}
-               className="bg-slate-900 border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
+               initial={{ opacity: 0, y: 20 }}
+               animate={{ opacity: 1, y: 0 }}
+               exit={{ opacity: 0, y: 20 }}
+               className="bg-slate-900 flex flex-col w-full h-full sm:h-auto sm:border border-white/10 sm:rounded-3xl shadow-2xl sm:max-w-4xl sm:max-h-[85vh] overflow-hidden"
                onClick={e => e.stopPropagation()}
              >
                <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
@@ -376,18 +401,26 @@ function MemoImage({ memo }: { memo: CharacterMemo }) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 sm:p-8 cursor-zoom-out"
-                        onClick={() => setIsExpanded(false)}
-                        title="点击收起大图"
+                        className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center cursor-zoom-out"
                     >
-                        <img 
-                            src={url} 
-                            alt={memo.content} 
-                            className="max-w-full max-h-full object-contain"
-                            onClick={(e) => e.stopPropagation()} 
-                        />
+                        <TransformWrapper
+                            initialScale={1}
+                            minScale={0.5}
+                            maxScale={5}
+                            centerOnInit
+                        >
+                            <TransformComponent wrapperClass="w-full h-full flex items-center justify-center p-4 sm:p-8" wrapperStyle={{ width: '100%', height: '100%' }}>
+                                <img 
+                                    src={url} 
+                                    alt={memo.content} 
+                                    className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
+                                    onClick={(e) => e.stopPropagation()} 
+                                    draggable={false}
+                                />
+                            </TransformComponent>
+                        </TransformWrapper>
                         <button 
-                            className="absolute top-4 right-4 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition"
+                            className="absolute top-4 right-4 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition z-10"
                             onClick={() => setIsExpanded(false)}
                         >
                             <X className="w-6 h-6" />

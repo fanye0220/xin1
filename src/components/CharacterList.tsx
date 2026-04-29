@@ -295,12 +295,15 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
       const qrData = qrChar.data || {};
       let newQRs = [];
+      let metadata = null;
       if (Array.isArray(qrData)) {
         newQRs = qrData;
       } else if (qrData.qrList && Array.isArray(qrData.qrList)) {
         newQRs = qrData.qrList;
+        metadata = qrData;
       } else if (qrData.quick_replies && Array.isArray(qrData.quick_replies)) {
         newQRs = qrData.quick_replies;
+        metadata = qrData;
       }
 
       const updatedChar = { ...targetChar };
@@ -308,9 +311,19 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       updatedChar.data = JSON.parse(JSON.stringify(updatedChar.data || {}));
       
       let updatedData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
+      
+      const newSets = updatedData.extensions?.tavern_qr_sets ? [...updatedData.extensions.tavern_qr_sets] : [];
+      newSets.push({
+        id: Date.now().toString() + Math.random().toString(),
+        sourceName: qrChar.name,
+        replies: JSON.parse(JSON.stringify(newQRs)),
+        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : undefined
+      });
+
       updatedData.extensions = {
         ...(updatedData.extensions || {}),
-        quick_replies: JSON.parse(JSON.stringify(newQRs)),
+        tavern_qr_sets: newSets,
+        quick_replies: newSets.flatMap((s: any) => s.replies),
         qr_filename: `${qrChar.name}.json`
       };
 
@@ -340,41 +353,75 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       return;
     }
     
-    if (char.originalFile) {
-      const blob = char.originalFile;
-      
-      const targetData = char.data.data ? char.data.data : char.data;
-      const hasQR = targetData.extensions?.quick_replies && targetData.extensions.quick_replies.length > 0;
-      const hasAvatars = char.avatarHistory && char.avatarHistory.length > 0;
-      
-      if (hasQR || hasAvatars) {
-        const charFolder = zipFolder.folder(safeName);
-        if (charFolder) {
-          charFolder.file(exportFileName, blob);
-          if (hasQR) {
-            const qrFileName = targetData.extensions?.qr_filename || `${safeName}_qr.json`;
-            charFolder.file(qrFileName, JSON.stringify(targetData.extensions.quick_replies, null, 2));
-          }
-          if (hasAvatars) {
-            const avatarsFolder = charFolder.folder('替换卡面');
-            if (avatarsFolder) {
-              char.avatarHistory!.forEach((avatarBlob, index) => {
-                let ext = 'png';
-                let fileName = `替换卡面_${index + 1}.${ext}`;
-                if (avatarBlob instanceof File) {
-                  fileName = avatarBlob.name;
+    let baseBlob = char.avatarBlob || char.originalFile;
+
+    if (baseBlob) {
+      try {
+        const { injectTavernData } = await import('../lib/png');
+        const buffer = await baseBlob.arrayBuffer();
+        const newBuffer = injectTavernData(buffer, char.data);
+        const finalBlob = new Blob([newBuffer], { type: 'image/png' });
+        
+        const targetData = char.data.data ? char.data.data : char.data;
+        const hasQR = targetData.extensions?.quick_replies && targetData.extensions.quick_replies.length > 0;
+        const hasAvatars = char.avatarHistory && char.avatarHistory.length > 0;
+        
+        if (hasQR || hasAvatars) {
+          const charFolder = zipFolder.folder(safeName);
+          if (charFolder) {
+            charFolder.file(exportFileName, finalBlob);
+            if (hasQR) {
+              const qrFileName = targetData.extensions?.qr_filename || `${safeName}_qr.json`;
+              let qrContentToExport: any = targetData.extensions.quick_replies;
+              
+              if (targetData.extensions.tavern_qr_sets && targetData.extensions.tavern_qr_sets.length > 0) {
+                // Find the first metadata we can use
+                const metadata = targetData.extensions.tavern_qr_sets.find((s: any) => s.metadata)?.metadata;
+                if (metadata) {
+                  qrContentToExport = { ...metadata };
+                  if (qrContentToExport.qrList) qrContentToExport.qrList = targetData.extensions.quick_replies;
+                  else if (qrContentToExport.quick_replies) qrContentToExport.quick_replies = targetData.extensions.quick_replies;
                 } else {
-                  if (avatarBlob.type === 'image/jpeg') ext = 'jpg';
-                  else if (avatarBlob.type === 'image/webp') ext = 'webp';
-                  fileName = `替换卡面_${index + 1}.${ext}`;
+                  // Fallback wrapper
+                  qrContentToExport = {
+                    version: 2,
+                    name: char.name,
+                    qrList: targetData.extensions.quick_replies
+                  };
                 }
-                avatarsFolder.file(fileName, avatarBlob);
-              });
+              } else {
+                qrContentToExport = {
+                  version: 2,
+                  name: char.name,
+                  qrList: targetData.extensions.quick_replies
+                };
+              }
+              charFolder.file(qrFileName, JSON.stringify(qrContentToExport, null, 2));
+            }
+            if (hasAvatars) {
+              const avatarsFolder = charFolder.folder('替换卡面');
+              if (avatarsFolder) {
+                char.avatarHistory!.forEach((avatarBlob, index) => {
+                  let ext = 'png';
+                  let fileName = `替换卡面_${index + 1}.${ext}`;
+                  if (avatarBlob instanceof File) {
+                    fileName = avatarBlob.name;
+                  } else {
+                    if (avatarBlob.type === 'image/jpeg') ext = 'jpg';
+                    else if (avatarBlob.type === 'image/webp') ext = 'webp';
+                    fileName = `替换卡面_${index + 1}.${ext}`;
+                  }
+                  avatarsFolder.file(fileName, avatarBlob);
+                });
+              }
             }
           }
+        } else {
+          zipFolder.file(exportFileName, finalBlob);
         }
-      } else {
-        zipFolder.file(exportFileName, blob);
+      } catch (err) {
+        console.error("Failed to export injected PNG", err);
+        zipFolder.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));
       }
     } else {
       zipFolder.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));

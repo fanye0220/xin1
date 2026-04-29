@@ -31,8 +31,9 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
       const isStandaloneWorldbook = rawData.entries !== undefined;
       const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
       const tags = c.data?.tags || c.data?.data?.tags || [];
-      const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题'));
-      return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme;
+      const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
+      const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
+      return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR;
     });
 
     setDuplicateGroups(filteredGroups);

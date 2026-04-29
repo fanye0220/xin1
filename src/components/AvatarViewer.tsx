@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, Check, Trash2, Download, Plus } from 'lucide-react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { X, Upload, Check, Trash2, Download } from 'lucide-react';
 import { CharacterCard, saveCharacter } from '../lib/db';
 
 interface Props {
@@ -101,11 +102,11 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
     }
     
     // Inject current character data into the new PNG so it becomes a valid Tavern card
-    let finalFile = file;
+    let finalFile: File = file;
     
     try {
       let pngBlob: Blob = file;
-      if (file.type !== 'image/png') {
+      if (file.type !== 'image/png' && !(file.name && file.name.endsWith('.png'))) {
         pngBlob = await convertToPng(file);
       }
       
@@ -189,14 +190,6 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
     onUpdate(updatedCharacter);
   };
 
-  const [zoom, setZoom] = useState(1);
-  const [panning, setPanning] = useState({ x: 0, y: 0 });
-
-  const toggleZoom = () => {
-    setZoom(prev => prev === 1 ? 2.5 : 1);
-    setPanning({ x: 0, y: 0 });
-  };
-
   const handleExportAvatar = () => {
     const blobToExport = previewBlob || character.avatarBlob;
     if (!blobToExport) return;
@@ -222,7 +215,7 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[60] bg-black flex flex-col"
     >
-      <div className="absolute top-0 left-0 right-0 pt-7 pb-4 px-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
+      <div className="absolute top-0 left-0 right-0 p-4 pt-7 sm:pt-7 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
         <button onClick={onClose} className="p-2 rounded-full bg-black/40 text-white hover:bg-black/60 transition">
           <X className="w-6 h-6" />
         </button>
@@ -231,42 +224,44 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
         </div>
         <div className="flex gap-2">
           <button 
-             onClick={toggleZoom}
-             className={`p-2 rounded-full transition ${zoom > 1 ? 'bg-purple-500 text-white' : 'bg-black/40 text-white hover:bg-white/20'}`}
-             title={zoom > 1 ? "缩小" : "放大"}
-          >
-            <Plus className={`w-6 h-6 transition-transform ${zoom > 1 ? 'rotate-45 text-white' : ''}`} />
-          </button>
-          <button 
             onClick={handleExportAvatar}
             className="p-2 rounded-full bg-black/40 text-white hover:bg-white/20 transition"
             title="导出图片"
           >
             <Download className="w-6 h-6" />
           </button>
+          {previewBlob && previewBlob !== character.avatarBlob && (
+            <button 
+              onClick={(e) => handleDeleteHistory(e, previewBlob)}
+              className="p-2 rounded-full bg-black/40 text-red-400 hover:bg-red-500/20 transition"
+              title="删除此历史头像"
+            >
+              <Trash2 className="w-6 h-6" />
+            </button>
+          )}
         </div>
       </div>
 
-      <div 
-        className="flex-1 relative flex flex-col items-center justify-center overflow-hidden touch-none"
-        onDoubleClick={toggleZoom}
-      >
-        <motion.div
-           animate={{ scale: zoom, x: panning.x, y: panning.y }}
-           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-           drag={zoom > 1}
-           dragConstraints={{ left: -500, right: 500, top: -700, bottom: 700 }}
-           onDrag={(e, info) => setPanning({ x: info.offset.x, y: info.offset.y })}
-           className="w-full h-full flex items-center justify-center"
+      <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden">
+        <TransformWrapper
+          initialScale={1}
+          minScale={0.5}
+          maxScale={5}
+          centerOnInit
         >
-          <img
-            key={currentAvatarUrl}
-            src={currentAvatarUrl}
-            alt="Current Avatar"
-            className="max-w-full max-h-full object-contain pointer-events-none"
-            draggable={false}
-          />
-        </motion.div>
+          <TransformComponent wrapperClass="w-full h-full flex items-center justify-center p-4" wrapperStyle={{ width: '100%', height: '100%' }}>
+            <motion.img
+              key={currentAvatarUrl}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              src={currentAvatarUrl}
+              alt="Current Avatar"
+              draggable={false}
+              className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
+            />
+          </TransformComponent>
+        </TransformWrapper>
         <AnimatePresence>
           {previewBlob && previewBlob !== character.avatarBlob && (
             <motion.div

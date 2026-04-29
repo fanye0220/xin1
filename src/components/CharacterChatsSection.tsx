@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { Virtuoso } from 'react-virtuoso';
 
 interface Props {
   characterId: string;
@@ -19,6 +20,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
   const [editNoteContent, setEditNoteContent] = useState('');
+  const [customTags, setCustomTags] = useState<string[]>([]);
 
   const loadChats = async () => {
     const list = await getChatsForCharacter(characterId);
@@ -27,6 +29,12 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
 
   useEffect(() => {
     loadChats();
+    const savedTags = localStorage.getItem('chatViewer_customTags');
+    if (savedTags) {
+      try {
+        setCustomTags(JSON.parse(savedTags));
+      } catch (e) {}
+    }
   }, [characterId]);
 
   const handleSaveNote = async (chat: ChatLog) => {
@@ -86,32 +94,63 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
 
   const applyRegexes = (text: string) => {
     let result = text;
-    if (!regexScripts || !Array.isArray(regexScripts)) return result;
+    if (regexScripts && Array.isArray(regexScripts)) {
+      // Filter placement 3 or disabled=false
+      const validScripts = regexScripts.filter(s => !s.disabled && s.regex && s.replacementString !== undefined && s.placement && s.placement.includes(3)); 
 
-    // Filter placement 3 or disabled=false
-    const validScripts = regexScripts.filter(s => !s.disabled && s.regex && s.replacementString !== undefined && s.placement && s.placement.includes(3)); 
+      for (const script of validScripts) {
+        try {
+          let pattern = script.regex;
+          let flags = 'g';
+          if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+            const lastSlash = pattern.lastIndexOf('/');
+            flags = pattern.substring(lastSlash + 1);
+            if (!flags.includes('g')) flags += 'g';
+            pattern = pattern.substring(1, lastSlash);
+          }
+          
+          pattern = pattern.replace(/{{char}}/gi, characterName);
+          pattern = pattern.replace(/{{user}}/gi, 'User');
+          let replaceStr = script.replacementString.replace(/{{char}}/gi, characterName).replace(/{{user}}/gi, 'User');
 
-    for (const script of validScripts) {
-      try {
-        let pattern = script.regex;
-        let flags = 'g';
-        if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-          const lastSlash = pattern.lastIndexOf('/');
-          flags = pattern.substring(lastSlash + 1);
-          if (!flags.includes('g')) flags += 'g';
-          pattern = pattern.substring(1, lastSlash);
+          const re = new RegExp(pattern, flags);
+          result = result.replace(re, replaceStr);
+        } catch (e) {
+          // invalid regex, skip
         }
-        
-        pattern = pattern.replace(/{{char}}/gi, characterName);
-        pattern = pattern.replace(/{{user}}/gi, 'User');
-        let replaceStr = script.replacementString.replace(/{{char}}/gi, characterName).replace(/{{user}}/gi, 'User');
-
-        const re = new RegExp(pattern, flags);
-        result = result.replace(re, replaceStr);
-      } catch (e) {
-        // invalid regex, skip
       }
     }
+
+    // Format tags
+    // Format <Think>
+    result = result.replace(/(?:<|&lt;)Think(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/Think(?:>|&gt;)/gi, '<details class="text-sm bg-white/5 border border-white/10 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-gray-400 select-none">🤔 思维链</summary><div class="mt-2 text-gray-300">$1</div></details>');
+    
+    // Format doggy_status_panel
+    result = result.replace(/(?:<|&lt;)doggy_status_panel(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/doggy_status_panel(?:>|&gt;)/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto">$1</pre></details>');
+
+    // Also deal with standalone {状态栏 | ...} without xml tags
+    result = result.replace(/\{状态栏\s*\|([\s\S]*?)\}/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto">$1</pre></details>');
+
+    // Apply user defined custom tags
+    const processedTags = new Set(customTags.map(t => t.replace(/^<*\/?|\/?>*$/g, '').trim()).filter(Boolean));
+    
+    processedTags.forEach(tag => {
+      // Escape tag for regex just in case
+      const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      
+      // Match paired tags with optional attributes. Handle both < and &lt;
+      const pairedRe = new RegExp(`(?:<|&lt;)\\s*${escapedTag}(?:\\s+(?:[^>&]|&[^g])+)?(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\/\\s*${escapedTag}\\s*(?:>|&gt;)`, 'gi');
+      result = result.replace(pairedRe, `<details class="text-sm bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-indigo-400 select-none">${tag}</summary><div class="mt-2 text-indigo-300/80 whitespace-pre-wrap">$1</div></details>`);
+      
+      // Match stray/single tags so they don't disappear in markdown rendering
+      const singleRe = new RegExp(`(?:<|&lt;)\\s*${escapedTag}(?:\\s+(?:[^>&]|&[^g])+)?\\/?\\s*(?:>|&gt;)`, 'gi');
+      result = result.replace(singleRe, `<div class="text-sm border-l-2 border-indigo-500/50 pl-3 py-1 my-2 text-indigo-400/80 italic text-xs"><span class="font-bold">&lt;${tag}&gt;</span></div>`);
+      
+      // Clean up stray closing tags
+      const singleCloseRe = new RegExp(`(?:<|&lt;)\\/\\s*${escapedTag}\\s*(?:>|&gt;)`, 'gi');
+      result = result.replace(singleCloseRe, `<div class="text-sm border-l-2 border-indigo-500/50 pl-3 py-1 my-2 text-indigo-400/80 italic text-xs"><span class="font-bold">&lt;/${tag}&gt;</span></div>`);
+    });
+
     return result;
   };
 
@@ -140,11 +179,14 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
            </button>
         </div>
 
-        <div className="space-y-6 mt-6 pr-2">
-          {selectedChat.messages.map((msg, i) => {
+        <div className="flex-[1_1_100%] mt-6 pr-2 min-h-[500px]">
+          <Virtuoso
+            style={{ height: '100%' }}
+            data={selectedChat.messages}
+            itemContent={(i, msg) => {
              const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
              return (
-                  <div key={i} className={`flex gap-4 ${msg.is_user ? 'flex-row-reverse' : ''}`}>
+                  <div className={`flex gap-4 mb-6 ${msg.is_user ? 'flex-row-reverse' : ''}`}>
                     <div className="shrink-0 pt-1">
                       {msg.is_user ? (
                         <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
@@ -186,7 +228,8 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                     </div>
                   </div>
              );
-          })}
+            }}
+          />
         </div>
       </motion.div>
     );

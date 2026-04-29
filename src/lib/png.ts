@@ -199,7 +199,7 @@ export function injectTavernData(originalBuffer: ArrayBuffer, data: any): ArrayB
 
     const chunkEnd = offset + 8 + length + 4;
     
-    if (type === 'tEXt' || type === 'iTXt') {
+    if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
       const dataOffset = offset + 8;
       const dataSlice = uint8.slice(dataOffset, dataOffset + length);
       

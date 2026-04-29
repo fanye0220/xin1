@@ -13,6 +13,7 @@ interface QRSet {
   id: string;
   sourceName: string;
   replies: any[];
+  metadata?: any;
 }
 
 export function QuickRepliesSection({ character, onUpdate }: Props) {
@@ -50,18 +51,22 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       for (const qrChar of qrChars) {
         const qrData = qrChar.data || {};
         let newQRs = [];
+        let metadata = null;
         if (Array.isArray(qrData)) {
           newQRs = qrData;
         } else if (qrData.qrList && Array.isArray(qrData.qrList)) {
           newQRs = qrData.qrList;
+          metadata = qrData;
         } else if (qrData.quick_replies && Array.isArray(qrData.quick_replies)) {
           newQRs = qrData.quick_replies;
+          metadata = qrData;
         }
         
         newSets.push({
           id: Date.now().toString() + Math.random().toString(),
           sourceName: qrChar.name,
-          replies: JSON.parse(JSON.stringify(newQRs))
+          replies: JSON.parse(JSON.stringify(newQRs)),
+          metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : undefined
         });
       }
 
@@ -103,12 +108,15 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
         const json = JSON.parse(text);
         
         let newQRs = [];
+        let metadata = null;
         if (Array.isArray(json)) {
           newQRs = json;
         } else if (json.qrList && Array.isArray(json.qrList)) {
           newQRs = json.qrList;
+          metadata = json;
         } else if (json.quick_replies && Array.isArray(json.quick_replies)) {
           newQRs = json.quick_replies;
+          metadata = json;
         } else {
           throw new Error('Invalid format');
         }
@@ -116,7 +124,8 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
         newSets.push({
           id: Date.now().toString() + Math.random().toString(),
           sourceName: file.name,
-          replies: newQRs
+          replies: newQRs,
+          metadata: metadata
         });
       } catch (error) {
         console.error(`Failed to parse Quick Replies JSON for ${file.name}`, error);
@@ -179,7 +188,21 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
     if (setsToExport.length === 1) {
       const set = setsToExport[0];
       if (!set.replies || set.replies.length === 0) return;
-      const blob = new Blob([JSON.stringify(set.replies, null, 2)], { type: 'application/json' });
+      
+      let exportData: any = set.replies;
+      if (set.metadata) {
+        exportData = { ...set.metadata };
+        if (exportData.qrList) exportData.qrList = set.replies;
+        else if (exportData.quick_replies) exportData.quick_replies = set.replies;
+      } else {
+        exportData = {
+          version: 2,
+          name: character.name,
+          qrList: set.replies
+        };
+      }
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -198,6 +221,20 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       
       setsToExport.forEach((set, index) => {
         if (!set.replies || set.replies.length === 0) return;
+        
+        let exportData: any = set.replies;
+        if (set.metadata) {
+          exportData = { ...set.metadata };
+          if (exportData.qrList) exportData.qrList = set.replies;
+          else if (exportData.quick_replies) exportData.quick_replies = set.replies;
+        } else {
+          exportData = {
+            version: 2,
+            name: character.name,
+            qrList: set.replies
+          };
+        }
+
         let filename = set.sourceName || `${character.name}_qr${index > 0 ? `_${index}` : ''}.json`;
         if (!filename.endsWith('.json')) {
             filename += '.json';
@@ -210,7 +247,7 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
             finalFilename = `${parts[0]}(${counter}).json`;
             counter++;
         }
-        zip.file(finalFilename, JSON.stringify(set.replies, null, 2));
+        zip.file(finalFilename, JSON.stringify(exportData, null, 2));
       });
       
       const content = await zip.generateAsync({ type: 'blob' });
