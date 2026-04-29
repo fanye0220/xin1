@@ -804,7 +804,7 @@ export function CharacterDetail({ id, onBack }: Props) {
                       <div className="flex gap-3 mt-4">
                         <button 
                           onClick={() => {
-                            const newBook = { name: '新世界书', description: '', entries: {} };
+                            const newBook = { name: '新世界书', description: '', entries: [] };
                             const updatedChar = { ...character };
                             let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
                             
@@ -852,14 +852,17 @@ export function CharacterDetail({ id, onBack }: Props) {
                                   entriesObj[String(entryUid)] = { ...e, uid: entryUid };
                                 });
 
+                                const wasArray = Array.isArray(json.entries) || (json.data && Array.isArray(json.data.entries)) || Array.isArray(json);
+                                const entriesToSave = wasArray ? entries : entriesObj;
+
                                 let newBook;
                                 if (isStandaloneWorldbook && isV3) {
-                                  newBook = { ...json, data: { ...json.data, entries: entriesObj } };
+                                  newBook = { ...json, data: { ...json.data, entries: entriesToSave } };
                                 } else {
                                   newBook = { 
                                     name: json.name || (json.data && json.data.name) || file.name.replace('.json', ''), 
                                     description: json.description || (json.data && json.data.description) || '', 
-                                    entries: entriesObj 
+                                    entries: entriesToSave 
                                   };
                                 }
 
@@ -1127,18 +1130,26 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
 
   // Helper to save entries in the format Tavern expects
   const saveEntries = (newEntriesArray: any[]) => {
-    // V2 and V3 format internally in Tavern expects entries to be an Object with keys as indexes/UIDs
-    const entriesObj: Record<string, any> = {};
-    newEntriesArray.forEach((e, i) => {
-      const entryUid = e.uid !== undefined ? e.uid : i;
-      entriesObj[String(entryUid)] = { ...e, uid: entryUid };
-    });
+    // V3 Character Book standard uses Array for entries! V2 Character Book and Standalone might use Object.
+    const wasArray = Array.isArray(book.entries) || (book.data && Array.isArray(book.data.entries));
+    
+    let entriesToSave: any;
+    if (wasArray) {
+      entriesToSave = newEntriesArray;
+    } else {
+      const entriesObj: Record<string, any> = {};
+      newEntriesArray.forEach((e, i) => {
+        const entryUid = e.uid !== undefined ? e.uid : i;
+        entriesObj[String(entryUid)] = { ...e, uid: entryUid };
+      });
+      entriesToSave = entriesObj;
+    }
 
     if (book.data && book.data.entries) {
-      // V3 format
-      onUpdate({ ...book, data: { ...book.data, entries: entriesObj } });
+      // V3/Standalone format with data wrapper
+      onUpdate({ ...book, data: { ...book.data, entries: entriesToSave } });
     } else {
-      onUpdate({ ...book, entries: entriesObj });
+      onUpdate({ ...book, entries: entriesToSave });
     }
   };
 
@@ -1190,9 +1201,9 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
       entry: editForm.content, // Save to 'entry' for V3 compatibility
       order: parseInt(editForm.insertion_order) || 50, // Tavern uses 'order'
       insertion_order: parseInt(editForm.insertion_order) || 50,
+      enabled: editForm.enabled, // Standardize on both boolean properties
       disable: !editForm.enabled // Tavern uses 'disable'
     };
-    delete formattedForm.enabled;
 
     if (editingIndex === -1) {
       newEntries.push(formattedForm);
@@ -1218,9 +1229,9 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
     const newEnabled = !currentEnabled;
     const updatedEntry = { 
       ...entry, 
+      enabled: newEnabled,
       disable: !newEnabled
     };
-    delete updatedEntry.enabled;
     newEntries[index] = updatedEntry;
     saveEntries(newEntries);
   };
