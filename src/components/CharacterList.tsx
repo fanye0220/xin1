@@ -5,7 +5,7 @@ import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharac
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
-import { injectTavernData, prepareExportData } from '../lib/png';
+import { injectTavernData } from '../lib/png';
 
 interface Props {
   key?: React.Key;
@@ -357,9 +357,9 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
     if (baseBlob) {
       try {
-        const { injectTavernData, prepareExportData } = await import('../lib/png');
+        const { injectTavernData } = await import('../lib/png');
         const buffer = await baseBlob.arrayBuffer();
-        const newBuffer = injectTavernData(buffer, prepareExportData(char.data));
+        const newBuffer = injectTavernData(buffer, char.data);
         const finalBlob = new Blob([newBuffer], { type: 'image/png' });
         
         const targetData = char.data.data ? char.data.data : char.data;

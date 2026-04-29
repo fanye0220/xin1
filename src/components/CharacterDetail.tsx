@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
-import { injectTavernData, prepareExportData } from '../lib/png';
+import { injectTavernData } from '../lib/png';
 import { AvatarViewer } from './AvatarViewer';
 import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
@@ -185,7 +185,7 @@ export function CharacterDetail({ id, onBack }: Props) {
   };
 
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(prepareExportData(character.data), null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(character.data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -208,7 +208,7 @@ export function CharacterDetail({ id, onBack }: Props) {
     if (baseBlob) {
       try {
         const buffer = await baseBlob.arrayBuffer();
-        const newBuffer = injectTavernData(buffer, prepareExportData(character.data));
+        const newBuffer = injectTavernData(buffer, character.data);
         const blob = new Blob([newBuffer], { type: 'image/png' });
         
         const safeName = getSafeFilename(character.name);
@@ -804,7 +804,7 @@ export function CharacterDetail({ id, onBack }: Props) {
                       <div className="flex gap-3 mt-4">
                         <button 
                           onClick={() => {
-                            const newBook = { name: '新世界书', description: '', entries: [] };
+                            const newBook = { name: '新世界书', description: '', entries: {} };
                             const updatedChar = { ...character };
                             let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
                             
@@ -831,7 +831,7 @@ export function CharacterDetail({ id, onBack }: Props) {
                                 const json = JSON.parse(text);
                                 
                                 // Handle both array format and object format (like the provided example)
-                                let entries: any[] = [];
+                                let entries: any = [];
                                 let isV3 = false;
                                 if (Array.isArray(json.entries)) {
                                   entries = json.entries;
@@ -845,24 +845,14 @@ export function CharacterDetail({ id, onBack }: Props) {
                                   isV3 = true;
                                 }
 
-                                const entriesObj: Record<string, any> = {};
-                                entries.forEach((e: any, i: number) => {
-                                  // We should preserve the 'disable' toggle EXACTLY if it exists, but also guarantee boolean
-                                  const entryUid = e.uid !== undefined ? e.uid : i;
-                                  entriesObj[String(entryUid)] = { ...e, uid: entryUid };
-                                });
-
-                                const wasArray = Array.isArray(json.entries) || (json.data && Array.isArray(json.data.entries)) || Array.isArray(json);
-                                const entriesToSave = wasArray ? entries : entriesObj;
-
                                 let newBook;
-                                if (isStandaloneWorldbook && isV3) {
-                                  newBook = { ...json, data: { ...json.data, entries: entriesToSave } };
+                                if (isV3) {
+                                  newBook = { ...json, data: { ...json.data, entries: entries } };
                                 } else {
                                   newBook = { 
-                                    name: json.name || (json.data && json.data.name) || file.name.replace('.json', ''), 
-                                    description: json.description || (json.data && json.data.description) || '', 
-                                    entries: entriesToSave 
+                                    name: json.name || file.name.replace('.json', ''), 
+                                    description: json.description || '', 
+                                    entries: entries 
                                   };
                                 }
 
@@ -1130,26 +1120,11 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
 
   // Helper to save entries in the format Tavern expects
   const saveEntries = (newEntriesArray: any[]) => {
-    // V3 Character Book standard uses Array for entries! V2 Character Book and Standalone might use Object.
-    const wasArray = Array.isArray(book.entries) || (book.data && Array.isArray(book.data.entries));
-    
-    let entriesToSave: any;
-    if (wasArray) {
-      entriesToSave = newEntriesArray;
-    } else {
-      const entriesObj: Record<string, any> = {};
-      newEntriesArray.forEach((e, i) => {
-        const entryUid = e.uid !== undefined ? e.uid : i;
-        entriesObj[String(entryUid)] = { ...e, uid: entryUid };
-      });
-      entriesToSave = entriesObj;
-    }
-
     if (book.data && book.data.entries) {
-      // V3/Standalone format with data wrapper
-      onUpdate({ ...book, data: { ...book.data, entries: entriesToSave } });
+      // V3 format
+      onUpdate({ ...book, data: { ...book.data, entries: newEntriesArray } });
     } else {
-      onUpdate({ ...book, entries: entriesToSave });
+      onUpdate({ ...book, entries: newEntriesArray });
     }
   };
 
@@ -1187,22 +1162,16 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
       ? editForm.keys.split(',').map((k: string) => k.trim()).filter(Boolean) 
       : editForm.keys;
     
-    const currentMaxUid = entries.reduce((max: number, e: any) => {
-      const eUid = parseInt(e.uid);
-      return !isNaN(eUid) && eUid > max ? eUid : max;
-    }, -1);
-
     const formattedForm = {
       ...editForm,
-      uid: editForm.uid !== undefined ? editForm.uid : (currentMaxUid + 1),
       key: keysArray, // Tavern uses 'key'
       keys: keysArray, // Keep 'keys' for compatibility
       content: editForm.content, // Ensure content is saved
       entry: editForm.content, // Save to 'entry' for V3 compatibility
       order: parseInt(editForm.insertion_order) || 50, // Tavern uses 'order'
       insertion_order: parseInt(editForm.insertion_order) || 50,
-      enabled: editForm.enabled, // Standardize on both boolean properties
-      disable: !editForm.enabled // Tavern uses 'disable'
+      disable: !editForm.enabled, // Tavern uses 'disable'
+      enabled: editForm.enabled
     };
 
     if (editingIndex === -1) {
@@ -1227,12 +1196,11 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
     const entry = newEntries[index];
     const currentEnabled = entry.disable !== undefined ? !entry.disable : entry.enabled !== false;
     const newEnabled = !currentEnabled;
-    const updatedEntry = { 
+    newEntries[index] = { 
       ...entry, 
       enabled: newEnabled,
       disable: !newEnabled
     };
-    newEntries[index] = updatedEntry;
     saveEntries(newEntries);
   };
 
@@ -1330,35 +1298,16 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
         <div className="flex gap-2">
           <button
             onClick={() => {
-              // 标准化 entries 的 enabled/disable 字段后再导出
-              let exportBook = book;
-
-              const normalizeEntries = (arr: any[]) =>
-                arr.map((e: any) => {
-                  const isEnabled =
-                    e.enabled !== undefined ? Boolean(e.enabled) : e.disable !== undefined ? !e.disable : true;
-                  return { ...e, enabled: isEnabled, disable: !isEnabled };
-                });
-
+              let exportData = book;
+              // If it's an embedded worldbook and entries is an array, convert to object for standalone export
               if (Array.isArray(book.entries)) {
-                // 数组格式转为 object 格式（独立世界书标准），同时标准化字段
-                const entriesObj: Record<string, any> = {};
-                normalizeEntries(book.entries).forEach((e: any, i: number) => {
-                  const uid = e.uid !== undefined ? e.uid : i;
-                  entriesObj[String(uid)] = { ...e, uid };
+                exportData = { ...book, entries: {} };
+                book.entries.forEach((e: any, i: number) => {
+                  exportData.entries[String(i)] = { ...e, uid: e.uid !== undefined ? e.uid : i };
                 });
-                exportBook = { ...book, entries: entriesObj };
-              } else if (book.entries && typeof book.entries === 'object') {
-                const arr = normalizeEntries(Object.values(book.entries));
-                const entriesObj: Record<string, any> = {};
-                arr.forEach((e: any, i: number) => {
-                  const uid = e.uid !== undefined ? e.uid : i;
-                  entriesObj[String(uid)] = { ...e, uid };
-                });
-                exportBook = { ...book, entries: entriesObj };
               }
               
-              const blob = new Blob([JSON.stringify(exportBook, null, 2)], { type: 'application/json' });
+              const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
