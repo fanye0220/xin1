@@ -15,6 +15,142 @@ interface ChatMessage {
   extra?: any;
 }
 
+// Move applyRegexes outside and enhance it
+const applyRegexes = (text: string, char: CharacterCard | null | undefined) => {
+  let result = text;
+  if (!char) return result;
+  
+  // Look for regex_scripts in extensions
+  const exts = char.data?.data?.extensions || char.data?.extensions || {};
+  const regexScripts = exts.regex_scripts;
+  
+  if (!regexScripts || !Array.isArray(regexScripts)) return result;
+
+  // Include placement 2 (Output) and 3 (Markdown)
+  const validScripts = regexScripts.filter(s => !s.disabled && s.regex && s.replacementString !== undefined && s.placement && (s.placement.includes(3) || s.placement.includes(2)));
+
+  for (const script of validScripts) {
+    try {
+      let pattern = script.regex;
+      let flags = 'g';
+      if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+        const lastSlash = pattern.lastIndexOf('/');
+        flags = pattern.substring(lastSlash + 1);
+        if (!flags.includes('g')) flags += 'g';
+        pattern = pattern.substring(1, lastSlash);
+      }
+      
+      const charName = char.name || 'Character';
+      pattern = pattern.replace(/{{char}}/gi, charName);
+      pattern = pattern.replace(/{{user}}/gi, 'User');
+      let replaceStr = script.replacementString.replace(/{{char}}/gi, charName).replace(/{{user}}/gi, 'User');
+
+      const re = new RegExp(pattern, flags);
+      result = result.replace(re, replaceStr);
+    } catch (e) {
+      // invalid regex, skip
+    }
+  }
+  return result;
+};
+
+const FormattedMessage = ({ text, char, isUser }: { text: string; char: CharacterCard | null | undefined; isUser: boolean }) => {
+  const [showThoughts, setShowThoughts] = useState(false);
+  
+  // Apply regexes
+  let processedText = applyRegexes(text, char);
+  
+  // Extract Thought blocks
+  let mainContent = processedText;
+  let thoughts = "";
+  
+  // Support both <think> and <Think>
+  const thinkMatch = mainContent.match(/<(think|Think)>([\s\S]*?)<\/(think|Think)>/i);
+  if (thinkMatch) {
+    thoughts = thinkMatch[2].trim();
+    mainContent = mainContent.replace(/<(think|Think)>([\s\S]*?)<\/(think|Think)>/i, "").trim();
+  }
+
+  // Handle special status bar {状态栏 | ...} if not converted by regex
+  let statusBar: string[] = [];
+  const statusBarMatch = mainContent.match(/{状态栏\s*\|([\s\S]*?)}/);
+  if (statusBarMatch) {
+    statusBar = statusBarMatch[1].split('|').map(s => s.trim()).filter(Boolean);
+    mainContent = mainContent.replace(/{状态栏\s*\|[\s\S]*?}/, "").trim();
+  }
+
+  // Handle Scene tags <scene>...</scene>
+  let scene = "";
+  const sceneMatch = mainContent.match(/<scene>([\s\S]*?)<\/scene>/i);
+  if (sceneMatch) {
+    scene = sceneMatch[1].trim();
+    mainContent = mainContent.replace(/<scene>([\s\S]*?)<\/scene>/i, "").trim();
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {statusBar.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {statusBar.map((item, idx) => (
+            <span key={idx} className="px-2 py-1 bg-white/10 rounded-full border border-white/5 text-blue-200">
+              {item}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {scene && (
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-white/30 font-bold border-l-2 border-white/10 pl-2">
+           {scene}
+        </div>
+      )}
+
+      {thoughts && (
+        <div className="bg-black/30 rounded-xl p-3 border border-white/5 shadow-inner overflow-hidden">
+          <button 
+            onClick={() => setShowThoughts(!showThoughts)}
+            className="w-full flex items-center justify-between text-xs font-medium text-white/40 hover:text-white/60 transition"
+          >
+            <span className="flex items-center gap-2">
+              <Book className="w-3.5 h-3.5" />
+              思考过程 (Thinking Process)
+            </span>
+            {showThoughts ? <Plus className="w-3.5 h-3.5 rotate-45 transition-transform" /> : <Plus className="w-3.5 h-3.5 transition-transform" />}
+          </button>
+          
+          <AnimatePresence>
+            {showThoughts && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="pt-3 mt-3 border-t border-white/5 text-slate-400 italic text-[13px] leading-relaxed prose prose-invert prose-xs max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                    {thoughts}
+                  </ReactMarkdown>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+      
+      <div className="prose prose-invert prose-sm max-w-none 
+         prose-headings:text-white/90 prose-p:leading-relaxed 
+         prose-a:text-blue-400 hover:prose-a:text-blue-300
+         prose-strong:text-white prose-code:text-pink-300
+         [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words"
+      >
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+          {mainContent || '_空记录_'}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+};
+
 export function ChatViewer({ onClose }: { onClose: () => void }) {
   const [savedChats, setSavedChats] = useState<ChatLog[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -119,42 +255,6 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
       activeCharacter = characters.find(c => c.name.toLowerCase() === aiMsg.name?.toLowerCase()) || null;
     }
   }
-
-  const applyRegexes = (text: string, char: CharacterCard | null | undefined) => {
-    let result = text;
-    if (!char) return result;
-    
-    // Look for regex_scripts in extensions
-    const exts = char.data?.data?.extensions || char.data?.extensions || {};
-    const regexScripts = exts.regex_scripts;
-    
-    if (!regexScripts || !Array.isArray(regexScripts)) return result;
-
-    const validScripts = regexScripts.filter(s => !s.disabled && s.regex && s.replacementString !== undefined && s.placement && s.placement.includes(3));
-
-    for (const script of validScripts) {
-      try {
-        let pattern = script.regex;
-        let flags = 'g';
-        if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-          const lastSlash = pattern.lastIndexOf('/');
-          flags = pattern.substring(lastSlash + 1);
-          if (!flags.includes('g')) flags += 'g';
-          pattern = pattern.substring(1, lastSlash);
-        }
-        
-        pattern = pattern.replace(/{{char}}/gi, char.name);
-        pattern = pattern.replace(/{{user}}/gi, 'User');
-        let replaceStr = script.replacementString.replace(/{{char}}/gi, char.name).replace(/{{user}}/gi, 'User');
-
-        const re = new RegExp(pattern, flags);
-        result = result.replace(re, replaceStr);
-      } catch (e) {
-        // invalid regex, skip
-      }
-    }
-    return result;
-  };
 
   const handleUpdateBinding = async (charId: string) => {
     if (!activeChat) return;
@@ -421,7 +521,11 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                       </div>
                       <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 prose prose-sm prose-invert max-w-none line-clamp-3 overflow-hidden">
                         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                          {applyRegexes(chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].mes : '空记录', matchedChar)}
+                          {applyRegexes(chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].mes : '空记录', matchedChar)
+                            .replace(/<(think|Think)>[\s\S]*?<\/(think|Think)>/gi, '[思考...]')
+                            .replace(/{状态栏\s*\|[\s\S]*?}/g, '')
+                            .replace(/<scene>[\s\S]*?<\/scene>/gi, '')
+                          }
                         </ReactMarkdown>
                       </div>
                     </motion.div>
@@ -463,16 +567,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                           ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
                           : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
                       }`}>
-                         <div className="prose prose-invert prose-sm max-w-none 
-                            prose-headings:text-white/90 prose-p:leading-relaxed 
-                            prose-a:text-blue-400 hover:prose-a:text-blue-300
-                            prose-strong:text-white prose-code:text-pink-300
-                            [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words"
-                          >
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                              {applyRegexes(msg.mes || '', activeCharacter)}
-                            </ReactMarkdown>
-                         </div>
+                         <FormattedMessage text={msg.mes || ''} char={activeCharacter} isUser={msg.is_user} />
                       </div>
                     </div>
                   </div>
