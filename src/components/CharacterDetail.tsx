@@ -776,6 +776,12 @@ export function CharacterDetail({ id, onBack }: Props) {
                           let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
                           targetData.character_book = newBook;
                           targetData.extensions = { ...(targetData.extensions || {}), character_book: newBook };
+                          if (newBook && newBook.name) {
+                            if (!targetData.extensions.world_info) targetData.extensions.world_info = [];
+                            if (!targetData.extensions.world_info.includes(newBook.name)) {
+                              targetData.extensions.world_info.push(newBook.name);
+                            }
+                          }
                         }
                         
                         saveCharacter(updatedChar).then(() => setCharacter(updatedChar));
@@ -804,12 +810,16 @@ export function CharacterDetail({ id, onBack }: Props) {
                       <div className="flex gap-3 mt-4">
                         <button 
                           onClick={() => {
-                            const newBook = { name: '新世界书', description: '', entries: {} };
+                            const newBook = { name: '新世界书', description: '', entries: [] };
                             const updatedChar = { ...character };
                             let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
                             
                             targetData.character_book = newBook;
                             targetData.extensions = { ...(targetData.extensions || {}), character_book: newBook };
+                            if (!targetData.extensions.world_info) targetData.extensions.world_info = [];
+                            if (!targetData.extensions.world_info.includes(newBook.name)) {
+                              targetData.extensions.world_info.push(newBook.name);
+                            }
                             
                             saveCharacter(updatedChar).then(() => setCharacter(updatedChar));
                           }}
@@ -846,12 +856,12 @@ export function CharacterDetail({ id, onBack }: Props) {
                                 }
 
                                 let newBook;
-                                if (isV3) {
+                                if (isStandaloneWorldbook && isV3) {
                                   newBook = { ...json, data: { ...json.data, entries: entries } };
                                 } else {
                                   newBook = { 
-                                    name: json.name || file.name.replace('.json', ''), 
-                                    description: json.description || '', 
+                                    name: json.name || (json.data && json.data.name) || file.name.replace('.json', ''), 
+                                    description: json.description || (json.data && json.data.description) || '', 
                                     entries: entries 
                                   };
                                 }
@@ -863,6 +873,12 @@ export function CharacterDetail({ id, onBack }: Props) {
                                 targetData.character_book = newBook;
                                 if (!targetData.extensions) targetData.extensions = {};
                                 targetData.extensions.character_book = newBook;
+                                if (newBook && newBook.name) {
+                                  if (!targetData.extensions.world_info) targetData.extensions.world_info = [];
+                                  if (!targetData.extensions.world_info.includes(newBook.name)) {
+                                    targetData.extensions.world_info.push(newBook.name);
+                                  }
+                                }
                                 
                                 await saveCharacter(updatedChar);
                                 setCharacter(updatedChar);
@@ -1162,8 +1178,14 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
       ? editForm.keys.split(',').map((k: string) => k.trim()).filter(Boolean) 
       : editForm.keys;
     
+    const currentMaxUid = entries.reduce((max: number, e: any) => {
+      const eUid = parseInt(e.uid);
+      return !isNaN(eUid) && eUid > max ? eUid : max;
+    }, -1);
+
     const formattedForm = {
       ...editForm,
+      uid: editForm.uid !== undefined ? editForm.uid : (currentMaxUid + 1),
       key: keysArray, // Tavern uses 'key'
       keys: keysArray, // Keep 'keys' for compatibility
       content: editForm.content, // Ensure content is saved
