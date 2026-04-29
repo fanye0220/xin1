@@ -289,7 +289,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
-      <header className="sticky top-0 px-4 pb-4 pt-10 sm:px-6 sm:pb-6 sm:pt-10 flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 px-4 pb-4 pt-7 sm:px-6 sm:pb-6 sm:pt-7 flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
         <div className="flex items-center gap-4">
           <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />

@@ -293,7 +293,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-900 relative overflow-hidden">
       {!activeChatId && (
-        <div className="flex-none pt-10 pb-4 px-4 sm:pt-10 sm:pb-6 sm:px-6 border-b border-white/10 bg-black/20 flex items-start sm:items-center justify-between sticky top-0 z-20 backdrop-blur-md transition-all gap-2 sm:gap-4">
+        <div className="flex-none pt-7 pb-4 px-4 sm:pt-7 sm:pb-6 sm:px-6 border-b border-white/10 bg-black/20 flex items-start sm:items-center justify-between sticky top-0 z-20 backdrop-blur-md transition-all gap-2 sm:gap-4">
           <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center border border-blue-500/30 shrink-0">
               <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />

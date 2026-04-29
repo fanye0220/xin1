@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload, X } from 'lucide-react';
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
@@ -9,6 +9,9 @@ import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
 import { CharacterMemosSection } from './CharacterMemosSection';
 import JSZip from 'jszip';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 
 interface Props {
   id: string;
@@ -34,6 +37,8 @@ export function CharacterDetail({ id, onBack }: Props) {
   const [tempCreator, setTempCreator] = useState<string>('');
   const [isEditingVersion, setIsEditingVersion] = useState(false);
   const [tempVersion, setTempVersion] = useState<string>('');
+  const [isEditingMemo, setIsEditingMemo] = useState(false);
+  const [memoDraft, setMemoDraft] = useState('');
 
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const savePromiseRef = useRef<Promise<void> | null>(null);
@@ -128,6 +133,20 @@ export function CharacterDetail({ id, onBack }: Props) {
     savePromiseRef.current = promise;
     await promise;
     setCharacter(updatedChar);
+  };
+
+  const handleSaveMemo = async () => {
+    if (!character) return;
+    const updatedChar = { ...character };
+    if (!updatedChar.data) updatedChar.data = {};
+    if (!updatedChar.data.data) updatedChar.data.data = {};
+    updatedChar.data.data.creator_notes = memoDraft;
+    updatedChar.data.creator_notes = memoDraft; // Sync root
+    const promise = saveCharacter(updatedChar);
+    savePromiseRef.current = promise;
+    await promise;
+    setCharacter(updatedChar);
+    setIsEditingMemo(false);
   };
 
   const updateField = async (field: string, value: any) => {
@@ -251,7 +270,7 @@ export function CharacterDetail({ id, onBack }: Props) {
       
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header */}
-        <header className="sticky top-0 pt-10 pb-4 px-4 flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
+        <header className="sticky top-0 pt-7 pb-4 px-4 flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
           <button onClick={handleBack} className="p-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />
           </button>
@@ -597,7 +616,7 @@ export function CharacterDetail({ id, onBack }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-[80px] z-20 bg-black/40 backdrop-blur-md border-b border-white/5">
+        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-[68px] z-20 bg-black/40 backdrop-blur-md border-b border-white/5">
           {[
             ...(!isStandaloneWorldbook ? [
               { id: 'profile', icon: User, label: isPreset ? '预设条目' : '档案' },
@@ -889,7 +908,48 @@ export function CharacterDetail({ id, onBack }: Props) {
               )}
 
               {activeTab === 'memos' && character && (
-                <CharacterMemosSection characterId={character.id} />
+                <motion.div
+                  key="memos"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="space-y-6"
+                >
+                  <header className="flex items-center justify-between mb-4">
+                    <h3 className="text-white/40 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                      <StickyNote className="w-3.5 h-3.5" />
+                      角色备注 / 备忘录
+                    </h3>
+                  </header>
+                  <div 
+                    onClick={() => {
+                      setMemoDraft(character.data?.data?.creator_notes || character.data?.creator_notes || '');
+                      setIsEditingMemo(true);
+                    }}
+                    className="bg-black/20 rounded-2xl p-5 border border-white/5 min-h-[160px] cursor-pointer hover:bg-black/30 transition group flex flex-col"
+                  >
+                    {character.data?.data?.creator_notes || character.data?.creator_notes ? (
+                      <div className="prose prose-invert prose-sm max-w-none text-white/70">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                          {character.data?.data?.creator_notes || character.data?.creator_notes}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center py-6 text-white/20">
+                        <Plus className="w-8 h-8 mb-2 opacity-30 transition-transform group-hover:scale-110" />
+                        <p className="text-sm">点击开始编写角色备忘录...</p>
+                      </div>
+                    )}
+                    <div className="mt-4 pt-4 border-t border-white/5 flex justify-end">
+                      <span className="text-[10px] text-white/20 font-bold uppercase tracking-widest flex items-center gap-1 group-hover:text-white/40 transition">
+                        <Edit2 className="w-3 h-3" /> 点击进入全屏编辑
+                      </span>
+                    </div>
+                  </div>
+                  <div className="pt-6">
+                    <CharacterMemosSection characterId={character.id} />
+                  </div>
+                </motion.div>
               )}
             </AnimatePresence>
           </div>
@@ -909,6 +969,54 @@ export function CharacterDetail({ id, onBack }: Props) {
               }
             }}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isEditingMemo && (
+          <motion.div
+            initial={{ opacity: 0, y: 100 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 100 }}
+            className="fixed inset-0 z-[100] bg-slate-950 flex flex-col overflow-hidden"
+          >
+            <div className="flex-none pt-7 pb-4 px-4 border-b border-white/10 flex items-center justify-between bg-black/40 backdrop-blur-xl">
+              <button 
+                onClick={() => setIsEditingMemo(false)}
+                className="p-2 -ml-2 rounded-full hover:bg-white/10 transition text-white/60"
+              >
+                <XIcon className="w-6 h-6" />
+              </button>
+              <h2 className="text-white font-medium">编辑备忘录</h2>
+              <button 
+                onClick={handleSaveMemo}
+                className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-purple-900/40 active:scale-95 transition-transform"
+              >
+                完成
+              </button>
+            </div>
+            
+            <div className="flex-1 p-4 sm:p-8 overflow-hidden flex flex-col">
+              <textarea
+                autoFocus
+                value={memoDraft}
+                onChange={(e) => setMemoDraft(e.target.value)}
+                className="flex-1 w-full bg-transparent border-none text-white/90 text-lg sm:text-xl focus:ring-0 resize-none p-0 leading-relaxed placeholder:text-white/10"
+                placeholder="在这里输入角色设定、创作思路、剧情大纲或任何备忘信息..."
+              />
+            </div>
+            
+            <div className="flex-none p-4 pb-8 border-t border-white/5 bg-black/20">
+              <div className="flex items-center justify-between gap-4 max-w-4xl mx-auto w-full">
+                <span className="text-[10px] text-white/30 uppercase tracking-widest font-bold">
+                  支持 Markdown 格式 · 写完点右上角完成
+                </span>
+                <span className="text-[10px] text-white/20">
+                  {memoDraft.length} 字符
+                </span>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
