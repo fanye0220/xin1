@@ -4,6 +4,7 @@ import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, Che
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
+import { normalizeWorldbookEntries } from '../lib/worldbook';
 import { AvatarViewer } from './AvatarViewer';
 import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
@@ -184,8 +185,30 @@ export function CharacterDetail({ id, onBack }: Props) {
     return name.replace(/[\\/:*?"<>|]/g, '_') || 'character';
   };
 
+  const getNormalizedExportData = () => {
+    const exportData = JSON.parse(JSON.stringify(character.data));
+    if (exportData.entries) {
+      exportData.entries = normalizeWorldbookEntries(exportData.entries);
+    } else if (exportData.data && exportData.data.entries) {
+      exportData.data.entries = normalizeWorldbookEntries(exportData.data.entries);
+    }
+    if (exportData.character_book && exportData.character_book.entries) {
+      exportData.character_book.entries = normalizeWorldbookEntries(exportData.character_book.entries);
+    }
+    if (exportData.data?.character_book?.entries) {
+      exportData.data.character_book.entries = normalizeWorldbookEntries(exportData.data.character_book.entries);
+    }
+    if (exportData.extensions?.character_book?.entries) {
+      exportData.extensions.character_book.entries = normalizeWorldbookEntries(exportData.extensions.character_book.entries);
+    }
+    if (exportData.data?.extensions?.character_book?.entries) {
+      exportData.data.extensions.character_book.entries = normalizeWorldbookEntries(exportData.data.extensions.character_book.entries);
+    }
+    return exportData;
+  };
+
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(character.data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(getNormalizedExportData(), null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -208,7 +231,7 @@ export function CharacterDetail({ id, onBack }: Props) {
     if (baseBlob) {
       try {
         const buffer = await baseBlob.arrayBuffer();
-        const newBuffer = injectTavernData(buffer, character.data);
+        const newBuffer = injectTavernData(buffer, getNormalizedExportData());
         const blob = new Blob([newBuffer], { type: 'image/png' });
         
         const safeName = getSafeFilename(character.name);
@@ -845,6 +868,8 @@ export function CharacterDetail({ id, onBack }: Props) {
                                   isV3 = true;
                                 }
 
+                                entries = normalizeWorldbookEntries(entries);
+
                                 let newBook;
                                 if (isV3) {
                                   newBook = { ...json, data: { ...json.data, entries: entries } };
@@ -1302,7 +1327,14 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
               // If it's an embedded worldbook and entries is an array, convert to object for standalone export
               if (Array.isArray(book.entries)) {
                 exportData = { ...book, entries: {} };
-                book.entries.forEach((e: any, i: number) => {
+                const normalizedEntries = normalizeWorldbookEntries(book.entries);
+                normalizedEntries.forEach((e: any, i: number) => {
+                  exportData.entries[String(i)] = { ...e, uid: e.uid !== undefined ? e.uid : i };
+                });
+              } else if (book.entries && typeof book.entries === 'object') {
+                exportData = { ...book, entries: {} };
+                const normalizedEntries = normalizeWorldbookEntries(book.entries);
+                normalizedEntries.forEach((e: any, i: number) => {
                   exportData.entries[String(i)] = { ...e, uid: e.uid !== undefined ? e.uid : i };
                 });
               }

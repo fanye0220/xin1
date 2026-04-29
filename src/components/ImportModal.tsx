@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, UploadCloud, FileJson, Image as ImageIcon, Folder, AlertCircle, FileArchive } from 'lucide-react';
 import { extractTavernData } from '../lib/png';
 import { saveCharacter, saveCharacters, CharacterCard, getFolders, saveFolder, Folder as DBFolder } from '../lib/db';
+import { normalizeWorldbookEntries } from '../lib/worldbook';
 import { parseTavernCard } from '../types/tavern';
 import JSZip from 'jszip';
 
@@ -200,6 +201,26 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         
         const data = item.data;
         const file = item.file;
+        
+        // Normalize worldbook entries
+        if (data.entries) {
+          data.entries = normalizeWorldbookEntries(data.entries);
+        } else if (data.data && data.data.entries) {
+          data.data.entries = normalizeWorldbookEntries(data.data.entries);
+        }
+        
+        if (data.character_book && data.character_book.entries) {
+          data.character_book.entries = normalizeWorldbookEntries(data.character_book.entries);
+        }
+        if (data.data?.character_book?.entries) {
+          data.data.character_book.entries = normalizeWorldbookEntries(data.data.character_book.entries);
+        }
+        if (data.extensions?.character_book?.entries) {
+          data.extensions.character_book.entries = normalizeWorldbookEntries(data.extensions.character_book.entries);
+        }
+        if (data.data?.extensions?.character_book?.entries) {
+          data.data.extensions.character_book.entries = normalizeWorldbookEntries(data.data.extensions.character_book.entries);
+        }
         
         const isTheme = data.blur_strength !== undefined || data.main_text_color !== undefined || data.chat_display !== undefined;
         const isAIPreset = data.temperature !== undefined || data.prompts !== undefined || data.top_p !== undefined;
