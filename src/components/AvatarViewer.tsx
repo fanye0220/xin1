@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { X, Upload, Check, Trash2, Download } from 'lucide-react';
 import { CharacterCard, saveCharacter } from '../lib/db';
+import { injectTavernData, prepareExportData } from '../lib/png';
 
 interface Props {
   character: CharacterCard;
@@ -112,7 +113,7 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
       
       const { injectTavernData } = await import('../lib/png');
       const buffer = await pngBlob.arrayBuffer();
-      const newBuffer = injectTavernData(buffer, character.data);
+      const newBuffer = injectTavernData(buffer, prepareExportData(character.data));
       
       finalFile = new File([newBuffer], (file.name || 'avatar').replace(/\.[^/.]+$/, "") + ".png", { type: 'image/png' });
     } catch (err) {
@@ -154,7 +155,7 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
       
       const { injectTavernData } = await import('../lib/png');
       const buffer = await pngBlob.arrayBuffer();
-      const newBuffer = injectTavernData(buffer, character.data);
+      const newBuffer = injectTavernData(buffer, prepareExportData(character.data));
       
       finalFile = new File([newBuffer], 'avatar.png', { type: 'image/png' });
     } catch (err) {

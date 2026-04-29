@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
-import { injectTavernData } from '../lib/png';
+import { injectTavernData, prepareExportData } from '../lib/png';
 import { AvatarViewer } from './AvatarViewer';
 import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
@@ -185,7 +185,7 @@ export function CharacterDetail({ id, onBack }: Props) {
   };
 
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(character.data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(prepareExportData(character.data), null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -208,7 +208,7 @@ export function CharacterDetail({ id, onBack }: Props) {
     if (baseBlob) {
       try {
         const buffer = await baseBlob.arrayBuffer();
-        const newBuffer = injectTavernData(buffer, character.data);
+        const newBuffer = injectTavernData(buffer, prepareExportData(character.data));
         const blob = new Blob([newBuffer], { type: 'image/png' });
         
         const safeName = getSafeFilename(character.name);
@@ -1330,16 +1330,35 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
         <div className="flex gap-2">
           <button
             onClick={() => {
-              let exportData = book;
-              // If it's an embedded worldbook and entries is an array, convert to object for standalone export
-              if (Array.isArray(book.entries)) {
-                exportData = { ...book, entries: {} };
-                book.entries.forEach((e: any, i: number) => {
-                  exportData.entries[String(i)] = { ...e, uid: e.uid !== undefined ? e.uid : i };
+              // 标准化 entries 的 enabled/disable 字段后再导出
+              let exportBook = book;
+
+              const normalizeEntries = (arr: any[]) =>
+                arr.map((e: any) => {
+                  const isEnabled =
+                    e.enabled !== undefined ? Boolean(e.enabled) : e.disable !== undefined ? !e.disable : true;
+                  return { ...e, enabled: isEnabled, disable: !isEnabled };
                 });
+
+              if (Array.isArray(book.entries)) {
+                // 数组格式转为 object 格式（独立世界书标准），同时标准化字段
+                const entriesObj: Record<string, any> = {};
+                normalizeEntries(book.entries).forEach((e: any, i: number) => {
+                  const uid = e.uid !== undefined ? e.uid : i;
+                  entriesObj[String(uid)] = { ...e, uid };
+                });
+                exportBook = { ...book, entries: entriesObj };
+              } else if (book.entries && typeof book.entries === 'object') {
+                const arr = normalizeEntries(Object.values(book.entries));
+                const entriesObj: Record<string, any> = {};
+                arr.forEach((e: any, i: number) => {
+                  const uid = e.uid !== undefined ? e.uid : i;
+                  entriesObj[String(uid)] = { ...e, uid };
+                });
+                exportBook = { ...book, entries: entriesObj };
               }
               
-              const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+              const blob = new Blob([JSON.stringify(exportBook, null, 2)], { type: 'application/json' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
