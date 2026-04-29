@@ -265,7 +265,7 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
                   </div>
                   <button 
                     onClick={() => handleDeleteSet(set.id)}
-                    className="opacity-0 group-hover:opacity-100 p-2 text-white/40 hover:text-red-400 transition shrink-0"
+                    className="p-2 text-white/40 hover:text-red-400 transition shrink-0"
                     title="删除此配置"
                   >
                     <Trash2 className="w-5 h-5" />

@@ -67,9 +67,14 @@ class TaggerState {
       const isStandaloneWorldbook = rawData.entries !== undefined;
       const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
       const tags = data.tags || [];
-      const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题'));
+      const isNonCharacter = tags.some((t: string) => 
+        t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || 
+        t.includes('QR') || t.includes('二维码') || t.includes('世界书') || t.includes('背景')
+      );
+      const name = (data.name || '').toLowerCase();
+      const isNonCharByName = name.includes('预设') || name.includes('主题') || name.includes('二维码') || name.includes('worldbook');
       
-      if (isPreset || isBeautify || isStandaloneWorldbook || isTheme) return;
+      if (isPreset || isNonCharacter || isStandaloneWorldbook || isTheme || isNonCharByName) return;
       
       if (!tags || tags.length === 0) {
         this.untaggedCharacters.push(c);

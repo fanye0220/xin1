@@ -154,22 +154,25 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       
       setFolders(currentFolders);
       
-      // Fetch previews for folders
-      const previews: Record<string, string[]> = {};
-      for (const folder of currentFolders) {
-        const { characters } = await getCharacters(1, 4, folder.id);
-        previews[folder.id] = characters
-          .map(c => c.avatarBlob ? URL.createObjectURL(c.avatarBlob) : c.avatarUrlFallback || '')
-          .filter(Boolean);
+      // Fetch previews for folders concurrently
+      try {
+        const { getFolderPreviews } = await import('../lib/db');
+        const folderIds = currentFolders.map(f => f.id);
+        const previews = await getFolderPreviews(folderIds);
+        setFolderPreviews(previews);
+      } catch (err) {
+        console.error("Failed to load folder previews", err);
       }
-      setFolderPreviews(previews);
     });
   };
 
   useEffect(() => {
     loadData();
-    getAllTags().then(setAllTags);
   }, [page, pageSize, folderId, searchQuery, selectedTags, sortBy, refreshTrigger]);
+
+  useEffect(() => {
+    getAllTags().then(setAllTags);
+  }, [refreshTrigger, folderId]); // We can just fetch it when folder triggers, though realistically it only needs refreshTrigger. I will keep it as refreshTrigger.
 
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent | TouchEvent) => {

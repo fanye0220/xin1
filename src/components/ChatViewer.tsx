@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -26,6 +26,15 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
   const [isMainHeaderExpanded, setIsMainHeaderExpanded] = useState(true);
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
+
+  const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
+  const [editNoteContent, setEditNoteContent] = useState('');
+
+  const handleSaveNote = async (chat: ChatLog) => {
+    await saveChat({ ...chat, note: editNoteContent });
+    setEditingNoteFor(null);
+    loadData();
+  };
 
   const loadData = async () => {
     const chars = await getCharacters(1, 9999);
@@ -345,27 +354,70 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                       onClick={() => setActiveChatId(chat.id)}
                       className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden"
                     >
-                      <button 
-                        onClick={(e) => handleRemoveChat(e, chat.id)}
-                        className="absolute top-4 right-4 p-2 bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-400 rounded-lg transition z-10"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex justify-between items-start mb-2 gap-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
+                            {matchedChar && avatarUrls[matchedChar.id] ? (
+                              <img src={avatarUrls[matchedChar.id]} alt="avatar" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-lg font-bold text-white/80">
+                                {chat.name.charAt(0)}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            {editingNoteFor === chat.id ? (
+                              <div className="w-full mb-1" onClick={e => e.stopPropagation()}>
+                                <input 
+                                  autoFocus
+                                  className="w-full bg-black/40 border border-blue-500/50 rounded flex px-2 py-1 text-sm text-blue-300 focus:outline-none placeholder-blue-300/30"
+                                  value={editNoteContent}
+                                  onChange={e => setEditNoteContent(e.target.value)}
+                                  onKeyDown={e => { if(e.key === 'Enter') handleSaveNote(chat); }}
+                                  onBlur={() => handleSaveNote(chat)}
+                                  placeholder="添加内容备注..."
+                                />
+                              </div>
+                            ) : (
+                              <div 
+                                className="text-sm font-medium text-blue-300 cursor-pointer hover:text-blue-200 transition flex items-center gap-2 mb-1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingNoteFor(chat.id);
+                                  setEditNoteContent(chat.note || '');
+                                }}
+                                title="点击编辑备注"
+                              >
+                                {chat.note ? (
+                                  <>
+                                    <span className="truncate">{chat.note}</span>
+                                    <span className="text-xs text-blue-300/50 shrink-0 flex items-center gap-1 leading-none pt-0.5"><Edit2 className="w-3 h-3" /></span>
+                                  </>
+                                ) : (
+                                  <span className="text-blue-300/50 flex items-center gap-1 font-normal"><Plus className="w-3.5 h-3.5" /> 添加内容备注...</span>
+                                )}
+                              </div>
+                            )}
+                            <h4 className="font-medium text-white/90 truncate w-full text-sm" title={chat.name}>{chat.name}</h4>
+                          </div>
+                        </div>
 
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
-                          {matchedChar && avatarUrls[matchedChar.id] ? (
-                            <img src={avatarUrls[matchedChar.id]} alt="avatar" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-lg font-bold text-white/80">
-                              {chat.name.charAt(0)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-col pr-10 flex-1 min-w-0">
-                          <h4 className="font-medium text-white/90 truncate w-full">{chat.name}</h4>
-                          <span className="text-xs text-white/40 truncate w-full">{chat.messages.length} 条消息 · {new Date(chat.createdAt).toLocaleString()}</span>
-                        </div>
+                        <button 
+                          onClick={(e) => handleRemoveChat(e, chat.id)}
+                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition z-10 shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="flex justify-between items-center text-xs text-white/40 pb-2">
+                        <span className="flex items-center gap-1">
+                          <Book className="w-4 h-4 text-blue-400" />
+                          {chat.messages.length} 条消息
+                        </span>
+                        <span className="flex items-center gap-1">
+                           {new Date(chat.createdAt).toLocaleString()}
+                        </span>
                       </div>
                       <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 prose prose-sm prose-invert max-w-none line-clamp-3 overflow-hidden">
                         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>

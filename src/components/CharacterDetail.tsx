@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, FileJson, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
@@ -612,7 +612,7 @@ export function CharacterDetail({ id, onBack }: Props) {
               { id: 'chats', icon: MessageSquare, label: '聊天记录' },
             ] : []),
             ...(!isPreset && !isStandaloneWorldbook ? [
-              { id: 'memos', icon: FileJson, label: '备忘录' },
+              { id: 'memos', icon: StickyNote, label: '备忘录' },
             ] : []),
           ].map((tab) => (
             <button
