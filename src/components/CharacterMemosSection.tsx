@@ -409,11 +409,16 @@ function MemoImage({ memo }: { memo: CharacterMemo }) {
                             maxScale={5}
                             centerOnInit
                         >
-                            <TransformComponent wrapperClass="w-full h-full flex items-center justify-center p-4 sm:p-8" wrapperStyle={{ width: '100%', height: '100%' }}>
+                            <TransformComponent 
+                                wrapperClass="w-full h-full" 
+                                wrapperStyle={{ width: '100%', height: '100%' }}
+                                contentClass="w-full h-full flex items-center justify-center"
+                                contentStyle={{ width: '100%', height: '100%' }}
+                            >
                                 <img 
                                     src={url} 
                                     alt={memo.content} 
-                                    className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
+                                    className="w-full h-full object-contain cursor-grab active:cursor-grabbing"
                                     onClick={(e) => e.stopPropagation()} 
                                     draggable={false}
                                 />

@@ -249,7 +249,12 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
           maxScale={5}
           centerOnInit
         >
-          <TransformComponent wrapperClass="w-full h-full flex items-center justify-center p-4" wrapperStyle={{ width: '100%', height: '100%' }}>
+          <TransformComponent 
+            wrapperClass="w-full h-full" 
+            wrapperStyle={{ width: '100%', height: '100%' }}
+            contentClass="w-full h-full flex items-center justify-center p-4"
+            contentStyle={{ width: '100%', height: '100%' }}
+          >
             <motion.img
               key={currentAvatarUrl}
               initial={{ scale: 0.9, opacity: 0 }}
@@ -258,7 +263,7 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
               src={currentAvatarUrl}
               alt="Current Avatar"
               draggable={false}
-              className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
+              className="w-full h-full object-contain cursor-grab active:cursor-grabbing"
             />
           </TransformComponent>
         </TransformWrapper>
