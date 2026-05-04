@@ -26,7 +26,6 @@ function FolderCover({ folder, previews, viewMode }: { folder: Folder, previews:
   if (url) {
     return (
       <div className="w-full h-full bg-black/20 flex items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-cover bg-center blur-xl opacity-50" style={{ backgroundImage: `url(${url})` }} />
         <img src={url} alt="" className="w-full h-full object-cover relative z-10" />
       </div>
     );
@@ -73,6 +72,42 @@ function SortableItemWrapper({ id, children, disabled }: { id: string, children:
   );
 }
 
+const compressImage = (file: File, maxDim = 400): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+      if (width > height && width > maxDim) {
+        height *= maxDim / width;
+        width = maxDim;
+      } else if (height > maxDim) {
+        width *= maxDim / height;
+        height = maxDim;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas toBlob failed'));
+        }, 'image/webp', 0.85);
+      } else {
+        reject(new Error('Canvas context failed'));
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Image load failed'));
+    };
+    img.src = url;
+  });
+};
+
 interface Props {
   key?: React.Key;
   folderId?: string | null;
@@ -89,6 +124,12 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [folderPreviews, setFolderPreviews] = useState<Record<string, string[]>>({});
   const [totalCharacters, setTotalCharacters] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageInputValue, setPageInputValue] = useState('1');
+  
+  useEffect(() => {
+    setPageInputValue(page.toString());
+  }, [page]);
+  
   const [pageSize, setPageSize] = useState(() => Number(localStorage.getItem('tavern_pageSize')) || 50);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'masonry'>('grid');
@@ -115,10 +156,19 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     try {
       const allFolders = await getFolders();
       
+      let compressedFolderBlob: Blob | null = null;
+
       for (const id of selectedIds) {
         const folder = allFolders.find(f => f.id === id);
         if (folder) {
-          folder.avatarBlob = file;
+          if (!compressedFolderBlob) {
+            try {
+              compressedFolderBlob = await compressImage(file, 400);
+            } catch (err) {
+              compressedFolderBlob = file;
+            }
+          }
+          folder.avatarBlob = compressedFolderBlob;
           await saveFolder(folder);
         } else {
           const char = characters.find(c => c.id === id);
@@ -395,13 +445,13 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   };
 
   const handleSelectPage = () => {
-    const pageItems = characters.length + (!searchQuery && selectedTags.length === 0 ? folders.length : 0);
+    const pageItems = characters.length + (!searchQuery && selectedTags.length === 0 && page === 1 ? folders.length : 0);
     
     let allPageSelected = true;
     for (const c of characters) {
       if (!selectedIds.has(c.id)) allPageSelected = false;
     }
-    if (!searchQuery && selectedTags.length === 0) {
+    if (!searchQuery && selectedTags.length === 0 && page === 1) {
       for (const f of folders) {
         if (!selectedIds.has(f.id)) allPageSelected = false;
       }
@@ -410,14 +460,14 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     if (allPageSelected) {
       const newSet = new Set(selectedIds);
       characters.forEach(c => newSet.delete(c.id));
-      if (!searchQuery && selectedTags.length === 0) {
+      if (!searchQuery && selectedTags.length === 0 && page === 1) {
         folders.forEach(f => newSet.delete(f.id));
       }
       setSelectedIds(newSet);
     } else {
       const newSet = new Set(selectedIds);
       characters.forEach(c => newSet.add(c.id));
-      if (!searchQuery && selectedTags.length === 0) {
+      if (!searchQuery && selectedTags.length === 0 && page === 1) {
         folders.forEach(f => newSet.add(f.id));
       }
       setSelectedIds(newSet);
@@ -1055,7 +1105,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           >
             <SortableContext 
               items={[
-                ...((!searchQuery && selectedTags.length === 0) ? folders.map(f => `folder-${f.id}`) : []), 
+                ...((!searchQuery && selectedTags.length === 0 && page === 1) ? folders.map(f => `folder-${f.id}`) : []), 
                 ...characters.map(c => `char-${c.id}`)
               ]} 
               strategy={rectSortingStrategy}
@@ -1066,7 +1116,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 "flex flex-col gap-2"
               }>
             
-            {!searchQuery && selectedTags.length === 0 && (
+            {!searchQuery && selectedTags.length === 0 && page === 1 && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -1091,7 +1141,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
               </motion.div>
             )}
 
-            {(!searchQuery && selectedTags.length === 0) && folders.map((folder) => {
+            {(!searchQuery && selectedTags.length === 0 && page === 1) && folders.map((folder) => {
               const previews = folderPreviews[folder.id] || [];
               return (
                 <SortableItemWrapper key={`folder-${folder.id}`} id={`folder-${folder.id}`} disabled={!!searchQuery || selectedTags.length > 0}>
@@ -1235,17 +1285,25 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 <div className="flex items-center gap-2 text-slate-400 px-2">
                   <span>第</span>
                   <input
-                    type="number"
-                    min={1}
-                    max={totalPages}
-                    value={page}
+                    type="text"
+                    value={pageInputValue}
                     onChange={(e) => {
-                      const val = parseInt(e.target.value);
+                      setPageInputValue(e.target.value);
+                    }}
+                    onBlur={() => {
+                      const val = parseInt(pageInputValue);
                       if (!isNaN(val) && val >= 1 && val <= totalPages) {
                         setPage(val);
+                      } else {
+                        setPageInputValue(page.toString());
                       }
                     }}
-                    className="w-10 bg-black/20 border border-white/10 rounded-lg px-1 py-1 text-center text-white font-medium focus:outline-none focus:border-purple-500 transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    className="w-10 bg-black/20 border border-white/10 rounded-lg px-1 py-1 text-center text-white font-medium focus:outline-none focus:border-purple-500 transition"
                   />
                   <span>/ {totalPages} 页</span>
                   <div className="w-px h-4 bg-white/10 mx-1" />
