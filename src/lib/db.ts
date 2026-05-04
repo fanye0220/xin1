@@ -5,6 +5,7 @@ export interface Folder {
   name: string;
   createdAt: number;
   parentId?: string | null;
+  order?: number;
 }
 
 export interface CharacterCard {
