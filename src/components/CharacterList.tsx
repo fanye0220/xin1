@@ -1,11 +1,77 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link } from 'lucide-react';
+import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
 import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
 import { injectTavernData } from '../lib/png';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+function FolderCover({ folder, previews }: { folder: Folder, previews: string[] }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (folder.avatarBlob) {
+      const objectUrl = URL.createObjectURL(folder.avatarBlob);
+      setUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    } else {
+      setUrl(null);
+    }
+  }, [folder.avatarBlob]);
+
+  if (url) {
+    return (
+      <div className="w-full h-full bg-black/20 flex items-center justify-center relative overflow-hidden rounded-[8px] md:rounded-[12px]">
+        <div className="absolute inset-0 bg-cover bg-center blur-xl opacity-50" style={{ backgroundImage: `url(${url})` }} />
+        <img src={url} alt="" className="w-full h-full object-cover relative z-10" />
+      </div>
+    );
+  }
+
+  if (previews.length > 0) {
+    return (
+      <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-1 pointer-events-none">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="w-full h-full bg-black/20 rounded-md overflow-hidden">
+            {previews[i] && (
+              <img src={previews[i]} alt="" className="w-full h-full object-cover" />
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <FolderIcon className="w-1/2 h-1/2 text-white/50 pointer-events-none" />;
+}
+
+function SortableItemWrapper({ id, children, disabled }: { id: string, children: React.ReactNode, disabled?: boolean }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+    position: 'relative' as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+}
 
 interface Props {
   key?: React.Key;
@@ -40,6 +106,55 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const allFolders = await getFolders();
+      
+      for (const id of selectedIds) {
+        const folder = allFolders.find(f => f.id === id);
+        if (folder) {
+          folder.avatarBlob = file;
+          await saveFolder(folder);
+        } else {
+          const char = characters.find(c => c.id === id);
+          if (char) {
+             char.avatarBlob = file;
+             await saveCharacter(char);
+          }
+        }
+      }
+      
+      // reload
+      loadData();
+      getFolders().then(data => {
+        let currentFolders: Folder[] = [];
+        if (folderId === null) {
+          currentFolders = data.filter(f => !f.parentId);
+        } else {
+          currentFolders = data.filter(f => f.parentId === folderId);
+        }
+        currentFolders.sort((a, b) => {
+          if (sortBy === 'custom') {
+            if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+            if (a.sortOrder !== undefined) return -1;
+            if (b.sortOrder !== undefined) return 1;
+          }
+          return b.createdAt - a.createdAt;
+        });
+        setFolders(currentFolders);
+      });
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    } catch (error) {
+      console.error('Failed to change cover:', error);
+      alert('封面更换失败');
+    }
+  };
   const [currentFolderName, setCurrentFolderName] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -135,6 +250,67 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     }
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+        delay: 200,
+        tolerance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    if (sortBy !== 'custom') {
+      setSortBy('custom');
+    }
+
+    const activeIdStr = String(active.id);
+    const overIdStr = String(over.id);
+
+    const isFolder = activeIdStr.startsWith('folder-');
+    
+    if (isFolder) {
+      const activeId = activeIdStr.replace('folder-', '');
+      const overId = overIdStr.replace('folder-', '');
+      
+      const oldIndex = folders.findIndex(f => f.id === activeId);
+      const newIndex = folders.findIndex(f => f.id === overId);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newFolders = arrayMove(folders, oldIndex, newIndex);
+        setFolders(newFolders);
+        // Save new order to db
+        newFolders.forEach((f, i) => {
+          f.sortOrder = i;
+          saveFolder(f);
+        });
+      }
+    } else {
+      const activeId = activeIdStr.replace('char-', '');
+      const overId = overIdStr.replace('char-', '');
+      
+      const oldIndex = characters.findIndex(c => c.id === activeId);
+      const newIndex = characters.findIndex(c => c.id === overId);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newChars = arrayMove(characters, oldIndex, newIndex);
+        setCharacters(newChars);
+        // Save new order to db
+        newChars.forEach((c, i) => {
+          c.sortOrder = i;
+          saveCharacter(c);
+        });
+      }
+    }
+  };
+
   const loadData = () => {
     getCharacters(page, pageSize, folderId, searchQuery, selectedTags, sortBy).then(({ characters, total }) => {
       setCharacters(characters);
@@ -144,13 +320,22 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     getFolders().then(async data => {
       let currentFolders: Folder[] = [];
       if (folderId === null) {
-        currentFolders = data.filter(f => !f.parentId).sort((a, b) => b.createdAt - a.createdAt);
+        currentFolders = data.filter(f => !f.parentId);
         setCurrentFolderName(null);
       } else {
-        currentFolders = data.filter(f => f.parentId === folderId).sort((a, b) => b.createdAt - a.createdAt);
+        currentFolders = data.filter(f => f.parentId === folderId);
         const currentFolder = data.find(f => f.id === folderId);
         if (currentFolder) setCurrentFolderName(currentFolder.name);
       }
+      
+      currentFolders.sort((a, b) => {
+        if (sortBy === 'custom') {
+          if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+          if (a.sortOrder !== undefined) return -1;
+          if (b.sortOrder !== undefined) return 1;
+        }
+        return b.createdAt - a.createdAt;
+      });
       
       setFolders(currentFolders);
       
@@ -529,6 +714,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
   return (
     <div className="pb-32 min-h-full bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+      <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverUpload} />
       <motion.header 
         initial={{ y: 0 }}
         animate={{ y: isHeaderVisible ? 0 : '-100%' }}
@@ -629,6 +815,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                       className="absolute right-0 top-full mt-2 w-48 bg-slate-800 border border-white/10 rounded-2xl shadow-xl z-50 p-2 overflow-hidden"
                     >
                         {[
+                          { value: 'custom', label: '自定义排序 (拖拽)' },
                           { value: 'newest_import', label: '最新导入' },
                           { value: 'oldest_import', label: '最旧导入' },
                           { value: 'recently_modified', label: '最近修改' },
@@ -844,11 +1031,36 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         </div>
       ) : (
         <div className="px-4">
-          <div className={
-            viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4" : 
-            viewMode === 'masonry' ? "columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4 space-y-4" : 
-            "flex flex-col gap-2"
-          }>
+          <DndContext 
+            sensors={sensors} 
+            collisionDetection={closestCenter} 
+            onDragStart={(event) => {
+              if (!selectionMode) {
+                setSelectionMode(true);
+                const idStr = String(event.active.id);
+                if (idStr.startsWith('char-')) {
+                  const id = idStr.replace('char-', '');
+                  setSelectedIds(new Set([id]));
+                } else if (idStr.startsWith('folder-')) {
+                  const id = idStr.replace('folder-', '');
+                  setSelectedIds(new Set([id]));
+                }
+              }
+            }}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext 
+              items={[
+                ...((!searchQuery && selectedTags.length === 0) ? folders.map(f => `folder-${f.id}`) : []), 
+                ...characters.map(c => `char-${c.id}`)
+              ]} 
+              strategy={rectSortingStrategy}
+            >
+              <div className={
+                viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4" : 
+                viewMode === 'masonry' ? "columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4 space-y-4" : 
+                "flex flex-col gap-2"
+              }>
             
             {!searchQuery && selectedTags.length === 0 && (
               <motion.div
@@ -878,11 +1090,11 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
             {(!searchQuery && selectedTags.length === 0) && folders.map((folder) => {
               const previews = folderPreviews[folder.id] || [];
               return (
-                <motion.div
-                  key={folder.id}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onTouchStart={(e) => {
+                <SortableItemWrapper key={`folder-${folder.id}`} id={`folder-${folder.id}`} disabled={!!searchQuery || selectedTags.length > 0}>
+                  <motion.div
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onTouchStart={(e) => {
                     longPressRef.current.triggered = false;
                     longPressRef.current.startY = e.touches[0].clientY;
                     longPressRef.current.timer = setTimeout(() => {
@@ -958,22 +1170,10 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                     </div>
                   )}
                   <div className={viewMode === 'list'
-                    ? "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden p-1.5"
+                    ? "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden p-1.5 object-cover"
                     : "w-full aspect-square bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/20 group-hover:bg-white/20 transition shadow-sm overflow-hidden p-3 relative"
                   }>
-                    {previews.length > 0 ? (
-                      <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-1 pointer-events-none">
-                        {[0, 1, 2, 3].map(i => (
-                          <div key={i} className="w-full h-full bg-black/20 rounded-md overflow-hidden">
-                            {previews[i] && (
-                              <img src={previews[i]} alt="" className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <FolderIcon className="w-1/2 h-1/2 text-white/50 pointer-events-none" />
-                    )}
+                    <FolderCover folder={folder} previews={previews} />
                   </div>
                   <span className={viewMode === 'list'
                     ? "font-medium text-white/90 flex-1"
@@ -982,6 +1182,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                     {folder.name}
                   </span>
                 </motion.div>
+                </SortableItemWrapper>
               );
             })}
 
@@ -991,27 +1192,30 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 : undefined;
                 
               return (
-                <CharacterCardItem
-                  key={char.id}
-                  char={char}
-                  selectionMode={selectionMode}
-                  isSelected={selectedIds.has(char.id)}
-                  viewMode={viewMode}
-                  folderName={folderName}
-                  onClick={() => {
-                    if (selectionMode) toggleSelection(char.id);
-                    else onSelect(char.id);
-                  }}
-                  onLongPress={() => {
-                    if (!selectionMode) {
-                      setSelectionMode(true);
-                      setSelectedIds(new Set([char.id]));
-                    }
-                  }}
-                />
+                <SortableItemWrapper key={`char-${char.id}`} id={`char-${char.id}`} disabled={!!searchQuery || selectedTags.length > 0}>
+                  <CharacterCardItem
+                    char={char}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(char.id)}
+                    viewMode={viewMode}
+                    folderName={folderName}
+                    onClick={() => {
+                      if (selectionMode) toggleSelection(char.id);
+                      else onSelect(char.id);
+                    }}
+                    onLongPress={() => {
+                      if (!selectionMode) {
+                        setSelectionMode(true);
+                        setSelectedIds(new Set([char.id]));
+                      }
+                    }}
+                  />
+                </SortableItemWrapper>
               );
             })}
           </div>
+          </SortableContext>
+        </DndContext>
 
           {(!selectionMode && (totalPages > 1 || characters.length > 0)) && (
             <div className="flex justify-center items-center mt-12 mb-8 text-sm">
@@ -1172,6 +1376,17 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 </button>
               </>
             )}
+            <div className="w-px h-8 bg-white/10" />
+            <button
+              onClick={() => coverInputRef.current?.click()}
+              disabled={selectedIds.size === 0}
+              className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-orange-400 transition disabled:opacity-50 group"
+            >
+              <div className="p-2 rounded-full bg-white/5 group-hover:bg-orange-400/20 transition">
+                <ImageIcon className="w-5 h-5" />
+              </div>
+              <span className="font-medium text-[10px]">换封面</span>
+            </button>
             <div className="w-px h-8 bg-white/10" />
             <button
               onClick={handleBatchExport}

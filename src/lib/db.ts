@@ -5,7 +5,8 @@ export interface Folder {
   name: string;
   createdAt: number;
   parentId?: string | null;
-  order?: number;
+  sortOrder?: number;
+  avatarBlob?: Blob;
 }
 
 export interface CharacterCard {
@@ -21,6 +22,7 @@ export interface CharacterCard {
   deletedAt?: number;
   folderId?: string;
   hasBlobsSeparated?: boolean;
+  sortOrder?: number;
 }
 
 export interface ChatLog {
@@ -148,7 +150,15 @@ export async function migrateDatabase(onProgress?: (current: number, total: numb
 
 export async function getFolders(): Promise<Folder[]> {
   const db = await initDB();
-  return db.getAllFromIndex('folders', 'by-date');
+  const folders = await db.getAllFromIndex('folders', 'by-date');
+  return folders.sort((a, b) => {
+    if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+      return a.sortOrder - b.sortOrder;
+    }
+    if (a.sortOrder !== undefined) return -1;
+    if (b.sortOrder !== undefined) return 1;
+    return b.createdAt - a.createdAt;
+  });
 }
 
 export async function getOrCreateNestedFolder(pathParts: string[]): Promise<string | undefined> {
@@ -249,7 +259,7 @@ export async function deleteFolder(id: string): Promise<void> {
   await tx.done;
 }
 
-export type SortOption = 'newest_import' | 'oldest_import' | 'recently_modified' | 'a_z' | 'z_a';
+export type SortOption = 'newest_import' | 'oldest_import' | 'recently_modified' | 'a_z' | 'z_a' | 'custom';
 
 export async function getCharacters(
   page: number, 
@@ -287,6 +297,13 @@ export async function getCharacters(
   // Apply sorting
   allCharacters.sort((a, b) => {
     switch (sortBy) {
+      case 'custom':
+        if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+          return a.sortOrder - b.sortOrder;
+        }
+        if (a.sortOrder !== undefined) return -1;
+        if (b.sortOrder !== undefined) return 1;
+        return b.createdAt - a.createdAt;
       case 'newest_import':
         return b.createdAt - a.createdAt;
       case 'oldest_import':
