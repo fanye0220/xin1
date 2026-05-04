@@ -6,7 +6,7 @@ import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
 import { injectTavernData } from '../lib/png';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -251,10 +251,14 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   };
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
-        distance: 5,
-        delay: 200,
+        distance: 10,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
         tolerance: 5,
       },
     }),
