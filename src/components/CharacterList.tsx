@@ -25,8 +25,8 @@ function FolderCover({ folder, previews, viewMode }: { folder: Folder, previews:
 
   if (url) {
     return (
-      <div className="w-full h-full bg-black/20 flex items-center justify-center relative overflow-hidden">
-        <img src={url} alt="" className="w-full h-full object-cover relative z-10" />
+      <div className="w-full h-full bg-black/20 flex items-center justify-center relative overflow-hidden pointer-events-none">
+        <img src={url} alt="" className="w-full h-full object-cover relative z-10 pointer-events-none" />
       </div>
     );
   }
@@ -35,9 +35,9 @@ function FolderCover({ folder, previews, viewMode }: { folder: Folder, previews:
     return (
       <div className={`w-full h-full grid grid-cols-2 grid-rows-2 gap-1 pointer-events-none ${viewMode === 'list' ? 'p-1.5' : 'p-3'}`}>
         {[0, 1, 2, 3].map(i => (
-          <div key={i} className="w-full h-full bg-black/20 rounded-md overflow-hidden">
+          <div key={i} className="w-full h-full bg-black/20 rounded-md overflow-hidden pointer-events-none">
             {previews[i] && (
-              <img src={previews[i]} alt="" className="w-full h-full object-cover" />
+              <img src={previews[i]} alt="" className="w-full h-full object-cover pointer-events-none" />
             )}
           </div>
         ))}
@@ -63,10 +63,13 @@ function SortableItemWrapper({ id, children, disabled }: { id: string, children:
     transition,
     zIndex: isDragging ? 10 : undefined,
     position: 'relative' as const,
+    userSelect: 'none' as const,
+    WebkitUserSelect: 'none' as const,
+    WebkitTouchCallout: 'none' as const,
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="select-none">
       {children}
     </div>
   );
@@ -303,8 +306,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
-        delay: 250,
-        tolerance: 5,
+        distance: 10,
       },
     }),
     useSensor(TouchSensor, {
