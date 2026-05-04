@@ -10,7 +10,7 @@ import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-function FolderCover({ folder, previews }: { folder: Folder, previews: string[] }) {
+function FolderCover({ folder, previews, viewMode }: { folder: Folder, previews: string[], viewMode: string }) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,7 +25,7 @@ function FolderCover({ folder, previews }: { folder: Folder, previews: string[] 
 
   if (url) {
     return (
-      <div className="w-full h-full bg-black/20 flex items-center justify-center relative overflow-hidden rounded-[8px] md:rounded-[12px]">
+      <div className="w-full h-full bg-black/20 flex items-center justify-center relative overflow-hidden">
         <div className="absolute inset-0 bg-cover bg-center blur-xl opacity-50" style={{ backgroundImage: `url(${url})` }} />
         <img src={url} alt="" className="w-full h-full object-cover relative z-10" />
       </div>
@@ -34,7 +34,7 @@ function FolderCover({ folder, previews }: { folder: Folder, previews: string[] 
 
   if (previews.length > 0) {
     return (
-      <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-1 pointer-events-none">
+      <div className={`w-full h-full grid grid-cols-2 grid-rows-2 gap-1 pointer-events-none ${viewMode === 'list' ? 'p-1.5' : 'p-3'}`}>
         {[0, 1, 2, 3].map(i => (
           <div key={i} className="w-full h-full bg-black/20 rounded-md overflow-hidden">
             {previews[i] && (
@@ -1174,10 +1174,10 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                     </div>
                   )}
                   <div className={viewMode === 'list'
-                    ? "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden p-1.5 object-cover"
-                    : "w-full aspect-square bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/20 group-hover:bg-white/20 transition shadow-sm overflow-hidden p-3 relative"
+                    ? "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden object-cover relative"
+                    : "w-full aspect-square bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/20 group-hover:bg-white/20 transition shadow-sm overflow-hidden relative"
                   }>
-                    <FolderCover folder={folder} previews={previews} />
+                    <FolderCover folder={folder} previews={previews} viewMode={viewMode} />
                   </div>
                   <span className={viewMode === 'list'
                     ? "font-medium text-white/90 flex-1"
