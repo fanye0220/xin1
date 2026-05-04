@@ -1323,92 +1323,107 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
             initial={{ y: 100, opacity: 0, x: '-50%' }}
             animate={{ y: 0, opacity: 1, x: '-50%' }}
             exit={{ y: 100, opacity: 0, x: '-50%' }}
-            className="fixed bottom-8 left-1/2 z-50 flex items-center gap-2 p-2 bg-slate-800/80 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl"
+            className="fixed bottom-8 left-1/2 z-50 max-w-[95vw] sm:max-w-[80vw] bg-slate-800/80 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl overflow-hidden"
           >
-            <button
-              onClick={() => setIsMoveModalOpen(true)}
-              disabled={selectedIds.size === 0}
-              className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-blue-400 transition disabled:opacity-50 group"
-            >
-              <div className="p-2 rounded-full bg-white/5 group-hover:bg-blue-400/20 transition">
-                <FolderInput className="w-5 h-5" />
-              </div>
-              <span className="font-medium text-[10px]">移动</span>
-            </button>
-            {selectedIds.size === 1 && folders.some(f => f.id === Array.from(selectedIds)[0]) && (
-              <>
-                <div className="w-px h-8 bg-white/10" />
+            <div className="flex items-center p-1 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              <style>{`
+                .no-scrollbar::-webkit-scrollbar {
+                  display: none;
+                }
+              `}</style>
+              <div className="flex items-center gap-2 no-scrollbar px-1">
                 <button
-                  onClick={() => {
-                    const folderId = Array.from(selectedIds)[0];
-                    const folder = folders.find(f => f.id === folderId);
-                    if (folder) {
-                      setEditingFolder(folder);
-                      setNewFolderName(folder.name);
-                      setSelectionMode(false);
-                      setSelectedIds(new Set());
-                    }
-                  }}
-                  className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-yellow-400 transition group"
+                  onClick={() => setIsMoveModalOpen(true)}
+                  disabled={selectedIds.size === 0}
+                  className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-blue-400 transition disabled:opacity-50 group shrink-0"
                 >
-                  <div className="p-2 rounded-full bg-white/5 group-hover:bg-yellow-400/20 transition">
-                    <Edit2 className="w-5 h-5" />
+                  <div className="p-2 rounded-full bg-white/5 group-hover:bg-blue-400/20 transition">
+                    <FolderInput className="w-5 h-5" />
                   </div>
-                  <span className="font-medium text-[10px]">重命名</span>
+                  <span className="font-medium text-[10px]">移动</span>
                 </button>
-              </>
-            )}
-            {selectedIds.size === 1 && (() => {
-              const charId = Array.from(selectedIds)[0];
-              const char = characters.find(c => c.id === charId);
-              return char && checkIsQR(char);
-            })() && (
-              <>
-                <div className="w-px h-8 bg-white/10" />
+                {selectedIds.size === 1 && folders.some(f => f.id === Array.from(selectedIds)[0]) && (
+                  <>
+                    <div className="w-px h-8 bg-white/10 shrink-0" />
+                    <button
+                      onClick={() => {
+                        const folderId = Array.from(selectedIds)[0];
+                        const folder = folders.find(f => f.id === folderId);
+                        if (folder) {
+                          setEditingFolder(folder);
+                          setNewFolderName(folder.name);
+                          setSelectionMode(false);
+                          setSelectedIds(new Set());
+                        }
+                      }}
+                      className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-yellow-400 transition group shrink-0"
+                    >
+                      <div className="p-2 rounded-full bg-white/5 group-hover:bg-yellow-400/20 transition">
+                        <Edit2 className="w-5 h-5" />
+                      </div>
+                      <span className="font-medium text-[10px]">重命名</span>
+                    </button>
+                  </>
+                )}
+                {selectedIds.size === 1 && (() => {
+                  const charId = Array.from(selectedIds)[0];
+                  const char = characters.find(c => c.id === charId);
+                  return char && checkIsQR(char);
+                })() && (
+                  <>
+                    <div className="w-px h-8 bg-white/10 shrink-0" />
+                    <button
+                      onClick={() => setIsBindModalOpen(true)}
+                      className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-purple-400 transition group shrink-0"
+                    >
+                      <div className="p-2 rounded-full bg-white/5 group-hover:bg-purple-400/20 transition">
+                        <Link className="w-5 h-5" />
+                      </div>
+                      <span className="font-medium text-[10px]">绑定</span>
+                    </button>
+                  </>
+                )}
+                
+                {selectedIds.size > 0 && Array.from(selectedIds).every(id => folders.some(f => f.id === id)) && (
+                  <>
+                    <div className="w-px h-8 bg-white/10 shrink-0" />
+                    <button
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={selectedIds.size === 0}
+                      className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-orange-400 transition disabled:opacity-50 group shrink-0"
+                    >
+                      <div className="p-2 rounded-full bg-white/5 group-hover:bg-orange-400/20 transition">
+                        <ImageIcon className="w-5 h-5" />
+                      </div>
+                      <span className="font-medium text-[10px]">换封面</span>
+                    </button>
+                  </>
+                )}
+
+                <div className="w-px h-8 bg-white/10 shrink-0" />
                 <button
-                  onClick={() => setIsBindModalOpen(true)}
-                  className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-purple-400 transition group"
+                  onClick={handleBatchExport}
+                  disabled={selectedIds.size === 0}
+                  className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-green-400 transition disabled:opacity-50 group shrink-0"
                 >
-                  <div className="p-2 rounded-full bg-white/5 group-hover:bg-purple-400/20 transition">
-                    <Link className="w-5 h-5" />
+                  <div className="p-2 rounded-full bg-white/5 group-hover:bg-green-400/20 transition">
+                    <Download className="w-5 h-5" />
                   </div>
-                  <span className="font-medium text-[10px]">绑定</span>
+                  <span className="font-medium text-[10px]">导出</span>
                 </button>
-              </>
-            )}
-            <div className="w-px h-8 bg-white/10" />
-            <button
-              onClick={() => coverInputRef.current?.click()}
-              disabled={selectedIds.size === 0}
-              className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-orange-400 transition disabled:opacity-50 group"
-            >
-              <div className="p-2 rounded-full bg-white/5 group-hover:bg-orange-400/20 transition">
-                <ImageIcon className="w-5 h-5" />
+                <div className="w-px h-8 bg-white/10 shrink-0" />
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={selectedIds.size === 0}
+                  className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-red-500/10 text-white/70 hover:text-red-400 transition disabled:opacity-50 group shrink-0"
+                >
+                  <div className="p-2 rounded-full bg-white/5 group-hover:bg-red-400/20 transition">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <span className="font-medium text-[10px]">删除</span>
+                </button>
               </div>
-              <span className="font-medium text-[10px]">换封面</span>
-            </button>
-            <div className="w-px h-8 bg-white/10" />
-            <button
-              onClick={handleBatchExport}
-              disabled={selectedIds.size === 0}
-              className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-green-400 transition disabled:opacity-50 group"
-            >
-              <div className="p-2 rounded-full bg-white/5 group-hover:bg-green-400/20 transition">
-                <Download className="w-5 h-5" />
-              </div>
-              <span className="font-medium text-[10px]">导出</span>
-            </button>
-            <div className="w-px h-8 bg-white/10" />
-            <button
-              onClick={handleBatchDelete}
-              disabled={selectedIds.size === 0}
-              className="flex flex-col items-center gap-1 px-5 py-2 rounded-full hover:bg-red-500/10 text-white/70 hover:text-red-400 transition disabled:opacity-50 group"
-            >
-              <div className="p-2 rounded-full bg-white/5 group-hover:bg-red-400/20 transition">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <span className="font-medium text-[10px]">删除</span>
-            </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
