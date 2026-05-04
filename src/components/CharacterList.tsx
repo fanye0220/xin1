@@ -869,7 +869,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                       className="absolute right-0 top-full mt-2 w-48 bg-slate-800 border border-white/10 rounded-2xl shadow-xl z-50 p-2 overflow-hidden"
                     >
                         {[
-                          { value: 'custom', label: '自定义排序 (拖拽)' },
                           { value: 'newest_import', label: '最新导入' },
                           { value: 'oldest_import', label: '最旧导入' },
                           { value: 'recently_modified', label: '最近修改' },
