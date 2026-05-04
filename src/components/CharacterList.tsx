@@ -303,7 +303,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
-        distance: 10,
+        delay: 250,
+        tolerance: 5,
       },
     }),
     useSensor(TouchSensor, {
