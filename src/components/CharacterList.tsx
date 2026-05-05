@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
 import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
@@ -6,6 +6,7 @@ import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
 import { injectTavernData } from '../lib/png';
+import Cropper from 'react-easy-crop';
 import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -152,62 +153,127 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
-  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+
+  const getCroppedImgBlob = async (imageSrc: string, pixelCrop: any): Promise<Blob | null> => {
+    const image = new Image();
+    image.src = imageSrc;
+    await new Promise((resolve) => { image.onload = resolve; });
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = pixelCrop.width;
+    canvas.height = pixelCrop.height;
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) return null;
+    
+    ctx.drawImage(
+      image,
+      pixelCrop.x,
+      pixelCrop.y,
+      pixelCrop.width,
+      pixelCrop.height,
+      0,
+      0,
+      pixelCrop.width,
+      pixelCrop.height
+    );
+    
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png');
+    });
+  };
+
+  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const allFolders = await getFolders();
-      
-      let compressedFolderBlob: Blob | null = null;
-
-      for (const id of selectedIds) {
-        const folder = allFolders.find(f => f.id === id);
-        if (folder) {
-          if (!compressedFolderBlob) {
-            try {
-              compressedFolderBlob = await compressImage(file, 400);
-            } catch (err) {
-              compressedFolderBlob = file;
-            }
-          }
-          folder.avatarBlob = compressedFolderBlob;
-          await saveFolder(folder);
-        } else {
-          const char = characters.find(c => c.id === id);
-          if (char) {
-             char.avatarBlob = file;
-             await saveCharacter(char);
-          }
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        setImageToCrop(dataUrl);
+        if (coverInputRef.current) {
+          coverInputRef.current.value = '';
         }
-      }
-      
-      // reload
-      loadData();
-      getFolders().then(data => {
-        let currentFolders: Folder[] = [];
-        if (folderId === null) {
-          currentFolders = data.filter(f => !f.parentId);
-        } else {
-          currentFolders = data.filter(f => f.parentId === folderId);
-        }
-        currentFolders.sort((a, b) => {
-          if (sortBy === 'custom') {
-            if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
-            if (a.sortOrder !== undefined) return -1;
-            if (b.sortOrder !== undefined) return 1;
-          }
-          return b.createdAt - a.createdAt;
-        });
-        setFolders(currentFolders);
-      });
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-    } catch (error) {
-      console.error('Failed to change cover:', error);
-      alert('封面更换失败');
+      };
+      reader.readAsDataURL(file);
     }
   };
+
+  const handleSaveCrop = async () => {
+    if (imageToCrop && croppedAreaPixels) {
+      try {
+        const croppedBlob = await getCroppedImgBlob(imageToCrop, croppedAreaPixels);
+        if (!croppedBlob) {
+          setImageToCrop(null);
+          return;
+        }
+
+        const allFolders = await getFolders();
+        let compressedFolderBlob: Blob | null = null;
+        
+        // We typecast croppedBlob as File for compressImage because it inherits it theoretically.
+        // It's just a Blob, but standard compressImage can work or fail then fallback.
+        const croppedFile = new File([croppedBlob], "cropped.png", { type: "image/png" });
+
+        for (const id of selectedIds) {
+          const folder = allFolders.find(f => f.id === id);
+          if (folder) {
+            if (!compressedFolderBlob) {
+              try {
+                compressedFolderBlob = await compressImage(croppedFile, 400);
+              } catch (err) {
+                compressedFolderBlob = croppedBlob;
+              }
+            }
+            folder.avatarBlob = compressedFolderBlob;
+            await saveFolder(folder);
+          } else {
+            const char = characters.find(c => c.id === id);
+            if (char) {
+               char.avatarBlob = croppedBlob;
+               await saveCharacter(char);
+            }
+          }
+        }
+        
+        // reload
+        loadData();
+        getFolders().then(data => {
+          let currentFolders: Folder[] = [];
+          if (folderId === null) {
+            currentFolders = data.filter(f => !f.parentId);
+          } else {
+            currentFolders = data.filter(f => f.parentId === folderId);
+          }
+          currentFolders.sort((a, b) => {
+            if (sortBy === 'custom') {
+              if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+              if (a.sortOrder !== undefined) return -1;
+              if (b.sortOrder !== undefined) return 1;
+            }
+            return b.createdAt - a.createdAt;
+          });
+          setFolders(currentFolders);
+        });
+
+        setImageToCrop(null);
+        setSelectionMode(false);
+        setSelectedIds(new Set());
+      } catch (err) {
+        console.error('Error saving cropped image:', err);
+        alert('封面更换失败');
+      }
+    }
+  };
+
+  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
   const [currentFolderName, setCurrentFolderName] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -1553,6 +1619,63 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           </div>
         )}
       </AnimatePresence>
+
+      {imageToCrop && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-xl flex flex-col shadow-2xl overflow-hidden h-[70vh] max-h-[800px]">
+             <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+                <h3 className="text-lg font-bold text-white">调整封面图片</h3>
+
+                <button 
+                  onClick={() => setImageToCrop(null)}
+                  className="p-1 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition hidden sm:block"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+             </div>
+             <div className="flex-1 relative w-full h-full bg-black/50">
+               <Cropper
+                  image={imageToCrop}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={1}
+                  cropShape="rect"
+                  showGrid={true}
+                  onCropChange={setCrop}
+                  onCropComplete={onCropComplete}
+                  onZoomChange={setZoom}
+               />
+             </div>
+             <div className="p-4 border-t border-white/10 bg-white/[0.02] flex items-center justify-between gap-4">
+                <input
+                  type="range"
+                  value={zoom}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  aria-labelledby="Zoom"
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                />
+                
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setImageToCrop(null)}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/80 font-medium rounded-xl transition sm:hidden"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={handleSaveCrop}
+                    className="px-6 py-2 bg-purple-500 hover:bg-purple-600 text-white font-bold rounded-xl transition"
+                  >
+                    保存封面
+                  </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
