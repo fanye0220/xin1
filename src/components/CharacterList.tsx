@@ -192,16 +192,19 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        setImageToCrop(dataUrl);
-        if (coverInputRef.current) {
-          coverInputRef.current.value = '';
-        }
-      };
-      reader.readAsDataURL(file);
+      const url = URL.createObjectURL(file);
+      setImageToCrop(url);
+      if (coverInputRef.current) {
+        coverInputRef.current.value = '';
+      }
     }
+  };
+
+  const closeCrop = () => {
+    if (imageToCrop && imageToCrop.startsWith('blob:')) {
+      URL.revokeObjectURL(imageToCrop);
+    }
+    setImageToCrop(null);
   };
 
   const handleSaveCrop = async () => {
@@ -209,7 +212,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       try {
         const croppedBlob = await getCroppedImgBlob(imageToCrop, croppedAreaPixels);
         if (!croppedBlob) {
-          setImageToCrop(null);
+          closeCrop();
           return;
         }
 
@@ -261,7 +264,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           setFolders(currentFolders);
         });
 
-        setImageToCrop(null);
+        closeCrop();
         setSelectionMode(false);
         setSelectedIds(new Set());
       } catch (err) {
@@ -1627,7 +1630,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 <h3 className="text-lg font-bold text-white">调整封面图片</h3>
 
                 <button 
-                  onClick={() => setImageToCrop(null)}
+                  onClick={closeCrop}
                   className="p-1 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition hidden sm:block"
                 >
                   <X className="w-5 h-5" />
@@ -1660,7 +1663,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 
                 <div className="flex items-center gap-2">
                   <button 
-                    onClick={() => setImageToCrop(null)}
+                    onClick={closeCrop}
                     className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/80 font-medium rounded-xl transition sm:hidden"
                   >
                     取消

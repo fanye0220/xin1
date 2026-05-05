@@ -78,15 +78,11 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
   const handleUserAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        setImageToCrop(dataUrl);
-        if (userAvatarInputRef.current) {
-          userAvatarInputRef.current.value = '';
-        }
-      };
-      reader.readAsDataURL(file);
+      const url = URL.createObjectURL(file);
+      setImageToCrop(url);
+      if (userAvatarInputRef.current) {
+        userAvatarInputRef.current.value = '';
+      }
     }
   };
 
@@ -121,12 +117,19 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
     return canvas.toDataURL('image/png');
   };
 
+  const closeCrop = () => {
+    if (imageToCrop && imageToCrop.startsWith('blob:')) {
+      URL.revokeObjectURL(imageToCrop);
+    }
+    setImageToCrop(null);
+  };
+
   const handleSaveCrop = async () => {
     if (imageToCrop && croppedAreaPixels) {
       const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
       setUserAvatar(croppedImage);
       localStorage.setItem('chatViewer_userAvatar', croppedImage);
-      setImageToCrop(null);
+      closeCrop();
     }
   };
 
@@ -807,7 +810,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
                 <h3 className="text-lg font-bold text-white">调整头像</h3>
                 <button 
-                  onClick={() => setImageToCrop(null)}
+                  onClick={closeCrop}
                   className="p-1 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition"
                 >
                   <X className="w-5 h-5" />
