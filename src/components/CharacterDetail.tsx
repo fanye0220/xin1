@@ -14,9 +14,10 @@ import JSZip from 'jszip';
 interface Props {
   id: string;
   onBack: () => void;
+  onOpenChat?: (chatId: string) => void;
 }
 
-export function CharacterDetail({ id, onBack }: Props) {
+export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const [character, setCharacter] = useState<CharacterCard | null>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'greetings' | 'worldbook' | 'chats' | 'memos'>('profile');
 
@@ -910,6 +911,7 @@ export function CharacterDetail({ id, onBack }: Props) {
                    characterName={character.name} 
                    regexScripts={(character.data?.data?.extensions || character.data?.extensions || {}).regex_scripts || []} 
                    avatar={avatarUrl}
+                   onOpenChat={onOpenChat}
                 />
               )}
 

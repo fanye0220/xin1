@@ -110,6 +110,7 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [globalChatViewerId, setGlobalChatViewerId] = useState<string | null>(null);
   
   const [isMigrating, setIsMigrating] = useState(true);
   const [migrationProgress, setMigrationProgress] = useState({ current: 0, total: 0 });
@@ -144,7 +145,7 @@ export default function App() {
   }
 
   return (
-    <div className="font-sans antialiased text-white bg-slate-900 h-screen flex overflow-hidden relative">
+    <div className="font-sans antialiased text-white bg-slate-900 fixed inset-0 flex overflow-hidden">
       
       {/* Sidebar Drawer */}
       <AnimatePresence>
@@ -215,11 +216,30 @@ export default function App() {
                   setSelectedCharId(null);
                   setRefreshKey(prev => prev + 1);
                 }}
+                onOpenChat={setGlobalChatViewerId}
               />
             </div>
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {globalChatViewerId && (
+          <motion.div 
+             className="fixed inset-0 z-[60] bg-slate-900 flex flex-col"
+             initial={{ opacity: 0, scale: 0.95 }}
+             animate={{ opacity: 1, scale: 1 }}
+             exit={{ opacity: 0, scale: 0.95 }}
+             transition={{ duration: 0.2 }}
+          >
+            <ChatViewer 
+              initialChatId={globalChatViewerId} 
+              singleMode={true}
+              onClose={() => setGlobalChatViewerId(null)} 
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <ImportModal
         isOpen={isImportModalOpen}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getChatsForCharacter, deleteChat, saveChat, ChatLog } from '../lib/db';
+import { getChatsForCharacter, deleteChat, saveChat, ChatLog, getAllChats } from '../lib/db';
 import { MessageSquare, Trash2, Calendar, FileJson, UploadCloud, Edit2, Plus, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
@@ -12,9 +12,10 @@ interface Props {
   characterName: string;
   regexScripts: any[];
   avatar?: string;
+  onOpenChat?: (chatId: string) => void;
 }
 
-export function CharacterChatsSection({ characterId, characterName, regexScripts, avatar }: Props) {
+export function CharacterChatsSection({ characterId, characterName, regexScripts, avatar, onOpenChat }: Props) {
   const [chats, setChats] = useState<ChatLog[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatLog | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -23,7 +24,17 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const [customTags, setCustomTags] = useState<string[]>([]);
 
   const loadChats = async () => {
-    const list = await getChatsForCharacter(characterId);
+    const all = await getAllChats();
+    const list = all.filter(c => {
+      if (c.characterId === characterId) return true;
+      if (!c.characterId) {
+         const aiMsg = c.messages.find(m => !m.is_user && m.name);
+         if (aiMsg?.name && aiMsg.name.toLowerCase() === characterName.toLowerCase()) {
+            return true;
+         }
+      }
+      return false;
+    });
     setChats(list.sort((a,b) => b.createdAt - a.createdAt));
   };
 
@@ -183,10 +194,11 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           <Virtuoso
             style={{ height: '100%' }}
             data={selectedChat.messages}
+            initialTopMostItemIndex={selectedChat.messages ? selectedChat.messages.length - 1 : 0}
             itemContent={(i, msg) => {
              const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
              return (
-                  <div className={`flex gap-4 mb-6 ${msg.is_user ? 'flex-row-reverse' : ''}`}>
+                  <div className={`flex gap-4 pb-6 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden`}>
                     <div className="shrink-0 pt-1">
                       {msg.is_user ? (
                         <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
@@ -283,7 +295,13 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           {chats.map(chat => (
             <div 
               key={chat.id}
-              onClick={() => setSelectedChat(chat)}
+              onClick={() => {
+                if (onOpenChat) {
+                  onOpenChat(chat.id);
+                } else {
+                  setSelectedChat(chat);
+                }
+              }}
               className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] relative"
             >
               <div className="flex justify-between items-start mb-2 gap-3">

@@ -17,9 +17,15 @@ interface ChatMessage {
   extra?: any;
 }
 
-export function ChatViewer({ onClose }: { onClose: () => void }) {
+export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: () => void, initialChatId?: string | null, singleMode?: boolean }) {
   const [savedChats, setSavedChats] = useState<ChatLog[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialChatId) {
+      setActiveChatId(initialChatId);
+    }
+  }, [initialChatId]);
 
   const [isDragActive, setIsDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -363,7 +369,10 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
   const handleRemoveChat = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     await deleteChat(id);
-    if (activeChatId === id) setActiveChatId(null);
+    if (activeChatId === id) {
+      if (singleMode) onClose();
+      else setActiveChatId(null);
+    }
     loadData();
   };
 
@@ -419,7 +428,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
           >
             <div className="pointer-events-auto bg-black/60 backdrop-blur-xl border border-white/10 flex items-center shadow-[0_10px_40px_rgba(0,0,0,0.5)] transition-all duration-500 overflow-visible rounded-full w-full justify-between p-1.5">
               <button 
-                onClick={() => setActiveChatId(null)} 
+                onClick={() => singleMode ? onClose() : setActiveChatId(null)} 
                 className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full hover:bg-white/10 text-white/70 hover:text-white transition"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -454,7 +463,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                         <div className="flex flex-col gap-2">
                           <label className="text-xs text-white/50 font-medium">绑定角色获得正则效果</label>
                           <select 
-                            value={activeChat.characterId || ""} 
+                            value={activeChat.characterId || activeCharacter?.id || ""} 
                             onChange={e => handleUpdateBinding(e.target.value)}
                             className="bg-black/30 border border-white/10 text-sm text-white focus:outline-none rounded-lg p-2 w-full appearance-none"
                           >
@@ -464,7 +473,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                             ))}
                           </select>
                         </div>
-                        {activeCharacter && activeChat.characterId && (
+                        {activeCharacter && (
                           <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
                              <span className="text-xs text-green-400 flex items-center gap-1.5 font-medium">
                                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -640,6 +649,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                 <Virtuoso
                   style={{ height: '100%' }}
                   data={activeChat?.messages || []}
+                  initialTopMostItemIndex={activeChat?.messages ? activeChat.messages.length - 1 : 0}
                   components={{
                     Header: () => <div className="h-24" />,
                     Footer: () => <div className="h-32" />
@@ -647,7 +657,7 @@ export function ChatViewer({ onClose }: { onClose: () => void }) {
                   itemContent={(i, msg) => {
                     const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
                     return (
-                      <div className={`flex gap-4 mb-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''}`}>
+                      <div className={`flex gap-4 pb-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden`}>
                         <div className="shrink-0 pt-1">
                           {msg.is_user ? (
                             userAvatar ? (
