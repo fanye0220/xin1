@@ -970,9 +970,9 @@ function FullScreenTextModal({
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 50 }}
-      className="fixed inset-0 z-[100] bg-slate-900 flex flex-col overflow-hidden"
+      className="fixed inset-0 z-[100] bg-slate-900 flex flex-col"
     >
-      <header className="flex-none p-4 pt-7 sm:pt-7 flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 p-4 pt-7 sm:pt-7 flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border-b border-white/10 z-20">
         <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition">
           <ArrowLeft className="w-6 h-6" />
         </button>
@@ -989,21 +989,19 @@ function FullScreenTextModal({
           )
         )}
       </header>
-      <div className="flex-1 p-4 sm:p-6 hide-scrollbar bg-slate-900 flex flex-col relative overflow-hidden">
-        <div className="max-w-2xl mx-auto w-full h-full flex flex-col">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar bg-slate-900 flex flex-col">
+        <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
           {isEditing ? (
             <textarea 
               value={editValue}
               onChange={e => setEditValue(e.target.value)}
-              className="w-full h-full bg-black/40 border border-white/20 rounded-xl p-4 text-white/90 text-base sm:text-lg leading-relaxed sm:leading-loose focus:outline-none focus:border-purple-500 resize-none"
+              className="w-full flex-1 bg-black/40 border border-white/20 rounded-xl p-4 text-white/90 text-base sm:text-lg leading-relaxed sm:leading-loose focus:outline-none focus:border-purple-500 resize-none"
               autoFocus
             />
           ) : (
-            <div className="w-full h-full overflow-y-auto pr-2 pb-8">
-              <p className="text-white/90 whitespace-pre-wrap text-base sm:text-lg leading-relaxed sm:leading-loose">
-                {content}
-              </p>
-            </div>
+            <p className="text-white/90 whitespace-pre-wrap text-base sm:text-lg leading-relaxed sm:leading-loose">
+              {content}
+            </p>
           )}
         </div>
       </div>
