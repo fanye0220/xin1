@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
@@ -966,7 +965,7 @@ function FullScreenTextModal({
     setIsEditing(false);
   };
 
-  const modalContent = (
+  return (
     <motion.div
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
@@ -990,26 +989,24 @@ function FullScreenTextModal({
           )
         )}
       </header>
-      <div className="flex-1 p-4 sm:p-6 hide-scrollbar bg-slate-900 flex flex-col min-h-0">
-        <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar bg-slate-900 flex flex-col">
+        <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
           {isEditing ? (
             <textarea 
               value={editValue}
               onChange={e => setEditValue(e.target.value)}
-              className="w-full h-full bg-black/40 border border-white/20 rounded-xl p-4 text-white/90 text-base sm:text-lg leading-relaxed sm:leading-loose focus:outline-none focus:border-purple-500 resize-none"
+              className="w-full flex-1 bg-black/40 border border-white/20 rounded-xl p-4 text-white/90 text-base sm:text-lg leading-relaxed sm:leading-loose focus:outline-none focus:border-purple-500 resize-none"
               autoFocus
             />
           ) : (
-            <div className="w-full h-full overflow-y-auto pb-8 pr-2 text-white/90 whitespace-pre-wrap text-base sm:text-lg leading-relaxed sm:leading-loose hide-scrollbar">
+            <p className="text-white/90 whitespace-pre-wrap text-base sm:text-lg leading-relaxed sm:leading-loose">
               {content}
-            </div>
+            </p>
           )}
         </div>
       </div>
     </motion.div>
   );
-
-  return createPortal(modalContent, document.body);
 }
 
 function TextPreview({ title, content, onSave, initialEditMode }: { title: string; content: string; onSave?: (val: string) => void; initialEditMode?: boolean }) {
@@ -1236,7 +1233,7 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
 
   const renderEditForm = () => {
     if (editingIndex === null) return null;
-    return createPortal(
+    return (
       <div className="fixed inset-0 z-[110] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6" onClick={() => setEditingIndex(null)}>
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -1258,7 +1255,6 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
               <input 
                 type="text" 
                 value={editForm.comment || editForm.name || ''} 
-
                 onChange={e => setEditForm({...editForm, comment: e.target.value})}
                 className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
                 placeholder="例如: 角色背景、设定1"
@@ -1315,8 +1311,7 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
             <button onClick={handleSave} className="px-5 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 text-white text-sm transition font-medium">保存</button>
           </div>
         </motion.div>
-      </div>,
-      document.body
+      </div>
     );
   };
 
