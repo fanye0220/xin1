@@ -69,32 +69,74 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
       try {
-        const text = await file.text();
-        let parsedMessages: any[] = [];
-
-        if (file.name.endsWith('.jsonl') || text.trim().split('\n').length > 1) {
-          const lines = text.trim().split('\n');
-          parsedMessages = lines.map(line => {
-            try { return JSON.parse(line); } catch (e) { return null; }
-          }).filter(Boolean);
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          const { default: JSZip } = await import('jszip');
+          const zip = new JSZip();
+          const loadedZip = await zip.loadAsync(file);
+          
+          for (const relativePath in loadedZip.files) {
+            const zipEntry = loadedZip.files[relativePath];
+            if (zipEntry.dir) continue;
+            
+            const lowerName = zipEntry.name.toLowerCase();
+            if (lowerName.endsWith('.json') || lowerName.endsWith('.jsonl')) {
+              try {
+                const text = await zipEntry.async('text');
+                let parsedMessages: any[] = [];
+                
+                if (lowerName.endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+                  const lines = text.trim().split('\n');
+                  parsedMessages = lines.map(line => {
+                    try { return JSON.parse(line); } catch (e) { return null; }
+                  }).filter(Boolean);
+                } else {
+                  const data = JSON.parse(text);
+                  if (Array.isArray(data)) parsedMessages = data;
+                  else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+                  else parsedMessages = [data];
+                }
+                
+                await saveChat({
+                  id: crypto.randomUUID(),
+                  characterId: characterId,
+                  name: zipEntry.name.split('/').pop() || zipEntry.name,
+                  messages: parsedMessages,
+                  createdAt: Date.now()
+                });
+                imported++;
+              } catch (e) {
+                console.error(`Failed to parse file inside zip: ${zipEntry.name}`, e);
+              }
+            }
+          }
         } else {
-          const data = JSON.parse(text);
-          if (Array.isArray(data)) parsedMessages = data;
-          else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
-          else parsedMessages = [data];
-        }
+          const text = await file.text();
+          let parsedMessages: any[] = [];
 
-        await saveChat({
-          id: crypto.randomUUID(),
-          characterId: characterId,
-          name: file.name,
-          messages: parsedMessages,
-          createdAt: Date.now()
-        });
-        imported++;
+          if (file.name.toLowerCase().endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+            const lines = text.trim().split('\n');
+            parsedMessages = lines.map(line => {
+              try { return JSON.parse(line); } catch (e) { return null; }
+            }).filter(Boolean);
+          } else {
+            const data = JSON.parse(text);
+            if (Array.isArray(data)) parsedMessages = data;
+            else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+            else parsedMessages = [data];
+          }
+
+          await saveChat({
+            id: crypto.randomUUID(),
+            characterId: characterId,
+            name: file.name,
+            messages: parsedMessages,
+            createdAt: Date.now()
+          });
+          imported++;
+        }
       } catch (e) {
         console.error(e);
-        alert(`解析文件 ${file.name} 失败，请确保格式为记录导出的 jsonl 或 json 格式。`);
+        alert(`解析文件 ${file.name} 失败，请确保格式为记录导出的 zip, jsonl 或 json 格式。`);
       }
     }
 
@@ -272,7 +314,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".json,.jsonl"
+          accept=".json,.jsonl,.zip"
           className="hidden"
           onChange={(e) => {
             if (e.target.files?.length) handleFileUpload(e.target.files);
@@ -286,7 +328,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
            <h4 className="text-white/80 font-medium mb-2">暂无绑定的聊天记录</h4>
            <div className="flex flex-col items-center gap-4 mt-2">
              <p className="text-white/40 text-sm max-w-sm">
-               点击右上角导入按钮，或直接拖拽 JSONL 文件到窗口中绑定至此角色。
+               点击右上角导入按钮，或直接拖拽 JSONL/ZIP 文件到窗口中绑定至此角色。
              </p>
            </div>
         </div>

@@ -180,42 +180,88 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
       try {
-        const text = await file.text();
-        let parsedMessages: ChatMessage[] = [];
-
-        // Check if JSONL
-        if (file.name.endsWith('.jsonl') || text.trim().split('\n').length > 1) {
-          const lines = text.trim().split('\n');
-          parsedMessages = lines.map(line => {
-            try { return JSON.parse(line); } catch (e) { return null; }
-          }).filter(Boolean);
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          const { default: JSZip } = await import('jszip');
+          const zip = new JSZip();
+          const loadedZip = await zip.loadAsync(file);
+          
+          for (const relativePath in loadedZip.files) {
+            const zipEntry = loadedZip.files[relativePath];
+            if (zipEntry.dir) continue;
+            
+            const lowerName = zipEntry.name.toLowerCase();
+            if (lowerName.endsWith('.json') || lowerName.endsWith('.jsonl')) {
+              try {
+                const text = await zipEntry.async('text');
+                let parsedMessages: ChatMessage[] = [];
+                
+                if (lowerName.endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+                  const lines = text.trim().split('\n');
+                  parsedMessages = lines.map(line => {
+                    try { return JSON.parse(line); } catch (e) { return null; }
+                  }).filter(Boolean);
+                } else {
+                  const data = JSON.parse(text);
+                  if (Array.isArray(data)) parsedMessages = data;
+                  else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+                  else parsedMessages = [data];
+                }
+                
+                const aiMessage = parsedMessages.find(m => !m.is_user && m.name);
+                let charId = '';
+                if (aiMessage && aiMessage.name) {
+                  const match = characters.find(c => c.name.toLowerCase() === aiMessage.name?.toLowerCase());
+                  if (match) charId = match.id;
+                }
+                
+                await saveChat({
+                  id: crypto.randomUUID(),
+                  characterId: charId,
+                  name: zipEntry.name.split('/').pop() || zipEntry.name,
+                  messages: parsedMessages,
+                  createdAt: Date.now()
+                });
+                imported++;
+              } catch (e) {
+                console.error(`Failed to parse file inside zip: ${zipEntry.name}`, e);
+              }
+            }
+          }
         } else {
-          // Try JSON array
-          const data = JSON.parse(text);
-          if (Array.isArray(data)) parsedMessages = data;
-          else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
-          else parsedMessages = [data];
-        }
+          const text = await file.text();
+          let parsedMessages: ChatMessage[] = [];
 
-        // Auto-detect character
-        const aiMessage = parsedMessages.find(m => !m.is_user && m.name);
-        let charId = '';
-        if (aiMessage && aiMessage.name) {
-          const match = characters.find(c => c.name.toLowerCase() === aiMessage.name.toLowerCase());
-          if (match) charId = match.id;
-        }
+          if (file.name.toLowerCase().endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+            const lines = text.trim().split('\n');
+            parsedMessages = lines.map(line => {
+              try { return JSON.parse(line); } catch (e) { return null; }
+            }).filter(Boolean);
+          } else {
+            const data = JSON.parse(text);
+            if (Array.isArray(data)) parsedMessages = data;
+            else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+            else parsedMessages = [data];
+          }
 
-        await saveChat({
-          id: crypto.randomUUID(),
-          characterId: charId,
-          name: file.name,
-          messages: parsedMessages,
-          createdAt: Date.now()
-        });
-        imported++;
+          const aiMessage = parsedMessages.find(m => !m.is_user && m.name);
+          let charId = '';
+          if (aiMessage && aiMessage.name) {
+            const match = characters.find(c => c.name.toLowerCase() === aiMessage.name.toLowerCase());
+            if (match) charId = match.id;
+          }
+
+          await saveChat({
+            id: crypto.randomUUID(),
+            characterId: charId,
+            name: file.name,
+            messages: parsedMessages,
+            createdAt: Date.now()
+          });
+          imported++;
+        }
       } catch (e) {
         console.error(e);
-        alert(`解析文件 ${file.name} 失败，请确保格式为酒馆导出的 jsonl 或 json 格式。`);
+        alert(`解析文件 ${file.name} 失败，请确保格式为酒馆导出的 zip, jsonl 或 json 格式。`);
       }
     }
 
@@ -533,7 +579,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".json,.jsonl"
+                accept=".json,.jsonl,.zip"
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files?.length) handleFileUpload(e.target.files);
@@ -545,7 +591,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
               <div className="py-20 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-3xl">
                 <FileJson className="w-16 h-16 text-white/20 mb-4 mx-auto" />
                 <h3 className="text-xl font-medium text-white/60 mb-2">拖拽或点击上方按钮导入聊天记录</h3>
-                <p className="text-white/40 mb-8">支持批量导入 .jsonl 格式文件</p>
+                <p className="text-white/40 mb-8">支持批量导入 .zip 或 .jsonl 格式文件</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">
