@@ -39,6 +39,13 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const [editNoteContent, setEditNoteContent] = useState('');
 
   const [customTags, setCustomTags] = useState<string[]>([]);
+  const [readingMode, setReadingMode] = useState(false);
+
+  const toggleReadingMode = () => {
+    if (window.confirm(readingMode ? "是否退出沉浸阅读模式？" : "是否开启沉浸阅读模式（隐藏头像，便于手机全屏阅读）？")) {
+      setReadingMode(!readingMode);
+    }
+  };
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
@@ -284,13 +291,13 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
     if (!text) return '';
     let result = text;
     // Format <Think>
-    result = result.replace(/(?:<|&lt;)Think(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/Think(?:>|&gt;)/gi, '<details class="text-sm bg-white/5 border border-white/10 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-gray-400 select-none">🤔 思维链</summary><div class="mt-2 text-gray-300">$1</div></details>');
+    result = result.replace(/(?:<|&lt;)Think(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/Think(?:>|&gt;)/gi, '<details class="text-sm bg-white/5 border border-white/10 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-gray-400 select-none">🤔 思维链</summary><div class="mt-2 text-gray-300 break-words whitespace-pre-wrap max-w-full overflow-x-auto">$1</div></details>');
     
     // Format doggy_status_panel
-    result = result.replace(/(?:<|&lt;)doggy_status_panel(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/doggy_status_panel(?:>|&gt;)/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto">$1</pre></details>');
+    result = result.replace(/(?:<|&lt;)doggy_status_panel(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/doggy_status_panel(?:>|&gt;)/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto break-words max-w-full">$1</pre></details>');
 
     // Also deal with standalone {状态栏 | ...} without xml tags
-    result = result.replace(/\{状态栏\s*\|([\s\S]*?)\}/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto">$1</pre></details>');
+    result = result.replace(/\{状态栏\s*\|([\s\S]*?)\}/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto break-words max-w-full">$1</pre></details>');
 
     // Apply user defined custom tags
     const processedTags = new Set(customTags.map(t => t.replace(/^<*\/?|\/?>*$/g, '').trim()).filter(Boolean));
@@ -301,7 +308,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
       
       // Match paired tags with optional attributes. Handle both < and &lt;
       const pairedRe = new RegExp(`(?:<|&lt;)\\s*${escapedTag}(?:\\s+(?:[^>&]|&[^g])+)?(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\/\\s*${escapedTag}\\s*(?:>|&gt;)`, 'gi');
-      result = result.replace(pairedRe, `<details class="text-sm bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-2 my-2"><summary class="cursor-pointer font-bold text-indigo-400 select-none">${tag}</summary><div class="mt-2 text-indigo-300/80 whitespace-pre-wrap">$1</div></details>`);
+      result = result.replace(pairedRe, `<details class="text-sm bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-indigo-400 select-none">${tag}</summary><div class="mt-2 text-indigo-300/80 whitespace-pre-wrap break-words max-w-full overflow-x-auto">$1</div></details>`);
       
       // Match stray/single tags so they don't disappear in markdown rendering
       const singleRe = new RegExp(`(?:<|&lt;)\\s*${escapedTag}(?:\\s+(?:[^>&]|&[^g])+)?\\/?\\s*(?:>|&gt;)`, 'gi');
@@ -678,7 +685,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                            {new Date(chat.createdAt).toLocaleString()}
                         </span>
                       </div>
-                      <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 prose prose-sm prose-invert max-w-none line-clamp-3 overflow-hidden">
+                      <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 prose prose-sm prose-invert max-w-none line-clamp-3 overflow-hidden break-words">
                         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                           {formatCustomTags(applyRegexes(chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].mes : '空记录', matchedChar))}
                         </ReactMarkdown>
@@ -704,24 +711,26 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                     const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
                     return (
                       <div className={`flex gap-4 pb-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden`}>
-                        <div className="shrink-0 pt-1">
-                          {msg.is_user ? (
-                            userAvatar ? (
-                              <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-lg overflow-hidden">
-                                <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
-                              </div>
+                        <div className="shrink-0 pt-1" onDoubleClick={toggleReadingMode}>
+                          {!readingMode && (
+                            msg.is_user ? (
+                              userAvatar ? (
+                                <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-lg overflow-hidden cursor-pointer" title="双击切换阅读模式">
+                                  <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
+                                </div>
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold cursor-pointer" title="双击切换阅读模式">
+                                  {msg.name?.charAt(0) || 'U'}
+                                </div>
+                              )
                             ) : (
-                              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
-                                {msg.name?.charAt(0) || 'U'}
-                              </div>
-                            )
-                          ) : (
-                            activeCharacter && avatarUrls[activeCharacter.id] ? (
-                              <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
-                                {msg.name?.charAt(0) || 'AI'}
-                              </div>
+                              activeCharacter && avatarUrls[activeCharacter.id] ? (
+                                <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10 cursor-pointer" title="双击切换阅读模式" />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold cursor-pointer" title="双击切换阅读模式">
+                                  {msg.name?.charAt(0) || 'AI'}
+                                </div>
+                              )
                             )
                           )}
                         </div>
@@ -736,12 +745,13 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                             msg.is_user 
                               ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
                               : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
-                          }`}>
+                          }`} onDoubleClick={toggleReadingMode} title="双击打开/关闭阅读模式">
                              <div className="prose prose-invert prose-sm max-w-none 
                                 prose-headings:text-white/90 prose-p:leading-relaxed 
                                 prose-a:text-blue-400 hover:prose-a:text-blue-300
                                 prose-strong:text-white prose-code:text-pink-300
-                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words"
+                                prose-pre:bg-black/30 prose-pre:overflow-x-auto
+                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full overflow-hidden"
                               >
                               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                   {formatCustomTags(applyRegexes(msg.mes || '', activeCharacter))}
