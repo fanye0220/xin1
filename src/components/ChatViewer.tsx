@@ -39,13 +39,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const [editNoteContent, setEditNoteContent] = useState('');
 
   const [customTags, setCustomTags] = useState<string[]>([]);
-  const [readingMode, setReadingMode] = useState(false);
-
-  const toggleReadingMode = () => {
-    if (window.confirm(readingMode ? "是否退出沉浸阅读模式？" : "是否开启沉浸阅读模式（隐藏头像，便于手机全屏阅读）？")) {
-      setReadingMode(!readingMode);
-    }
-  };
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
@@ -711,26 +704,24 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                     const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
                     return (
                       <div className={`flex gap-4 pb-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden`}>
-                        <div className="shrink-0 pt-1" onDoubleClick={toggleReadingMode}>
-                          {!readingMode && (
-                            msg.is_user ? (
-                              userAvatar ? (
-                                <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-lg overflow-hidden cursor-pointer" title="双击切换阅读模式">
-                                  <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
-                                </div>
-                              ) : (
-                                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold cursor-pointer" title="双击切换阅读模式">
-                                  {msg.name?.charAt(0) || 'U'}
-                                </div>
-                              )
+                        <div className="shrink-0 pt-1">
+                          {msg.is_user ? (
+                            userAvatar ? (
+                              <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-lg overflow-hidden">
+                                <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
+                              </div>
                             ) : (
-                              activeCharacter && avatarUrls[activeCharacter.id] ? (
-                                <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10 cursor-pointer" title="双击切换阅读模式" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold cursor-pointer" title="双击切换阅读模式">
-                                  {msg.name?.charAt(0) || 'AI'}
-                                </div>
-                              )
+                              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
+                                {msg.name?.charAt(0) || 'U'}
+                              </div>
+                            )
+                          ) : (
+                            activeCharacter && avatarUrls[activeCharacter.id] ? (
+                              <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
+                                {msg.name?.charAt(0) || 'AI'}
+                              </div>
                             )
                           )}
                         </div>
@@ -745,7 +736,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                             msg.is_user 
                               ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
                               : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
-                          }`} onDoubleClick={toggleReadingMode} title="双击打开/关闭阅读模式">
+                          }`}>
                              <div className="prose prose-invert prose-sm max-w-none 
                                 prose-headings:text-white/90 prose-p:leading-relaxed 
                                 prose-a:text-blue-400 hover:prose-a:text-blue-300

@@ -1016,9 +1016,9 @@ function TextPreview({ title, content, onSave, initialEditMode }: { title: strin
     <>
       <div 
         onClick={() => setIsModalOpen(true)}
-        className="group relative cursor-pointer bg-white/5 hover:bg-white/10 p-3 rounded-xl border border-white/10 transition-colors"
+        className="group relative cursor-pointer bg-white/5 hover:bg-white/10 p-3 rounded-xl border border-white/10 transition-colors w-full overflow-hidden"
       >
-        <div className="text-white/70 text-sm line-clamp-2 pr-8">
+        <div className="text-white/70 text-sm line-clamp-2 pr-8 break-words w-full">
           {content || <span className="text-white/30 italic">空内容...</span>}
         </div>
         <div className="mt-1.5 text-purple-400 text-xs font-medium flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
@@ -1062,10 +1062,10 @@ function AlternateGreetingCard({ index, content, onSave, onDelete }: { key?: str
             </div>
           </div>
           <div 
-            className="group cursor-pointer mt-2"
+            className="group cursor-pointer mt-2 w-full"
             onClick={() => setIsModalOpen(true)}
           >
-            <div className="text-white/70 text-sm line-clamp-2">
+            <div className="text-white/70 text-sm line-clamp-2 break-words w-full">
               {content || <span className="text-white/30 italic">空内容...</span>}
             </div>
             <div className="mt-1.5 text-purple-400 text-xs font-medium flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
@@ -1400,9 +1400,9 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
             const order = entry.order !== undefined ? entry.order : (entry.insertion_order || 50);
 
             return (
-              <div key={i} className={`bg-white/5 p-3 rounded-xl border ${isEnabled ? 'border-white/10' : 'border-white/5 opacity-60'} flex gap-3 transition-opacity`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap sm:flex-nowrap justify-between items-start gap-2 mb-1">
+              <div key={i} className={`w-full bg-white/5 p-3 rounded-xl border ${isEnabled ? 'border-white/10' : 'border-white/5 opacity-60'} flex gap-3 transition-opacity overflow-hidden`}>
+                <div className="flex-1 min-w-0 w-full">
+                  <div className="flex flex-wrap sm:flex-nowrap justify-between items-start gap-2 mb-1 w-full">
                     <div className="flex flex-col min-w-0 flex-1">
                       <h4 className="font-semibold text-purple-300 truncate">
                         {title}
@@ -1432,10 +1432,10 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
                     </div>
                   </div>
                   <div 
-                    className="group cursor-pointer mt-2"
+                    className="group cursor-pointer mt-2 w-full"
                     onClick={() => setViewingEntryIndex(i)}
                   >
-                    <div className="text-white/70 text-sm line-clamp-2">{entry.content || entry.entry || ''}</div>
+                    <div className="text-white/70 text-sm line-clamp-2 break-words w-full">{entry.content || entry.entry || ''}</div>
                     <div className="mt-1.5 text-purple-400 text-xs font-medium flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                       <span>阅读全文</span>
                       <ChevronRight className="w-3 h-3" />

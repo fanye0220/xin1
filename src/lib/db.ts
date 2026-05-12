@@ -398,6 +398,7 @@ export async function renameTag(oldTag: string, newTag: string): Promise<void> {
       } else {
         char.data.tags = Array.from(new Set(newTags));
       }
+      char.updatedAt = Date.now();
       await store.put(char);
     }
   }
@@ -420,6 +421,7 @@ export async function deleteTag(tagToDelete: string): Promise<void> {
       } else {
         char.data.tags = newTags;
       }
+      char.updatedAt = Date.now();
       await store.put(char);
     }
   }
