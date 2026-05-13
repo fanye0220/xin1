@@ -207,11 +207,20 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                   else parsedMessages = [data];
                 }
                 
-                const aiMessage = parsedMessages.find(m => !m.is_user && m.name);
                 let charId = '';
-                if (aiMessage && aiMessage.name) {
-                  const match = characters.find(c => c.name.toLowerCase() === aiMessage.name?.toLowerCase());
-                  if (match) charId = match.id;
+                const pathParts = zipEntry.name.split('/');
+                if (pathParts.length > 1) {
+                  const parentFolderName = pathParts[pathParts.length - 2];
+                  const folderMatch = characters.find(c => c.name.toLowerCase() === parentFolderName.toLowerCase());
+                  if (folderMatch) charId = folderMatch.id;
+                }
+                
+                if (!charId) {
+                  const aiMessage = parsedMessages.find(m => !m.is_user && m.name);
+                  if (aiMessage && aiMessage.name) {
+                    const match = characters.find(c => c.name.toLowerCase() === aiMessage.name?.toLowerCase());
+                    if (match) charId = match.id;
+                  }
                 }
                 
                 await saveChat({
