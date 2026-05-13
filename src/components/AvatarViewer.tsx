@@ -108,13 +108,18 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     
     try {
       let pngBlob: Blob = file;
-      if (file.type !== 'image/png' && !(file.name && file.name.endsWith('.png'))) {
+      if (file.type !== 'image/png') {
         pngBlob = await convertToPng(file);
       }
       
       const { injectTavernData } = await import('../lib/png');
       const buffer = await pngBlob.arrayBuffer();
-      const newBuffer = injectTavernData(buffer, character.data);
+      
+      const charData = JSON.parse(JSON.stringify(character.data));
+      if (charData.avatar) delete charData.avatar;
+      if (charData.data && charData.data.avatar) delete charData.data.avatar;
+      
+      const newBuffer = injectTavernData(buffer, charData);
       
       finalFile = new File([newBuffer], (file.name || 'avatar').replace(/\.[^/.]+$/, "") + ".png", { type: 'image/png' });
     } catch (err) {
@@ -156,7 +161,12 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       
       const { injectTavernData } = await import('../lib/png');
       const buffer = await pngBlob.arrayBuffer();
-      const newBuffer = injectTavernData(buffer, character.data);
+      
+      const charData = JSON.parse(JSON.stringify(character.data));
+      if (charData.avatar) delete charData.avatar;
+      if (charData.data && charData.data.avatar) delete charData.data.avatar;
+      
+      const newBuffer = injectTavernData(buffer, charData);
       
       finalFile = new File([newBuffer], 'avatar.png', { type: 'image/png' });
     } catch (err) {
@@ -214,6 +224,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          key="avatar-viewer-modal"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

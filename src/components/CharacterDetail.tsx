@@ -189,6 +189,11 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
   const getNormalizedExportData = () => {
     const exportData = JSON.parse(JSON.stringify(character.data));
+    
+    // Remove avatar fields so importing clients don't get stuck on old avatar
+    if (exportData.avatar) delete exportData.avatar;
+    if (exportData.data && exportData.data.avatar) delete exportData.data.avatar;
+    
     if (exportData.entries) {
       exportData.entries = normalizeWorldbookEntries(exportData.entries);
     } else if (exportData.data && exportData.data.entries) {
@@ -969,6 +974,7 @@ function FullScreenTextModal({
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          key="full-screen-text-modal"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -1333,15 +1339,22 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
     return createPortal(
       <AnimatePresence>
         {editingIndex !== null && (
-          <div className="fixed inset-0 z-[120] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6" onClick={() => setEditingIndex(null)}>
             <motion.div 
-              initial={{ opacity: 0, scale: 0.97, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: 20 }}
-              transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-              className="bg-slate-900 flex flex-col w-full h-full sm:h-auto sm:border border-white/10 sm:rounded-2xl shadow-2xl sm:max-w-4xl sm:max-h-[85vh] overflow-hidden"
-              onClick={e => e.stopPropagation()}
+              key="worldbook-modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[120] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6" 
+              onClick={() => setEditingIndex(null)}
             >
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.97, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97, y: 20 }}
+                transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+                className="bg-slate-900 flex flex-col w-full h-full sm:h-auto sm:border border-white/10 sm:rounded-2xl shadow-2xl sm:max-w-4xl sm:max-h-[85vh] overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
           <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
             <h3 className="text-lg font-semibold">{editingIndex === -1 ? '新增世界书条目' : '编辑世界书条目'}</h3>
             <button onClick={() => setEditingIndex(null)} className="p-1 hover:bg-white/10 rounded-full">
@@ -1426,7 +1439,7 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
               <button onClick={handleSave} className="px-5 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 text-white text-sm transition font-medium">保存</button>
             </div>
           </motion.div>
-        </div>
+        </motion.div>
         )}
       </AnimatePresence>,
       document.body
