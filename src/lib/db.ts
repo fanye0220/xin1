@@ -753,9 +753,36 @@ export async function getChatsForCharacter(characterId: string): Promise<ChatLog
   return db.getAllFromIndex('chats', 'by-character', characterId);
 }
 
-export async function getAllChats(): Promise<ChatLog[]> {
+export async function getChatById(id: string): Promise<ChatLog | undefined> {
   const db = await initDB();
-  return db.getAll('chats');
+  return db.get('chats', id);
+}
+
+export async function getAllChatsMetadata(): Promise<(Omit<ChatLog, 'messages'> & { messageCount: number, firstAiName?: string, lastMessagePreview?: string })[]> {
+  const db = await initDB();
+  const tx = db.transaction('chats', 'readonly');
+  const store = tx.objectStore('chats');
+  let cursor = await store.openCursor();
+  const res = [];
+  while (cursor) {
+    const val = cursor.value;
+    const aiMsg = val.messages?.find((m: any) => !m.is_user && m.name);
+    const lastMsg = val.messages?.length ? val.messages[val.messages.length - 1] : null;
+    let preview = lastMsg?.mes || '';
+    if (preview.length > 200) preview = preview.substring(0, 200) + '...';
+    res.push({
+      id: val.id,
+      characterId: val.characterId,
+      name: val.name,
+      createdAt: val.createdAt,
+      note: val.note,
+      messageCount: val.messages?.length || 0,
+      firstAiName: aiMsg?.name,
+      lastMessagePreview: preview,
+    });
+    cursor = await cursor.continue();
+  }
+  return res;
 }
 
 export async function saveChat(chat: ChatLog): Promise<void> {

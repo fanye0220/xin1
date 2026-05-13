@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getChatsForCharacter, deleteChat, saveChat, saveChatsBulk, ChatLog, getAllChats } from '../lib/db';
+import { getChatsForCharacter, deleteChat, saveChat, saveChatsBulk, ChatLog } from '../lib/db';
 import { MessageSquare, Trash2, Calendar, FileJson, UploadCloud, Edit2, Plus, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function CharacterChatsSection({ characterId, characterName, regexScripts, avatar, onOpenChat }: Props) {
-  const [chats, setChats] = useState<ChatLog[]>([]);
+  const [chats, setChats] = useState<any[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatLog | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
@@ -29,12 +29,12 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   }, []);
 
   const loadChats = async () => {
-    const all = await getAllChats();
+    const { getAllChatsMetadata } = await import('../lib/db');
+    const all = await getAllChatsMetadata();
     const list = all.filter(c => {
       if (c.characterId === characterId) return true;
       if (!c.characterId) {
-         const aiMsg = c.messages.find(m => !m.is_user && m.name);
-         if (aiMsg?.name && aiMsg.name.toLowerCase() === characterName.toLowerCase()) {
+         if (c.firstAiName && c.firstAiName.toLowerCase() === characterName.toLowerCase()) {
             return true;
          }
       }
@@ -53,10 +53,24 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
     }
   }, [characterId]);
 
-  const handleSaveNote = async (chat: ChatLog) => {
-    await saveChat({ ...chat, note: editNoteContent });
+  const handleSaveNote = async (chatMeta: any) => {
+    const { getChatById } = await import('../lib/db');
+    const fullChat = await getChatById(chatMeta.id);
+    if (fullChat) {
+      await saveChat({ ...fullChat, note: editNoteContent });
+    }
     setEditingNoteFor(null);
     loadChats();
+  };
+
+  const handleChatClick = async (chatMeta: any) => {
+    if (onOpenChat) {
+      onOpenChat(chatMeta.id);
+    } else {
+      const { getChatById } = await import('../lib/db');
+      const chat = await getChatById(chatMeta.id);
+      setSelectedChat(chat || null);
+    }
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
@@ -293,13 +307,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           itemContent={(index, chat) => (
             <div 
               key={chat.id}
-              onClick={() => {
-                if (onOpenChat) {
-                  onOpenChat(chat.id);
-                } else {
-                  setSelectedChat(chat);
-                }
-              }}
+              onClick={() => handleChatClick(chat)}
               className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] relative h-full flex flex-col"
             >
               <div className="flex justify-between items-start mb-2 gap-3">
@@ -357,7 +365,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                   <Calendar className="w-3 h-3" />
                   {new Date(chat.createdAt).toLocaleDateString()}
                 </span>
-                <span>{chat.messages.length} 条消息</span>
+                <span>{chat.messageCount} 条消息</span>
               </div>
             </div>
           )}

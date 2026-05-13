@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import Cropper from 'react-easy-crop';
 import { ReactNode } from 'react';
-import { getCharacters, CharacterCard, saveChat, saveChatsBulk, deleteChat, getAllChats, ChatLog } from '../lib/db';
+import { getCharacters, CharacterCard, saveChat, saveChatsBulk, deleteChat, ChatLog } from '../lib/db';
 
 interface ChatMessage {
   name: string;
@@ -19,14 +19,28 @@ interface ChatMessage {
 }
 
 export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: () => void, initialChatId?: string | null, singleMode?: boolean }) {
-  const [savedChats, setSavedChats] = useState<ChatLog[]>([]);
+  const [savedChats, setSavedChats] = useState<(Omit<ChatLog, 'messages'> & { messageCount: number, firstAiName?: string, lastMessagePreview?: string })[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [activeChat, setActiveChat] = useState<ChatLog | null>(null);
 
   useEffect(() => {
     if (initialChatId) {
       setActiveChatId(initialChatId);
     }
   }, [initialChatId]);
+
+  useEffect(() => {
+    const loadActiveChat = async () => {
+      if (activeChatId) {
+        const { getChatById } = await import('../lib/db');
+        const chat = await getChatById(activeChatId);
+        setActiveChat(chat || null);
+      } else {
+        setActiveChat(null);
+      }
+    };
+    loadActiveChat();
+  }, [activeChatId]);
 
   const [isDragActive, setIsDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -145,8 +159,12 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
     localStorage.removeItem('chatViewer_userAvatar');
   };
 
-  const handleSaveNote = async (chat: ChatLog) => {
-    await saveChat({ ...chat, note: editNoteContent });
+  const handleSaveNote = async (chatMeta: any) => {
+    const { getChatById } = await import('../lib/db');
+    const fullChat = await getChatById(chatMeta.id);
+    if (fullChat) {
+      await saveChat({ ...fullChat, note: editNoteContent });
+    }
     setEditingNoteFor(null);
     loadData();
   };
@@ -154,7 +172,8 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const loadData = async () => {
     const chars = await getCharacters(1, 9999);
     setCharacters(chars.characters);
-    const chats = await getAllChats();
+    const { getAllChatsMetadata } = await import('../lib/db');
+    const chats = await getAllChatsMetadata();
     setSavedChats(chats.sort((a,b) => b.createdAt - a.createdAt));
   };
 
@@ -307,7 +326,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
     }
   };
 
-  const activeChat = savedChats.find(c => c.id === activeChatId);
   // Auto-detect active character if bound or match by AI name
   let activeCharacter = activeChat && activeChat.characterId ? characters.find(c => c.id === activeChat.characterId) : null;
   if (activeChat && !activeCharacter) {
@@ -639,9 +657,8 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                   itemContent={(index, chat) => {
                     let matchedChar = chat.characterId ? characters.find(c => c.id === chat.characterId) : null;
                     if (!matchedChar) {
-                      const aiMsg = chat.messages.find(m => !m.is_user && m.name);
-                      if (aiMsg?.name) {
-                        matchedChar = characters.find(c => c.name.toLowerCase() === aiMsg.name?.toLowerCase()) || null;
+                      if (chat.firstAiName) {
+                        matchedChar = characters.find(c => c.name.toLowerCase() === chat.firstAiName?.toLowerCase()) || null;
                       }
                     }
                     return (
@@ -709,14 +726,14 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                           <div className="flex justify-between items-center text-xs text-white/40 pb-2">
                             <span className="flex items-center gap-1">
                               <Book className="w-4 h-4 text-blue-400" />
-                              {chat.messages.length} 条消息
+                              {chat.messageCount} 条消息
                             </span>
                             <span className="flex items-center gap-1">
                               {new Date(chat.createdAt).toLocaleString()}
                             </span>
                           </div>
                           <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 max-w-none line-clamp-3 overflow-hidden break-words">
-                            {formatCustomTags(applyRegexes(chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].mes : '空记录', matchedChar)).replace(/<\/?[^>]+(>|$)/g, "")}
+                            {formatCustomTags(applyRegexes(chat.lastMessagePreview || '空记录', matchedChar)).replace(/<\/?[^>]+(>|$)/g, "")}
                           </div>
                         </div>
                       </div>
