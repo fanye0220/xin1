@@ -6,7 +6,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import Cropper from 'react-easy-crop';
-import { getCharacters, CharacterCard, saveChat, deleteChat, getAllChats, ChatLog } from '../lib/db';
+import { ReactNode } from 'react';
+import { getCharacters, CharacterCard, saveChat, saveChatsBulk, deleteChat, getAllChats, ChatLog } from '../lib/db';
 
 interface ChatMessage {
   name: string;
@@ -176,6 +177,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
 
   const handleFileUpload = async (files: FileList | File[]) => {
     let imported = 0;
+    const pendingChats: ChatLog[] = [];
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -195,18 +197,29 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                 const text = await zipEntry.async('text');
                 let parsedMessages: ChatMessage[] = [];
                 
-                if (lowerName.endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+                if (lowerName.endsWith('.jsonl')) {
                   const lines = text.trim().split('\n');
                   parsedMessages = lines.map(line => {
                     try { return JSON.parse(line); } catch (e) { return null; }
                   }).filter(Boolean);
                 } else {
-                  const data = JSON.parse(text);
-                  if (Array.isArray(data)) parsedMessages = data;
-                  else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
-                  else parsedMessages = [data];
+                  try {
+                    const data = JSON.parse(text);
+                    if (Array.isArray(data)) parsedMessages = data;
+                    else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+                    else parsedMessages = [data];
+                  } catch (err) {
+                    if (text.trim().split('\n').length > 1) {
+                      const lines = text.trim().split('\n');
+                      parsedMessages = lines.map(line => {
+                        try { return JSON.parse(line); } catch (e) { return null; }
+                      }).filter(Boolean);
+                    }
+                  }
                 }
                 
+                if (parsedMessages.length === 0) continue;
+
                 let charId = '';
                 const pathParts = zipEntry.name.split('/');
                 if (pathParts.length > 1) {
@@ -223,7 +236,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                   }
                 }
                 
-                await saveChat({
+                pendingChats.push({
                   id: crypto.randomUUID(),
                   characterId: charId,
                   name: zipEntry.name.split('/').pop() || zipEntry.name,
@@ -240,17 +253,28 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           const text = await file.text();
           let parsedMessages: ChatMessage[] = [];
 
-          if (file.name.toLowerCase().endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+          if (file.name.toLowerCase().endsWith('.jsonl')) {
             const lines = text.trim().split('\n');
             parsedMessages = lines.map(line => {
               try { return JSON.parse(line); } catch (e) { return null; }
             }).filter(Boolean);
           } else {
-            const data = JSON.parse(text);
-            if (Array.isArray(data)) parsedMessages = data;
-            else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
-            else parsedMessages = [data];
+            try {
+              const data = JSON.parse(text);
+              if (Array.isArray(data)) parsedMessages = data;
+              else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+              else parsedMessages = [data];
+            } catch (err) {
+               if (text.trim().split('\n').length > 1) {
+                  const lines = text.trim().split('\n');
+                  parsedMessages = lines.map(line => {
+                    try { return JSON.parse(line); } catch (e) { return null; }
+                  }).filter(Boolean);
+               }
+            }
           }
+          
+          if (parsedMessages.length === 0) continue;
 
           const aiMessage = parsedMessages.find(m => !m.is_user && m.name);
           let charId = '';
@@ -259,7 +283,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
             if (match) charId = match.id;
           }
 
-          await saveChat({
+          pendingChats.push({
             id: crypto.randomUUID(),
             characterId: charId,
             name: file.name,
@@ -272,6 +296,10 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         console.error(e);
         alert(`解析文件 ${file.name} 失败，请确保格式为酒馆导出的 zip, jsonl 或 json 格式。`);
       }
+    }
+    
+    if (pendingChats.length > 0) {
+      await saveChatsBulk(pendingChats);
     }
 
     if (imported > 0) {
@@ -558,7 +586,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         )}
       </AnimatePresence>
 
-      <div className={`flex-1 ${!activeChatId ? 'overflow-y-auto' : 'overflow-hidden'} p-6 max-w-5xl mx-auto w-full relative`}
+      <div className={`flex-1 overflow-hidden p-6 max-w-5xl mx-auto w-full relative flex flex-col`}
            onDragEnter={handleDrag}
            onDragLeave={handleDrag}
            onDragOver={handleDrag}
@@ -574,8 +602,8 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         )}
 
         {!activeChatId ? (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between px-2">
+          <div className="space-y-6 flex-1 flex flex-col min-h-0">
+            <div className="flex items-center justify-between px-2 shrink-0">
               <h3 className="text-lg font-medium text-white">所有记录 ({savedChats.length})</h3>
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -603,9 +631,11 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                 <p className="text-white/40 mb-8">支持批量导入 .zip 或 .jsonl 格式文件</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4">
-                <AnimatePresence>
-                  {savedChats.map((chat) => {
+              <div className="flex-1 min-h-0">
+                <Virtuoso 
+                  style={{ height: '100%' }}
+                  data={savedChats}
+                  itemContent={(index, chat) => {
                     let matchedChar = chat.characterId ? characters.find(c => c.id === chat.characterId) : null;
                     if (!matchedChar) {
                       const aiMsg = chat.messages.find(m => !m.is_user && m.name);
@@ -614,87 +644,84 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                       }
                     }
                     return (
-                    <motion.div
-                      key={chat.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      onClick={() => setActiveChatId(chat.id)}
-                      className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden"
-                    >
-                      <div className="flex justify-between items-start mb-2 gap-3">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
-                            {matchedChar && avatarUrls[matchedChar.id] ? (
-                              <img src={avatarUrls[matchedChar.id]} alt="avatar" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-lg font-bold text-white/80">
-                                {chat.name.charAt(0)}
-                              </span>
-                            )}
-                          </div>
-                          
-                          <div className="flex-1 min-w-0">
-                            {editingNoteFor === chat.id ? (
-                              <div className="w-full mb-1" onClick={e => e.stopPropagation()}>
-                                <input 
-                                  autoFocus
-                                  className="w-full bg-black/40 border border-blue-500/50 rounded flex px-2 py-1 text-sm text-blue-300 focus:outline-none placeholder-blue-300/30"
-                                  value={editNoteContent}
-                                  onChange={e => setEditNoteContent(e.target.value)}
-                                  onKeyDown={e => { if(e.key === 'Enter') handleSaveNote(chat); }}
-                                  onBlur={() => handleSaveNote(chat)}
-                                  placeholder="添加内容备注..."
-                                />
-                              </div>
-                            ) : (
-                              <div 
-                                className="text-sm font-medium text-blue-300 cursor-pointer hover:text-blue-200 transition flex items-center gap-2 mb-1"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingNoteFor(chat.id);
-                                  setEditNoteContent(chat.note || '');
-                                }}
-                                title="点击编辑备注"
-                              >
-                                {chat.note ? (
-                                  <>
-                                    <span className="truncate">{chat.note}</span>
-                                    <span className="text-xs text-blue-300/50 shrink-0 flex items-center gap-1 leading-none pt-0.5"><Edit2 className="w-3 h-3" /></span>
-                                  </>
+                      <div className="pb-4">
+                        <div
+                          onClick={() => setActiveChatId(chat.id)}
+                          className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden"
+                        >
+                          <div className="flex justify-between items-start mb-2 gap-3">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
+                                {matchedChar && avatarUrls[matchedChar.id] ? (
+                                  <img src={avatarUrls[matchedChar.id]} alt="avatar" className="w-full h-full object-cover" />
                                 ) : (
-                                  <span className="text-blue-300/50 flex items-center gap-1 font-normal"><Plus className="w-3.5 h-3.5" /> 添加内容备注...</span>
+                                  <span className="text-lg font-bold text-white/80">
+                                    {chat.name.charAt(0)}
+                                  </span>
                                 )}
                               </div>
-                            )}
-                            <h4 className="font-medium text-white/90 truncate w-full text-sm" title={chat.name}>{chat.name}</h4>
+                              
+                              <div className="flex-1 min-w-0">
+                                {editingNoteFor === chat.id ? (
+                                  <div className="w-full mb-1" onClick={e => e.stopPropagation()}>
+                                    <input 
+                                      autoFocus
+                                      className="w-full bg-black/40 border border-blue-500/50 rounded flex px-2 py-1 text-sm text-blue-300 focus:outline-none placeholder-blue-300/30"
+                                      value={editNoteContent}
+                                      onChange={e => setEditNoteContent(e.target.value)}
+                                      onKeyDown={e => { if(e.key === 'Enter') handleSaveNote(chat); }}
+                                      onBlur={() => handleSaveNote(chat)}
+                                      placeholder="添加内容备注..."
+                                    />
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="text-sm font-medium text-blue-300 cursor-pointer hover:text-blue-200 transition flex items-center gap-2 mb-1"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingNoteFor(chat.id);
+                                      setEditNoteContent(chat.note || '');
+                                    }}
+                                    title="点击编辑备注"
+                                  >
+                                    {chat.note ? (
+                                      <>
+                                        <span className="truncate">{chat.note}</span>
+                                        <span className="text-xs text-blue-300/50 shrink-0 flex items-center gap-1 leading-none pt-0.5"><Edit2 className="w-3 h-3" /></span>
+                                      </>
+                                    ) : (
+                                      <span className="text-blue-300/50 flex items-center gap-1 font-normal"><Plus className="w-3.5 h-3.5" /> 添加内容备注...</span>
+                                    )}
+                                  </div>
+                                )}
+                                <h4 className="font-medium text-white/90 truncate w-full text-sm" title={chat.name}>{chat.name}</h4>
+                              </div>
+                            </div>
+
+                            <button 
+                              onClick={(e) => handleRemoveChat(e, chat.id)}
+                              className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition z-10 shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="flex justify-between items-center text-xs text-white/40 pb-2">
+                            <span className="flex items-center gap-1">
+                              <Book className="w-4 h-4 text-blue-400" />
+                              {chat.messages.length} 条消息
+                            </span>
+                            <span className="flex items-center gap-1">
+                              {new Date(chat.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 max-w-none line-clamp-3 overflow-hidden break-words">
+                            {formatCustomTags(applyRegexes(chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].mes : '空记录', matchedChar)).replace(/<\/?[^>]+(>|$)/g, "")}
                           </div>
                         </div>
-
-                        <button 
-                          onClick={(e) => handleRemoveChat(e, chat.id)}
-                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition z-10 shrink-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                       </div>
-                      <div className="flex justify-between items-center text-xs text-white/40 pb-2">
-                        <span className="flex items-center gap-1">
-                          <Book className="w-4 h-4 text-blue-400" />
-                          {chat.messages.length} 条消息
-                        </span>
-                        <span className="flex items-center gap-1">
-                           {new Date(chat.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 prose prose-sm prose-invert max-w-none line-clamp-3 overflow-hidden break-words">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                          {formatCustomTags(applyRegexes(chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].mes : '空记录', matchedChar))}
-                        </ReactMarkdown>
-                      </div>
-                    </motion.div>
-                  )})}
-                </AnimatePresence>
+                    );
+                  }}
+                />
               </div>
             )}
           </div>

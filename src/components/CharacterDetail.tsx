@@ -265,6 +265,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
+      id="character-detail-scroll-container"
       className="fixed inset-0 bg-black text-white overflow-y-auto z-50"
     >
       {/* Blurred Background */}

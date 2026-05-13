@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getChatsForCharacter, deleteChat, saveChat, ChatLog, getAllChats } from '../lib/db';
+import { getChatsForCharacter, deleteChat, saveChat, saveChatsBulk, ChatLog, getAllChats } from '../lib/db';
 import { MessageSquare, Trash2, Calendar, FileJson, UploadCloud, Edit2, Plus, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { Virtuoso } from 'react-virtuoso';
+import { Virtuoso, VirtuosoGrid } from 'react-virtuoso';
 
 interface Props {
   characterId: string;
@@ -22,6 +22,11 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
   const [editNoteContent, setEditNoteContent] = useState('');
   const [customTags, setCustomTags] = useState<string[]>([]);
+  const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setScrollParent(document.getElementById('character-detail-scroll-container'));
+  }, []);
 
   const loadChats = async () => {
     const all = await getAllChats();
@@ -65,6 +70,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
 
   const handleFileUpload = async (files: FileList | File[]) => {
     let imported = 0;
+    const pendingChats: ChatLog[] = [];
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -84,19 +90,30 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                 const text = await zipEntry.async('text');
                 let parsedMessages: any[] = [];
                 
-                if (lowerName.endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+                if (lowerName.endsWith('.jsonl')) {
                   const lines = text.trim().split('\n');
                   parsedMessages = lines.map(line => {
                     try { return JSON.parse(line); } catch (e) { return null; }
                   }).filter(Boolean);
                 } else {
-                  const data = JSON.parse(text);
-                  if (Array.isArray(data)) parsedMessages = data;
-                  else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
-                  else parsedMessages = [data];
+                  try {
+                    const data = JSON.parse(text);
+                    if (Array.isArray(data)) parsedMessages = data;
+                    else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+                    else parsedMessages = [data];
+                  } catch (err) {
+                    if (text.trim().split('\n').length > 1) {
+                        const lines = text.trim().split('\n');
+                        parsedMessages = lines.map(line => {
+                          try { return JSON.parse(line); } catch (e) { return null; }
+                        }).filter(Boolean);
+                    }
+                  }
                 }
                 
-                await saveChat({
+                if (parsedMessages.length === 0) continue;
+                
+                pendingChats.push({
                   id: crypto.randomUUID(),
                   characterId: characterId,
                   name: zipEntry.name.split('/').pop() || zipEntry.name,
@@ -113,19 +130,30 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           const text = await file.text();
           let parsedMessages: any[] = [];
 
-          if (file.name.toLowerCase().endsWith('.jsonl') || text.trim().split('\n').length > 1) {
+          if (file.name.toLowerCase().endsWith('.jsonl')) {
             const lines = text.trim().split('\n');
             parsedMessages = lines.map(line => {
               try { return JSON.parse(line); } catch (e) { return null; }
             }).filter(Boolean);
           } else {
-            const data = JSON.parse(text);
-            if (Array.isArray(data)) parsedMessages = data;
-            else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
-            else parsedMessages = [data];
+            try {
+              const data = JSON.parse(text);
+              if (Array.isArray(data)) parsedMessages = data;
+              else if (data.chat && Array.isArray(data.chat)) parsedMessages = data.chat;
+              else parsedMessages = [data];
+            } catch (err) {
+              if (text.trim().split('\n').length > 1) {
+                const lines = text.trim().split('\n');
+                parsedMessages = lines.map(line => {
+                  try { return JSON.parse(line); } catch (e) { return null; }
+                }).filter(Boolean);
+              }
+            }
           }
 
-          await saveChat({
+          if (parsedMessages.length === 0) continue;
+
+          pendingChats.push({
             id: crypto.randomUUID(),
             characterId: characterId,
             name: file.name,
@@ -138,6 +166,10 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         console.error(e);
         alert(`解析文件 ${file.name} 失败，请确保格式为记录导出的 zip, jsonl 或 json 格式。`);
       }
+    }
+
+    if (pendingChats.length > 0) {
+      await saveChatsBulk(pendingChats);
     }
 
     if (imported > 0) {
@@ -333,9 +365,12 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
              </p>
            </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {chats.map(chat => (
+      ) : scrollParent ? (
+        <VirtuosoGrid
+          customScrollParent={scrollParent}
+          listClassName="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          data={chats}
+          itemContent={(index, chat) => (
             <div 
               key={chat.id}
               onClick={() => {
@@ -345,7 +380,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                   setSelectedChat(chat);
                 }
               }}
-              className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] relative"
+              className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] relative h-full flex flex-col"
             >
               <div className="flex justify-between items-start mb-2 gap-3">
                 <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
@@ -395,9 +430,9 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                 </button>
               </div>
               
-              <h4 className="font-medium text-white mb-2 truncate text-sm" title={chat.name}>{chat.name}</h4>
+              <h4 className="font-medium text-white mb-2 truncate text-sm flex-1" title={chat.name}>{chat.name}</h4>
               
-              <div className="flex justify-between items-center text-xs text-white/40">
+              <div className="flex justify-between items-center text-xs text-white/40 mt-auto">
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
                   {new Date(chat.createdAt).toLocaleDateString()}
@@ -405,9 +440,9 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                 <span>{chat.messages.length} 条消息</span>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          )}
+        />
+      ) : null}
     </motion.div>
   );
 }

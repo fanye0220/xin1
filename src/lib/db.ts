@@ -763,6 +763,13 @@ export async function saveChat(chat: ChatLog): Promise<void> {
   await db.put('chats', chat);
 }
 
+export async function saveChatsBulk(chats: ChatLog[]): Promise<void> {
+  const db = await initDB();
+  const tx = db.transaction('chats', 'readwrite');
+  await Promise.all(chats.map(chat => tx.store.put(chat)));
+  await tx.done;
+}
+
 export async function deleteChat(id: string): Promise<void> {
   const db = await initDB();
   await db.delete('chats', id);
