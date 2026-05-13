@@ -240,7 +240,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
             itemContent={(i, msg) => {
              const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
              return (
-                  <div className={`flex gap-4 pb-6 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden`}>
+                  <div className={`flex gap-4 pb-6 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0`}>
                     <div className="shrink-0 pt-1">
                       {msg.is_user ? (
                         <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
@@ -257,13 +257,13 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                       )}
                     </div>
                     
-                    <div className={`max-w-[80%] ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                    <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
                       <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-blue-200/70' : 'text-slate-400'}`}>
                         <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
                         {dateString && <span>· {dateString}</span>}
                       </div>
                       
-                      <div className={`px-5 py-3 rounded-2xl ${
+                      <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
                         msg.is_user 
                           ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
                           : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
@@ -272,8 +272,8 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                             prose-headings:text-white/90 prose-p:leading-relaxed 
                             prose-a:text-blue-400 hover:prose-a:text-blue-300
                             prose-strong:text-white prose-code:text-pink-300
-                            prose-pre:bg-black/30 prose-pre:overflow-x-auto
-                            [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full overflow-hidden"
+                            prose-pre:bg-black/30 prose-pre:max-w-full
+                            [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full"
                           >
                           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                               {applyRegexes(msg.mes || '')}
