@@ -1,16 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { X, Upload, Check, Trash2, Download } from 'lucide-react';
 import { CharacterCard, saveCharacter } from '../lib/db';
 
 interface Props {
+  isOpen: boolean;
   character: CharacterCard;
   onClose: () => void;
   onUpdate: (updatedCharacter: CharacterCard) => void;
 }
 
-export function AvatarViewer({ character, onClose, onUpdate }: Props) {
+export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
   const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string>('');
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [historyUrls, setHistoryUrls] = useState<{ blob: Blob, url: string }[]>([]);
@@ -208,13 +210,15 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] bg-black flex flex-col"
-    >
+  return createPortal(
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[60] bg-black flex flex-col"
+        >
       <div className="absolute top-0 left-0 right-0 p-4 pt-7 sm:pt-7 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
         <button onClick={onClose} className="p-2 rounded-full bg-black/40 text-white hover:bg-black/60 transition">
           <X className="w-6 h-6" />
@@ -334,5 +338,8 @@ export function AvatarViewer({ character, onClose, onUpdate }: Props) {
         </div>
       </div>
     </motion.div>
+    )}
+    </AnimatePresence>,
+    document.body
   );
 }

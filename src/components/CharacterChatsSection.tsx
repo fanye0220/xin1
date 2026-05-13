@@ -62,9 +62,9 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if(confirm('确定要删除这条聊天记录吗？')) {
-      await deleteChat(id);
+      setChats(prev => prev.filter(c => c.id !== id));
       if (selectedChat?.id === id) setSelectedChat(null);
-      loadChats();
+      await deleteChat(id);
     }
   };
 
@@ -368,9 +368,10 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
     <AnimatePresence>
       {selectedChat && (
         <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, scale: 0.97, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.97, y: 20 }}
+          transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
           className="fixed inset-0 z-[120] bg-slate-900 flex flex-col p-4 sm:p-6"
         >
           <div className="max-w-4xl mx-auto w-full flex flex-col h-full bg-slate-900/50 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
