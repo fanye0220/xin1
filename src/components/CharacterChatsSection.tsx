@@ -239,95 +239,15 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
     return result;
   };
 
-  if (selectedChat) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0 }}
-        className="space-y-4"
-      >
-        <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0 gap-4">
-           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-             <button onClick={() => setSelectedChat(null)} className="flex items-center gap-1.5 text-white/50 hover:text-white transition whitespace-nowrap shrink-0">
-               <ArrowLeft className="w-4 h-4" /> 
-               <span className="hidden sm:inline">返回列表</span>
-             </button>
-             <h3 className="text-base sm:text-lg font-medium text-white truncate" title={selectedChat.name}>{selectedChat.name}</h3>
-           </div>
-           <button 
-             onClick={(e) => handleDelete(selectedChat.id, e)}
-             className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition shrink-0"
-             title="删除这条聊天记录"
-           >
-             <Trash2 className="w-4 h-4" />
-           </button>
-        </div>
 
-        <div className="flex-[1_1_100%] mt-6 pr-2 min-h-[500px]">
-          <Virtuoso
-            style={{ height: '100%' }}
-            data={selectedChat.messages}
-            initialTopMostItemIndex={selectedChat.messages ? selectedChat.messages.length - 1 : 0}
-            itemContent={(i, msg) => {
-             const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
-             return (
-                  <div className={`flex gap-4 pb-6 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0`}>
-                    <div className="shrink-0 pt-1">
-                      {msg.is_user ? (
-                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
-                          {msg.name?.charAt(0) || 'U'}
-                        </div>
-                      ) : (
-                        avatar ? (
-                          <img src={avatar} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
-                            {msg.name?.charAt(0) || 'AI'}
-                          </div>
-                        )
-                      )}
-                    </div>
-                    
-                    <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                      <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-blue-200/70' : 'text-slate-400'}`}>
-                        <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
-                        {dateString && <span>· {dateString}</span>}
-                      </div>
-                      
-                      <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
-                        msg.is_user 
-                          ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
-                          : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
-                      }`}>
-                         <div className="prose prose-invert prose-sm max-w-none 
-                            prose-headings:text-white/90 prose-p:leading-relaxed 
-                            prose-a:text-blue-400 hover:prose-a:text-blue-300
-                            prose-strong:text-white prose-code:text-pink-300
-                            prose-pre:bg-black/30 prose-pre:max-w-full
-                            [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full"
-                          >
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                              {applyRegexes(msg.mes || '')}
-                            </ReactMarkdown>
-                         </div>
-                      </div>
-                    </div>
-                  </div>
-             );
-            }}
-          />
-        </div>
-      </motion.div>
-    );
-  }
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
-      className="space-y-6"
+      className="space-y-6 relative"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
@@ -444,5 +364,90 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         />
       ) : null}
     </motion.div>
+
+    <AnimatePresence>
+      {selectedChat && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 10 }}
+          className="fixed inset-0 z-[120] bg-slate-900 flex flex-col p-4 sm:p-6"
+        >
+          <div className="max-w-4xl mx-auto w-full flex flex-col h-full bg-slate-900/50 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
+            <div className="p-4 bg-white/5 border-b border-white/10 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                <button onClick={() => setSelectedChat(null)} className="flex items-center gap-1.5 text-white/50 hover:text-white transition whitespace-nowrap shrink-0 p-2">
+                  <ArrowLeft className="w-5 h-5" /> 
+                </button>
+                <h3 className="text-base sm:text-lg font-medium text-white truncate" title={selectedChat.name}>{selectedChat.name}</h3>
+              </div>
+              <button 
+                onClick={(e) => handleDelete(selectedChat.id, e)}
+                className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition shrink-0"
+                title="删除这条聊天记录"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="flex-[1_1_100%] min-h-0 bg-slate-900">
+              <Virtuoso
+                style={{ height: '100%' }}
+                data={selectedChat.messages}
+                initialTopMostItemIndex={selectedChat.messages ? selectedChat.messages.length - 1 : 0}
+                itemContent={(i, msg) => {
+                 const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
+                 return (
+                      <div className={`flex gap-4 pb-6 mt-4 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0 px-4 sm:px-6`}>
+                        <div className="shrink-0 pt-1">
+                          {msg.is_user ? (
+                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
+                              {msg.name?.charAt(0) || 'U'}
+                            </div>
+                          ) : (
+                            avatar ? (
+                              <img src={avatar} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
+                                {msg.name?.charAt(0) || 'AI'}
+                              </div>
+                            )
+                          )}
+                        </div>
+                        
+                        <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                          <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-blue-200/70' : 'text-slate-400'}`}>
+                            <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
+                            {dateString && <span>· {dateString}</span>}
+                          </div>
+                          
+                          <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
+                            msg.is_user 
+                              ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
+                              : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
+                          }`}>
+                             <div className="prose prose-invert prose-sm max-w-none 
+                                prose-headings:text-white/90 prose-p:leading-relaxed 
+                                prose-a:text-blue-400 hover:prose-a:text-blue-300
+                                prose-strong:text-white prose-code:text-pink-300
+                                prose-pre:bg-black/30 prose-pre:max-w-full
+                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full"
+                              >
+                              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                                  {applyRegexes(msg.mes || '')}
+                                </ReactMarkdown>
+                             </div>
+                          </div>
+                        </div>
+                      </div>
+                 );
+                }}
+              />
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 }

@@ -451,12 +451,14 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
 
   const handleRemoveChat = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    await deleteChat(id);
-    if (activeChatId === id) {
-      if (singleMode) onClose();
-      else setActiveChatId(null);
+    if (confirm('确定要删除这条聊天记录吗？')) {
+      setSavedChats(prev => prev.filter(c => c.id !== id));
+      if (activeChatId === id) {
+        if (singleMode) onClose();
+        else setActiveChatId(null);
+      }
+      await deleteChat(id);
     }
-    loadData();
   };
 
   return (
@@ -601,9 +603,8 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           </div>
         )}
 
-        {!activeChatId ? (
-          <div className="space-y-6 flex-1 flex flex-col min-h-0">
-            <div className="flex items-center justify-between px-2 shrink-0">
+        <div className="space-y-6 flex-1 flex flex-col min-h-0">
+          <div className="flex items-center justify-between px-2 shrink-0">
               <h3 className="text-lg font-medium text-white">所有记录 ({savedChats.length})</h3>
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -725,74 +726,84 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
               </div>
             )}
           </div>
-        ) : (
-          <div className="relative z-0 h-full w-full">
-             <div className="absolute inset-0">
-                <Virtuoso
-                  style={{ height: '100%' }}
-                  data={activeChat?.messages || []}
-                  initialTopMostItemIndex={activeChat?.messages ? activeChat.messages.length - 1 : 0}
-                  components={{
-                    Header: () => <div className="h-24" />,
-                    Footer: () => <div className="h-32" />
-                  }}
-                  itemContent={(i, msg) => {
-                    const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
-                    return (
-                      <div className={`flex gap-4 pb-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0`}>
-                        <div className="shrink-0 pt-1">
-                          {msg.is_user ? (
-                            userAvatar ? (
-                              <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-lg overflow-hidden">
-                                <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
+
+        <AnimatePresence>
+          {activeChatId && activeChat && (
+            <motion.div 
+               initial={{ opacity: 0, y: 10 }}
+               animate={{ opacity: 1, y: 0 }}
+               exit={{ opacity: 0, y: 10 }}
+               className="absolute inset-0 z-10 bg-slate-900 flex h-full pt-16"
+            >
+              <div className="relative z-0 h-full w-full">
+                 <div className="absolute inset-0">
+                    <Virtuoso
+                      style={{ height: '100%' }}
+                      data={activeChat.messages}
+                      initialTopMostItemIndex={activeChat.messages ? activeChat.messages.length - 1 : 0}
+                      components={{
+                        Header: () => <div className="h-24" />,
+                        Footer: () => <div className="h-32" />
+                      }}
+                      itemContent={(i, msg) => {
+                        const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
+                        return (
+                          <div className={`flex gap-4 pb-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0`}>
+                            <div className="shrink-0 pt-1">
+                              {msg.is_user ? (
+                                userAvatar ? (
+                                  <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-lg overflow-hidden">
+                                    <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
+                                  </div>
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
+                                    {msg.name?.charAt(0) || 'U'}
+                                  </div>
+                                )
+                              ) : (
+                                activeCharacter && avatarUrls[activeCharacter.id] ? (
+                                  <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
+                                    {msg.name?.charAt(0) || 'AI'}
+                                  </div>
+                                )
+                              )}
+                            </div>
+                            
+                            <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                              <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-blue-200/70' : 'text-slate-400'}`}>
+                                <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
+                                {dateString && <span>· {dateString}</span>}
                               </div>
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
-                                {msg.name?.charAt(0) || 'U'}
+                              
+                              <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
+                                msg.is_user 
+                                  ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
+                                  : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
+                              }`}>
+                                 <div className="prose prose-invert prose-sm max-w-none 
+                                    prose-headings:text-white/90 prose-p:leading-relaxed 
+                                    prose-a:text-blue-400 hover:prose-a:text-blue-300
+                                    prose-strong:text-white prose-code:text-pink-300
+                                    prose-pre:bg-black/30 prose-pre:max-w-full
+                                    [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full"
+                                  >
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                                      {formatCustomTags(applyRegexes(msg.mes || '', activeCharacter))}
+                                    </ReactMarkdown>
+                                 </div>
                               </div>
-                            )
-                          ) : (
-                            activeCharacter && avatarUrls[activeCharacter.id] ? (
-                              <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
-                                {msg.name?.charAt(0) || 'AI'}
-                              </div>
-                            )
-                          )}
-                        </div>
-                        
-                        <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                          <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-blue-200/70' : 'text-slate-400'}`}>
-                            <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
-                            {dateString && <span>· {dateString}</span>}
+                            </div>
                           </div>
-                          
-                          <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
-                            msg.is_user 
-                              ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
-                              : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
-                          }`}>
-                             <div className="prose prose-invert prose-sm max-w-none 
-                                prose-headings:text-white/90 prose-p:leading-relaxed 
-                                prose-a:text-blue-400 hover:prose-a:text-blue-300
-                                prose-strong:text-white prose-code:text-pink-300
-                                prose-pre:bg-black/30 prose-pre:max-w-full
-                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full"
-                              >
-                              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                                  {formatCustomTags(applyRegexes(msg.mes || '', activeCharacter))}
-                                </ReactMarkdown>
-                             </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }}
-                />
-             </div>
-          </div>
-        )}
+                        );
+                      }}
+                    />
+                 </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {showSettings && (
