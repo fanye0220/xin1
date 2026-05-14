@@ -6,6 +6,8 @@ export interface ExportProgress {
   current: number;
   total: number;
   phase: string;
+  downloadUrl?: string;
+  filename?: string;
 }
 
 class ExportState {
@@ -193,28 +195,20 @@ class ExportState {
       }
 
       const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = `Tavern_Export_${new Date().toISOString().slice(0, 10)}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Delay removal and revoke to ensure browser starts download
-      setTimeout(() => {
-        if (document.body.contains(a)) {
-          document.body.removeChild(a);
-        }
-        URL.revokeObjectURL(url);
-      }, 60000);
-      
-      // dismiss
-      setTimeout(() => this.dismiss(), 2000);
+      const filename = `Tavern_Export_${new Date().toISOString().slice(0, 10)}.zip`;
+
+      this.progress = { 
+        current: 100, 
+        total: 100, 
+        phase: '打包完成！请点击下载', 
+        downloadUrl: url,
+        filename 
+      };
+      this.notify();
       
     } catch (e: any) {
       console.error("Batch export failed", e);
       this.setError("导出失败: " + e.message);
-    } finally {
       this.isExporting = false;
       this.notify();
     }

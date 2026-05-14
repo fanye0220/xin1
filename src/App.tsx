@@ -110,10 +110,10 @@ function ExportWidget() {
   const [isMinimized, setIsMinimized] = useState(false);
 
   useEffect(() => {
-    if (isExporting) {
+    if (isExporting || progress.downloadUrl) {
       setIsMinimized(false);
     }
-  }, [isExporting]);
+  }, [isExporting, progress.downloadUrl]);
 
   if (!isExporting && errorToast === null) return null;
 
@@ -199,18 +199,44 @@ function ExportWidget() {
                     }}
                   />
                 </div>
-                <p className="text-sm text-yellow-400/80 mt-4 bg-yellow-400/10 px-4 py-2 rounded-lg border border-yellow-400/20">
-                  请勿关闭当前页面，这可能需要一些时间...
-                </p>
-                <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsMinimized(true);
-                    }}
-                    className="mt-4 px-4 py-2 hover:bg-white/10 rounded-full transition text-white/60 hover:text-white"
-                  >
-                    <span className="text-sm">缩小至后台运行</span>
-                </button>
+                
+                {progress.downloadUrl ? (
+                  <div className="flex flex-col gap-3 mt-6 w-full">
+                    <a 
+                      href={progress.downloadUrl}
+                      download={progress.filename}
+                      className="w-full text-center bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-xl transition shadow-lg shadow-purple-500/20"
+                      onClick={() => {
+                        setTimeout(() => {
+                           import('./lib/exportState').then(({ exportState }) => exportState.dismiss());
+                        }, 2000);
+                      }}
+                    >
+                      点击下载压缩包
+                    </a>
+                    <button 
+                      onClick={() => import('./lib/exportState').then(({ exportState }) => exportState.dismiss())}
+                      className="w-full text-center bg-white/5 hover:bg-white/10 text-white font-medium py-3 px-6 rounded-xl transition"
+                    >
+                      关闭
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-yellow-400/80 mt-4 bg-yellow-400/10 px-4 py-2 rounded-lg border border-yellow-400/20">
+                      请勿关闭当前页面，这可能需要一些时间...
+                    </p>
+                    <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsMinimized(true);
+                        }}
+                        className="mt-4 px-4 py-2 hover:bg-white/10 rounded-full transition text-white/60 hover:text-white"
+                      >
+                        <span className="text-sm">缩小至后台运行</span>
+                    </button>
+                  </>
+                )}
               </motion.div>
             </div>
           )
