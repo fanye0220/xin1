@@ -1185,135 +1185,141 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
               ]} 
               strategy={rectSortingStrategy}
             >
+              {(!searchQuery && selectedTags.length === 0 && page === 1) && (
+                <div className={
+                  viewMode === 'list' ? "flex flex-col gap-2 mb-6" : 
+                  viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 mb-6" :
+                  "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6"
+                }>
+                  <motion.div
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setIsCreatingFolder(true)}
+                    className={viewMode === 'list' 
+                      ? "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition border border-dashed border-white/20"
+                      : "flex flex-col items-center gap-2 cursor-pointer group break-inside-avoid"
+                    }
+                  >
+                    <div className={viewMode === 'list'
+                      ? "w-12 h-12 bg-white/5 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center shrink-0"
+                      : "w-full aspect-square bg-white/5 border-2 border-dashed border-white/20 rounded-3xl flex items-center justify-center group-hover:bg-white/10 group-hover:border-white/40 transition"
+                    }>
+                      <Plus className="w-8 h-8 text-white/40 group-hover:text-white/60 transition" />
+                    </div>
+                    <span className={viewMode === 'list'
+                      ? "font-medium text-white/60"
+                      : "text-xs font-medium text-center truncate w-full text-white/60 group-hover:text-white/80"
+                    }>
+                      新建文件夹
+                    </span>
+                  </motion.div>
+
+                  {folders.map((folder) => {
+                    const previews = folderPreviews[folder.id] || [];
+                    return (
+                      <SortableItemWrapper key={`folder-${folder.id}`} id={`folder-${folder.id}`} disabled={!!searchQuery || selectedTags.length > 0}>
+                        <motion.div
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onTouchStart={(e) => {
+                          longPressRef.current.triggered = false;
+                          longPressRef.current.startY = e.touches[0].clientY;
+                          longPressRef.current.timer = setTimeout(() => {
+                            longPressRef.current.triggered = true;
+                            if (!selectionMode) {
+                              setSelectionMode(true);
+                              setSelectedIds(new Set([folder.id]));
+                            }
+                          }, 500);
+                        }}
+                        onTouchMove={(e) => {
+                          if (longPressRef.current.timer) {
+                            const dy = Math.abs(e.touches[0].clientY - (longPressRef.current.startY || 0));
+                            if (dy > 10) {
+                              clearTimeout(longPressRef.current.timer);
+                              longPressRef.current.timer = null;
+                            }
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          if (longPressRef.current.timer) {
+                            clearTimeout(longPressRef.current.timer);
+                            longPressRef.current.timer = null;
+                          }
+                        }}
+                        onMouseDown={() => {
+                          longPressRef.current.triggered = false;
+                          longPressRef.current.timer = setTimeout(() => {
+                            longPressRef.current.triggered = true;
+                            if (!selectionMode) {
+                              setSelectionMode(true);
+                              setSelectedIds(new Set([folder.id]));
+                            }
+                          }, 500);
+                        }}
+                        onMouseUp={() => {
+                          if (longPressRef.current.timer) {
+                            clearTimeout(longPressRef.current.timer);
+                            longPressRef.current.timer = null;
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          if (longPressRef.current.timer) {
+                            clearTimeout(longPressRef.current.timer);
+                            longPressRef.current.timer = null;
+                          }
+                        }}
+                        onClick={(e) => {
+                          if (longPressRef.current.triggered) {
+                            e.preventDefault();
+                            return;
+                          }
+                          if (selectionMode) {
+                            toggleSelection(folder.id);
+                          } else {
+                            onSelectFolder?.(folder.id);
+                          }
+                        }}
+                        className={viewMode === 'list' 
+                          ? "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition relative group select-none"
+                          : "flex flex-col items-center gap-2 cursor-pointer group relative select-none break-inside-avoid"
+                        }
+                      >
+                        {selectionMode && (
+                          <div className="absolute top-2 right-2 z-10">
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                              selectedIds.has(folder.id) 
+                                ? 'bg-purple-500 border-purple-500' 
+                                : 'border-white/40 bg-black/20 backdrop-blur-md'
+                            }`}>
+                              {selectedIds.has(folder.id) && <CheckCircle2 className="w-4 h-4 text-white" />}
+                            </div>
+                          </div>
+                        )}
+                        <div className={viewMode === 'list'
+                          ? "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden object-cover relative"
+                          : "w-full aspect-square bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/20 group-hover:bg-white/20 transition shadow-sm overflow-hidden relative"
+                        }>
+                          <FolderCover folder={folder} previews={previews} viewMode={viewMode} />
+                        </div>
+                        <span className={viewMode === 'list'
+                          ? "font-medium text-white/90 flex-1"
+                          : "text-xs font-medium text-center truncate w-full text-white/80 group-hover:text-white"
+                        }>
+                          {folder.name}
+                        </span>
+                      </motion.div>
+                      </SortableItemWrapper>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className={
                 viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4" : 
                 viewMode === 'masonry' ? "columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4 space-y-4" : 
                 "flex flex-col gap-2"
               }>
-            
-            {!searchQuery && selectedTags.length === 0 && page === 1 && (
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setIsCreatingFolder(true)}
-                className={viewMode === 'list' 
-                  ? "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition border border-dashed border-white/20"
-                  : "flex flex-col items-center gap-2 cursor-pointer group break-inside-avoid"
-                }
-              >
-                <div className={viewMode === 'list'
-                  ? "w-12 h-12 bg-white/5 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center shrink-0"
-                  : "w-full aspect-square bg-white/5 border-2 border-dashed border-white/20 rounded-3xl flex items-center justify-center group-hover:bg-white/10 group-hover:border-white/40 transition"
-                }>
-                  <Plus className="w-8 h-8 text-white/40 group-hover:text-white/60 transition" />
-                </div>
-                <span className={viewMode === 'list'
-                  ? "font-medium text-white/60"
-                  : "text-xs font-medium text-center truncate w-full text-white/60 group-hover:text-white/80"
-                }>
-                  新建文件夹
-                </span>
-              </motion.div>
-            )}
-
-            {(!searchQuery && selectedTags.length === 0 && page === 1) && folders.map((folder) => {
-              const previews = folderPreviews[folder.id] || [];
-              return (
-                <SortableItemWrapper key={`folder-${folder.id}`} id={`folder-${folder.id}`} disabled={!!searchQuery || selectedTags.length > 0}>
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onTouchStart={(e) => {
-                    longPressRef.current.triggered = false;
-                    longPressRef.current.startY = e.touches[0].clientY;
-                    longPressRef.current.timer = setTimeout(() => {
-                      longPressRef.current.triggered = true;
-                      if (!selectionMode) {
-                        setSelectionMode(true);
-                        setSelectedIds(new Set([folder.id]));
-                      }
-                    }, 500);
-                  }}
-                  onTouchMove={(e) => {
-                    if (longPressRef.current.timer) {
-                      const dy = Math.abs(e.touches[0].clientY - (longPressRef.current.startY || 0));
-                      if (dy > 10) {
-                        clearTimeout(longPressRef.current.timer);
-                        longPressRef.current.timer = null;
-                      }
-                    }
-                  }}
-                  onTouchEnd={() => {
-                    if (longPressRef.current.timer) {
-                      clearTimeout(longPressRef.current.timer);
-                      longPressRef.current.timer = null;
-                    }
-                  }}
-                  onMouseDown={() => {
-                    longPressRef.current.triggered = false;
-                    longPressRef.current.timer = setTimeout(() => {
-                      longPressRef.current.triggered = true;
-                      if (!selectionMode) {
-                        setSelectionMode(true);
-                        setSelectedIds(new Set([folder.id]));
-                      }
-                    }, 500);
-                  }}
-                  onMouseUp={() => {
-                    if (longPressRef.current.timer) {
-                      clearTimeout(longPressRef.current.timer);
-                      longPressRef.current.timer = null;
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (longPressRef.current.timer) {
-                      clearTimeout(longPressRef.current.timer);
-                      longPressRef.current.timer = null;
-                    }
-                  }}
-                  onClick={(e) => {
-                    if (longPressRef.current.triggered) {
-                      e.preventDefault();
-                      return;
-                    }
-                    if (selectionMode) {
-                      toggleSelection(folder.id);
-                    } else {
-                      onSelectFolder?.(folder.id);
-                    }
-                  }}
-                  className={viewMode === 'list' 
-                    ? "flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 rounded-2xl cursor-pointer transition relative group select-none"
-                    : "flex flex-col items-center gap-2 cursor-pointer group relative select-none break-inside-avoid"
-                  }
-                >
-                  {selectionMode && (
-                    <div className="absolute top-2 right-2 z-10">
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                        selectedIds.has(folder.id) 
-                          ? 'bg-purple-500 border-purple-500' 
-                          : 'border-white/40 bg-black/20 backdrop-blur-md'
-                      }`}>
-                        {selectedIds.has(folder.id) && <CheckCircle2 className="w-4 h-4 text-white" />}
-                      </div>
-                    </div>
-                  )}
-                  <div className={viewMode === 'list'
-                    ? "w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shrink-0 overflow-hidden object-cover relative"
-                    : "w-full aspect-square bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/20 group-hover:bg-white/20 transition shadow-sm overflow-hidden relative"
-                  }>
-                    <FolderCover folder={folder} previews={previews} viewMode={viewMode} />
-                  </div>
-                  <span className={viewMode === 'list'
-                    ? "font-medium text-white/90 flex-1"
-                    : "text-xs font-medium text-center truncate w-full text-white/80 group-hover:text-white"
-                  }>
-                    {folder.name}
-                  </span>
-                </motion.div>
-                </SortableItemWrapper>
-              );
-            })}
 
             {characters.map((char) => {
               const folderName = (searchQuery || selectedTags.length > 0) && char.folderId 

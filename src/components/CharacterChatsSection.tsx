@@ -23,6 +23,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const [editNoteContent, setEditNoteContent] = useState('');
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null);
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
 
   useEffect(() => {
     setScrollParent(document.getElementById('character-detail-scroll-container'));
@@ -51,7 +52,42 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         setCustomTags(JSON.parse(savedTags));
       } catch (e) {}
     }
+    const savedAvatar = localStorage.getItem('chatViewer_userAvatar');
+    if (savedAvatar) {
+      setUserAvatar(savedAvatar);
+    }
   }, [characterId]);
+
+  const formatCustomTags = (text: string) => {
+    if (!text) return '';
+    let result = text;
+    // Format various Think tags: <think>, [think], {{think}}
+    const thinkRegex = /(?:<|&lt;|\[+|\\\[+|\{+)\s*(?:think|thought|thinking)\s*(?:>|&gt;|\]+|\\\]+|\}+)([\s\S]*?)(?:<|&lt;|\[+|\\\[+|\{+)\/\s*(?:think|thought|thinking)\s*(?:>|&gt;|\]+|\\\]+|\}+)/gi;
+    result = result.replace(thinkRegex, '<details class="text-sm bg-white/5 border border-white/10 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-gray-400 select-none">🤔 思维链</summary><div class="mt-2 text-gray-300 break-words whitespace-pre-wrap max-w-full overflow-x-auto">$1</div></details>');
+    
+    // Format doggy_status_panel
+    const statusPanelHtml = '<div class="my-3 mx-1 bg-white/[0.03] border border-white/10 rounded-xl p-3 shadow-inner backdrop-blur-sm"><div class="flex items-center gap-1.5 mb-1.5 opacity-60"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><span class="text-xs font-bold uppercase tracking-wider">Status Bar</span></div><div class="text-white/80 whitespace-pre-wrap font-mono text-[13px] leading-relaxed break-words overflow-x-auto">$1</div></div>';
+    
+    result = result.replace(/(?:<|&lt;|\[+|\{+)\s*doggy_status_panel\s*(?:>|&gt;|\]+|\}+)([\s\S]*?)(?:<|&lt;|\[+|\{+)\/\s*doggy_status_panel\s*(?:>|&gt;|\]+|\}+)/gi, statusPanelHtml);
+
+    // Also deal with standalone {状态栏 | ...} without xml tags
+    result = result.replace(/\{状态栏\s*\|([\s\S]*?)\}/gi, statusPanelHtml);
+
+    // Apply user defined custom tags
+    const processedTags = new Set(customTags.map(t => t.replace(/^<*\/?|\/?>*$/g, '').replace(/^\[*\/?|\/?\]*$/g, '').replace(/^\{*\/?|\/?\}*$/g, '').trim()).filter(Boolean));
+    
+    processedTags.forEach(tag => {
+      const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pairedRe = new RegExp(`(?:<|&lt;|\\[|\\{)\\s*${escapedTag}(?:\\s+(?:[^>&\\]\\}]+))?(?:>|&gt;|\\]|\\})([\\s\\S]*?)(?:<|&lt;|\\[|\\{)\\/\\s*${escapedTag}\\s*(?:>|&gt;|\\]|\\})`, 'gi');
+      result = result.replace(pairedRe, `<details class="text-sm bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-indigo-400 select-none">${tag}</summary><div class="mt-2 text-indigo-300/80 whitespace-pre-wrap break-words max-w-full overflow-x-auto">$1</div></details>`);
+      const singleRe = new RegExp(`(?:<|&lt;|\\[|\\{)\\s*${escapedTag}(?:\\s+(?:[^>&\\]\\}]+))?\\/?\\s*(?:>|&gt;|\\]|\\})`, 'gi');
+      result = result.replace(singleRe, `<div class="text-sm border-l-2 border-indigo-500/50 pl-3 py-1 my-2 text-indigo-400/80 italic text-xs"><span class="font-bold">&lt;${tag}&gt;</span></div>`);
+      const singleCloseRe = new RegExp(`(?:<|&lt;|\\[|\\{)\\/\\s*${escapedTag}\\s*(?:>|&gt;|\\]|\\})`, 'gi');
+      result = result.replace(singleCloseRe, `<div class="text-sm border-l-2 border-indigo-500/50 pl-3 py-1 my-2 text-indigo-400/80 italic text-xs"><span class="font-bold">&lt;/${tag}&gt;</span></div>`);
+    });
+
+    return result;
+  };
 
   const handleSaveNote = async (chatMeta: any) => {
     const { getChatById } = await import('../lib/db');
@@ -416,9 +452,15 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                       <div className={`flex gap-4 pb-6 mt-4 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0 px-4 sm:px-6`}>
                         <div className="shrink-0 pt-1">
                           {msg.is_user ? (
-                            <div className="w-10 h-10 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg font-bold [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent [.light-theme_&]:shadow-blue-500/20">
-                              {msg.name?.charAt(0) || 'U'}
-                            </div>
+                            userAvatar ? (
+                              <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-lg overflow-hidden">
+                                <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg font-bold [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent [.light-theme_&]:shadow-blue-500/20">
+                                {msg.name?.charAt(0) || 'U'}
+                              </div>
+                            )
                           ) : (
                             avatar ? (
                               <img src={avatar} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
@@ -449,7 +491,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                                 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full \n                                 ${msg.is_user ? 'prose-p:text-slate-100 text-slate-100 [.light-theme_&]:prose-p:text-white [.light-theme_&]:text-white' : 'prose-invert'}`}
                               >
                               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                                  {applyRegexes(msg.mes || '')}
+                                  {formatCustomTags(applyRegexes(msg.mes || ''))}
                                 </ReactMarkdown>
                              </div>
                           </div>
