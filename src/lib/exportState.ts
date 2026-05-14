@@ -63,13 +63,22 @@ class ExportState {
     }
     
     let baseBlob = char.avatarBlob || char.originalFile;
+    
+    if (!baseBlob && char.avatar && typeof char.avatar === 'string' && char.avatar.startsWith('data:image')) {
+      try {
+        baseBlob = await (await fetch(char.avatar)).blob();
+      } catch (e) {
+        console.warn("Failed to fetch blob from char.avatar data URI", e);
+      }
+    }
 
     if (baseBlob) {
       try {
         const { injectTavernData } = await import('./png');
         const buffer = await baseBlob.arrayBuffer();
         const newBuffer = injectTavernData(buffer, char.data);
-        zipFolder.file(exportFileName, newBuffer);
+        const finalBlob = new Blob([newBuffer], { type: baseBlob.type || 'image/png' });
+        zipFolder.file(exportFileName, finalBlob);
       } catch (e) {
         console.error("Failed to inject PNG for export", e);
         zipFolder.file(exportFileName, baseBlob);

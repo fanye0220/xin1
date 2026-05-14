@@ -107,6 +107,13 @@ import { useExportState } from './lib/exportState';
 
 function ExportWidget() {
   const { isExporting, progress, errorToast } = useExportState();
+  const [isMinimized, setIsMinimized] = useState(false);
+
+  useEffect(() => {
+    if (isExporting && progress.current === 0 && progress.total === 0) {
+      setIsMinimized(false);
+    }
+  }, [isExporting, progress.current, progress.total]);
 
   if (!isExporting && errorToast === null) return null;
 
@@ -131,50 +138,82 @@ function ExportWidget() {
 
       <AnimatePresence>
         {isExporting && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          isMinimized ? (
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-slate-800/90 backdrop-blur-2xl rounded-3xl p-8 w-full max-w-sm border border-white/10 shadow-2xl flex flex-col items-center text-center"
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 50, scale: 0.9 }}
+              onClick={() => setIsMinimized(false)}
+              className="fixed bottom-6 right-6 z-[100] bg-slate-800/90 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl p-4 cursor-pointer hover:bg-slate-700/90 transition-colors flex items-center gap-4 w-72"
             >
-              <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center mb-6 border border-purple-500/30">
-                <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+              <Loader2 className="w-6 h-6 text-purple-400 animate-spin shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h4 className="text-sm font-bold text-white truncate">批量导出中</h4>
+                <p className="text-xs text-white/60 truncate">
+                  {progress.phase} 
+                  {progress.total > 0 && progress.phase.includes('生成') ? 
+                    ` ${progress.current}%` : 
+                    progress.total > 0 ? ` ${progress.current} / ${progress.total}` : ''
+                  }
+                </p>
+                <div className="w-full bg-black/40 rounded-full h-1.5 mt-2 overflow-hidden border border-white/5">
+                  <div 
+                    className="h-full transition-all duration-300 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"
+                    style={{ 
+                      width: progress.total > 0 ? 
+                        `${progress.phase.includes('生成') ? progress.current : (progress.current / progress.total) * 100}%` : 
+                        '0%' 
+                    }}
+                  />
+                </div>
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">批量导出中</h3>
-              <p className="text-white/60 mb-6 font-medium bg-black/20 px-4 py-2 rounded-xl">
-                {progress.phase}
-                <br/>
-                {progress.total > 0 && progress.phase.includes('生成') ? 
-                  `${progress.current}%` : 
-                  progress.total > 0 ? `${progress.current} / ${progress.total}` : ''
-                }
-              </p>
-              <div className="w-full bg-black/40 rounded-full h-3 mb-2 overflow-hidden border border-white/10">
-                <motion.div 
-                  className="bg-gradient-to-r from-purple-500 justify-center h-full to-pink-500 rounded-full"
-                  initial={{ width: 0 }}
-                  animate={{ 
-                    width: progress.total > 0 ? 
-                      `${progress.phase.includes('生成') ? progress.current : (progress.current / progress.total) * 100}%` : 
-                      '0%' 
-                  }}
-                />
-              </div>
-              <p className="text-sm text-yellow-400/80 mt-4 bg-yellow-400/10 px-4 py-2 rounded-lg border border-yellow-400/20">
-                请勿关闭当前页面，这可能需要一些时间...
-              </p>
-              <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    import('./lib/exportState').then(({ exportState }) => exportState.dismiss());
-                  }}
-                  className="mt-4 px-4 py-2 hover:bg-white/10 rounded-full transition text-white/60 hover:text-white"
-                >
-                  <span className="text-sm">在后台运行</span>
-              </button>
             </motion.div>
-          </div>
+          ) : (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-slate-800/90 backdrop-blur-2xl rounded-3xl p-8 w-full max-w-sm border border-white/10 shadow-2xl flex flex-col items-center text-center"
+              >
+                <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center mb-6 border border-purple-500/30 relative">
+                  <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">批量导出中</h3>
+                <p className="text-white/60 mb-6 font-medium bg-black/20 px-4 py-2 rounded-xl">
+                  {progress.phase}
+                  <br/>
+                  {progress.total > 0 && progress.phase.includes('生成') ? 
+                    `${progress.current}%` : 
+                    progress.total > 0 ? `${progress.current} / ${progress.total}` : ''
+                  }
+                </p>
+                <div className="w-full bg-black/40 rounded-full h-3 mb-2 overflow-hidden border border-white/10">
+                  <motion.div 
+                    className="bg-gradient-to-r from-purple-500 justify-center h-full to-pink-500 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ 
+                      width: progress.total > 0 ? 
+                        `${progress.phase.includes('生成') ? progress.current : (progress.current / progress.total) * 100}%` : 
+                        '0%' 
+                    }}
+                  />
+                </div>
+                <p className="text-sm text-yellow-400/80 mt-4 bg-yellow-400/10 px-4 py-2 rounded-lg border border-yellow-400/20">
+                  请勿关闭当前页面，这可能需要一些时间...
+                </p>
+                <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsMinimized(true);
+                    }}
+                    className="mt-4 px-4 py-2 hover:bg-white/10 rounded-full transition text-white/60 hover:text-white"
+                  >
+                    <span className="text-sm">缩小至后台运行</span>
+                </button>
+              </motion.div>
+            </div>
+          )
         )}
       </AnimatePresence>
     </>
