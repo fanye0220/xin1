@@ -103,6 +103,75 @@ function TaggerWidget({ onClick }: { onClick: () => void }) {
   );
 }
 
+import { useExportState } from './lib/exportState';
+
+function ExportWidget() {
+  const { isExporting, progress, errorToast } = useExportState();
+
+  const shouldShow = isExporting || errorToast !== null;
+
+  return (
+    <>
+      <AnimatePresence>
+        {errorToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -50, x: '-50%' }}
+            className="fixed top-6 left-1/2 z-[100] bg-red-500 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3"
+          >
+            <AlertCircle className="w-5 h-5" />
+            <span className="font-medium">{errorToast}</span>
+            <button onClick={() => import('./lib/exportState').then(({ exportState }) => exportState.setError(null))} className="p-1 hover:bg-white/20 rounded-full transition">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {shouldShow && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -50, x: '-50%' }}
+            className="fixed top-36 sm:top-44 left-1/2 z-50 bg-slate-800/90 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl p-3 sm:p-4 cursor-pointer hover:bg-slate-700/90 transition-colors w-[90%] max-w-[16rem] sm:w-72"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Loader2 className="w-5 h-5 text-green-400 animate-spin" />
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-white">
+                  正在后台打包...
+                </h4>
+                <p className="text-xs text-white/50">
+                  {progress.phase} ({progress.current}/{progress.total})
+                </p>
+              </div>
+              {!isExporting && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    import('./lib/exportState').then(({ exportState }) => exportState.dismiss());
+                  }}
+                  className="p-1 hover:bg-white/20 rounded-full transition text-white/60 hover:text-white shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-500 bg-gradient-to-r from-green-500 to-emerald-500`}
+                style={{ width: `${(progress.current / Math.max(1, progress.total)) * 100}%` }}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
 export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
