@@ -553,7 +553,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-900 relative overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-slate-900 relative overflow-hidden [.light-theme_&]:bg-[#F0F2F5]">
       
       {/* Dynamic CSS Styles from the active character's configuration */}
       {cssStyleString && (
@@ -860,7 +860,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                animate={{ opacity: 1, scale: 1, y: 0 }}
                exit={{ opacity: 0, scale: 0.98, y: 20 }}
                transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-               className="absolute inset-0 z-10 bg-slate-900 flex h-full pt-16"
+               className="absolute inset-0 z-10 bg-slate-900/80 backdrop-blur-xl flex h-full pt-16 [.light-theme_&]:bg-[#FCFCFC]/80 [.light-theme_&]:backdrop-blur-3xl"
             >
               <div className="relative z-0 h-full w-full">
                  <div className="absolute inset-0">
@@ -883,7 +883,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                     <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
                                   </div>
                                 ) : (
-                                  <div className="w-10 h-10 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg font-bold [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent">
+                                  <div className="w-10 h-10 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg font-bold [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent [.light-theme_&]:shadow-blue-500/20">
                                     {msg.name?.charAt(0) || 'U'}
                                   </div>
                                 )
@@ -891,7 +891,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                 activeCharacter && avatarUrls[activeCharacter.id] ? (
                                   <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
                                 ) : (
-                                  <div className="w-10 h-10 rounded-full bg-white/[0.05] flex items-center justify-center shadow-sm border border-white/10 text-slate-200 font-bold">
+                                  <div className="w-10 h-10 rounded-full bg-white/[0.05] flex items-center justify-center shadow-sm border border-white/10 text-slate-200 font-bold [.light-theme_&]:bg-indigo-900 [.light-theme_&]:text-indigo-200 [.light-theme_&]:border-indigo-500/30 [.light-theme_&]:shadow-lg">
                                     {msg.name?.charAt(0) || 'AI'}
                                   </div>
                                 )
@@ -899,15 +899,15 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                             </div>
                             
                             <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                              <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-slate-400' : 'text-slate-400'}`}>
+                              <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-slate-400 [.light-theme_&]:text-blue-600' : 'text-slate-400 [.light-theme_&]:text-slate-500'}`}>
                                 <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
                                 {dateString && <span>· {dateString}</span>}
                               </div>
                               
                               <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
                                 msg.is_user 
-                                  ? 'bg-white/[0.08] border border-white/[0.15] text-slate-100 rounded-tr-sm shadow-sm [.light-theme_&]:bg-blue-500 [.light-theme_&]:text-white [.light-theme_&]:border-transparent' 
-                                  : 'bg-white/[0.04] text-slate-200 rounded-tl-sm border border-white/[0.05] shadow-sm'
+                                  ? 'bg-white/[0.08] text-white border border-white/[0.15] rounded-tr-sm shadow-sm backdrop-blur-md [.light-theme_&]:bg-blue-600/90 [.light-theme_&]:text-white [.light-theme_&]:border-blue-500/30' 
+                                  : 'bg-white/[0.04] text-slate-200 rounded-tl-sm border border-white/[0.05] shadow-sm backdrop-blur-md [.light-theme_&]:bg-indigo-950/80 [.light-theme_&]:text-indigo-100 [.light-theme_&]:border-indigo-500/20'
                               }`}>
                                  <div className={`prose prose-sm max-w-none 
                                     prose-headings:text-white/90 prose-p:leading-relaxed 
@@ -915,7 +915,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                     prose-strong:text-white prose-code:text-pink-300
                                     prose-pre:bg-black/30 prose-pre:max-w-full
                                     [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full 
-                                    ${msg.is_user ? 'prose-p:text-slate-100 text-slate-100' : 'prose-invert'}
+                                    ${msg.is_user ? 'prose-p:text-slate-100 text-slate-100 [.light-theme_&]:prose-p:text-white [.light-theme_&]:text-white' : 'prose-invert'}
                                   `}>
                                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                       {formatCustomTags(applyRegexes(msg.mes || '', activeCharacter))}
@@ -950,7 +950,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
-          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl ring-1 ring-white/10 overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl ring-1 ring-white/10 overflow-hidden [.light-theme_&]:bg-white/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-blue-400" />
@@ -1065,7 +1065,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+              className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl [.light-theme_&]:bg-white/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5"
             >
               <h3 className="text-xl font-bold mb-2 text-white">删除聊天记录？</h3>
               <p className="text-slate-400 mb-6">此操作无法撤销，确定要删除这条聊天记录吗？</p>
@@ -1090,7 +1090,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
 
       {imageToCrop && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden h-[500px]">
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden h-[500px] [.light-theme_&]:bg-white/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5">
              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
                 <h3 className="text-lg font-bold text-white">调整头像</h3>
                 <button 

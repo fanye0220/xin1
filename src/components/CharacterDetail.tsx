@@ -276,7 +276,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     >
       {/* Blurred Background */}
       <div 
-        className="fixed inset-0 bg-cover bg-center opacity-30 blur-3xl scale-110"
+        className="fixed inset-0 bg-cover bg-center opacity-30 blur-3xl scale-110 [.light-theme_&]:opacity-40"
         style={{ backgroundImage: `url(${avatarUrl})` }}
       />
       
@@ -663,7 +663,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
         {/* Content Area - Glassmorphism Card */}
         <div className="flex-1 px-2 sm:px-4 pb-32">
-          <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl min-h-[50vh] [.light-theme_&]:bg-blue-50/70 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-blue-200/40 [.light-theme_&]:shadow-[0_8px_40px_rgba(59,130,246,0.1)]">
+          <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl min-h-[50vh] [.light-theme_&]:bg-[#FCFCFC]/70 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5 [.light-theme_&]:shadow-xl">
             <AnimatePresence mode="wait">
               {activeTab === 'profile' && (
                 <motion.div
