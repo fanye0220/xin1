@@ -1820,7 +1820,7 @@ function CharacterCardItem({
         alt={char.name}
         className={`w-full ${viewMode === 'masonry' ? 'h-auto block' : 'h-full'} object-cover pointer-events-none`}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3 pointer-events-none">
+      <div className="absolute inset-0 bg-gradient-to-t from-[var(--overlay-bottom)] via-[var(--overlay-mid)] to-transparent flex flex-col justify-end p-3 pointer-events-none">
         <h3 className="font-semibold text-white text-sm sm:text-base leading-tight drop-shadow-md break-words truncate">
           {char.name}
         </h3>

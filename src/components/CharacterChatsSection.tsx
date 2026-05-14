@@ -73,13 +73,19 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
     }
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const [deleteChatId, setDeleteChatId] = useState<string | null>(null);
+
+  const confirmDeleteChat = async () => {
+    if (!deleteChatId) return;
+    setChats(prev => prev.filter(c => c.id !== deleteChatId));
+    if (selectedChat?.id === deleteChatId) setSelectedChat(null);
+    await deleteChat(deleteChatId);
+    setDeleteChatId(null);
+  };
+
+  const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if(confirm('确定要删除这条聊天记录吗？')) {
-      setChats(prev => prev.filter(c => c.id !== id));
-      if (selectedChat?.id === id) setSelectedChat(null);
-      await deleteChat(id);
-    }
+    setDeleteChatId(id);
   };
 
   const handleFileUpload = async (files: FileList | File[]) => {
@@ -435,12 +441,12 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                               ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
                               : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
                           }`}>
-                             <div className="prose prose-invert prose-sm max-w-none 
+                             <div className={`prose prose-sm max-w-none 
                                 prose-headings:text-white/90 prose-p:leading-relaxed 
                                 prose-a:text-blue-400 hover:prose-a:text-blue-300
                                 prose-strong:text-white prose-code:text-pink-300
                                 prose-pre:bg-black/30 prose-pre:max-w-full
-                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full"
+                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full \n                                 ${msg.is_user ? 'prose-p:text-white text-white' : 'prose-invert'}`}
                               >
                               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                   {applyRegexes(msg.mes || '')}
@@ -454,6 +460,44 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
               />
             </div>
           </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* Delete Chat Confirmation Modal */}
+    <AnimatePresence>
+      {deleteChatId && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setDeleteChatId(null)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+          >
+            <h3 className="text-xl font-bold mb-2 text-white">删除聊天记录？</h3>
+            <p className="text-slate-400 mb-6">此操作无法撤销，确定要删除这条聊天记录吗？</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteChatId(null)}
+                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmDeleteChat}
+                className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition shadow-lg shadow-red-500/20"
+              >
+                删除
+              </button>
+            </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>

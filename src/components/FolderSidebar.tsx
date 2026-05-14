@@ -309,6 +309,24 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
               <Settings className="w-5 h-5" />
               <span>API 设置</span>
             </button>
+            <button
+              onClick={() => {
+                const html = document.documentElement;
+                if (html.classList.contains('light-theme')) {
+                  html.classList.remove('light-theme');
+                  localStorage.setItem('tavern_theme', 'dark');
+                } else {
+                  html.classList.add('light-theme');
+                  localStorage.setItem('tavern_theme', 'light');
+                }
+              }}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition text-white/70 hover:bg-white/5 hover:text-white"
+            >
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+                <span>明/暗主题</span>
+              </div>
+            </button>
           </div>
         </div>
 

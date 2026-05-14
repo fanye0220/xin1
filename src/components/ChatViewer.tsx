@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book } from 'lucide-react';
+import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -49,6 +49,70 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
   const [isMainHeaderExpanded, setIsMainHeaderExpanded] = useState(true);
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const groupedChats = useMemo(() => {
+    const groups: { characterName: string, characterId: string | undefined, chats: typeof savedChats, aiName: string | undefined }[] = [];
+    const map = new Map<string, number>();
+
+    savedChats.forEach(chat => {
+      let matchedChar = chat.characterId ? characters.find(c => c.id === chat.characterId) : null;
+      if (!matchedChar && chat.firstAiName) {
+        matchedChar = characters.find(c => c.name.toLowerCase() === chat.firstAiName?.toLowerCase()) || null;
+      }
+      
+      const groupName = matchedChar?.name || chat.firstAiName || '未归类聊天';
+      
+      if (searchQuery && !groupName.toLowerCase().includes(searchQuery.toLowerCase()) && !chat.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return; // Skip if search query doesn't match character name or chat name
+      }
+
+      const charId = matchedChar?.id;
+      
+      let index = map.get(groupName);
+      if (index === undefined) {
+        index = groups.length;
+        map.set(groupName, index);
+        groups.push({
+          characterName: groupName,
+          characterId: charId,
+          aiName: chat.firstAiName,
+          chats: []
+        });
+      }
+      groups[index].chats.push(chat);
+    });
+
+    return groups.sort((a,b) => b.chats[0].createdAt - a.chats[0].createdAt);
+  }, [savedChats, characters, searchQuery]);
+
+  // Initially expand the group that contains the active chat
+  useEffect(() => {
+    if (activeChatId && groupedChats.length > 0) {
+      const activeGroup = groupedChats.find(g => g.chats.some(c => c.id === activeChatId));
+      if (activeGroup && expandedGroups[activeGroup.characterName] === undefined) {
+        setExpandedGroups(prev => ({ ...prev, [activeGroup.characterName]: true }));
+      }
+    }
+  }, [activeChatId, groupedChats]);
+
+  const flattenedChatItems = useMemo(() => {
+    const items: ({ type: 'header', groupName: string, group: typeof groupedChats[0] } | { type: 'chat', chat: typeof savedChats[0], groupName: string, isLast?: boolean })[] = [];
+    groupedChats.forEach(group => {
+      items.push({ type: 'header', groupName: group.characterName, group });
+      if (expandedGroups[group.characterName] || searchQuery) {
+        group.chats.forEach((chat, i) => {
+          items.push({ type: 'chat', chat, groupName: group.characterName, isLast: i === group.chats.length - 1 });
+        });
+      }
+    });
+    return items;
+  }, [groupedChats, expandedGroups, searchQuery]);
+
+  const toggleGroup = (groupName: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
+  };
 
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
   const [editNoteContent, setEditNoteContent] = useState('');
@@ -338,32 +402,35 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const formatCustomTags = (text: string) => {
     if (!text) return '';
     let result = text;
-    // Format <Think>
-    result = result.replace(/(?:<|&lt;)Think(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/Think(?:>|&gt;)/gi, '<details class="text-sm bg-white/5 border border-white/10 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-gray-400 select-none">🤔 思维链</summary><div class="mt-2 text-gray-300 break-words whitespace-pre-wrap max-w-full overflow-x-auto">$1</div></details>');
+    // Format various Think tags: <think>, [think], {{think}}
+    const thinkRegex = /(?:<|&lt;|\[+|\\\[+|\{+)\s*(?:think|thought|thinking)\s*(?:>|&gt;|\]+|\\\]+|\}+)([\s\S]*?)(?:<|&lt;|\[+|\\\[+|\{+)\/\s*(?:think|thought|thinking)\s*(?:>|&gt;|\]+|\\\]+|\}+)/gi;
+    result = result.replace(thinkRegex, '<details class="text-sm bg-white/5 border border-white/10 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-gray-400 select-none">🤔 思维链</summary><div class="mt-2 text-gray-300 break-words whitespace-pre-wrap max-w-full overflow-x-auto">$1</div></details>');
     
     // Format doggy_status_panel
-    result = result.replace(/(?:<|&lt;)doggy_status_panel(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/doggy_status_panel(?:>|&gt;)/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto break-words max-w-full">$1</pre></details>');
+    const statusPanelHtml = '<div class="my-3 mx-1 bg-white/[0.03] border border-white/10 rounded-xl p-3 shadow-inner backdrop-blur-sm"><div class="flex items-center gap-1.5 mb-1.5 opacity-60"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><span class="text-xs font-bold uppercase tracking-wider">Status Bar</span></div><div class="text-white/80 whitespace-pre-wrap font-mono text-[13px] leading-relaxed break-words overflow-x-auto">$1</div></div>';
+    
+    result = result.replace(/(?:<|&lt;|\[+|\{+)\s*doggy_status_panel\s*(?:>|&gt;|\]+|\}+)([\s\S]*?)(?:<|&lt;|\[+|\{+)\/\s*doggy_status_panel\s*(?:>|&gt;|\]+|\}+)/gi, statusPanelHtml);
 
     // Also deal with standalone {状态栏 | ...} without xml tags
-    result = result.replace(/\{状态栏\s*\|([\s\S]*?)\}/gi, '<details class="text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-blue-400 select-none">📊 状态栏</summary><pre class="mt-2 text-blue-300/80 whitespace-pre-wrap font-mono text-xs overflow-x-auto break-words max-w-full">$1</pre></details>');
+    result = result.replace(/\{状态栏\s*\|([\s\S]*?)\}/gi, statusPanelHtml);
 
     // Apply user defined custom tags
-    const processedTags = new Set(customTags.map(t => t.replace(/^<*\/?|\/?>*$/g, '').trim()).filter(Boolean));
+    const processedTags = new Set(customTags.map(t => t.replace(/^<*\/?|\/?>*$/g, '').replace(/^\[*\/?|\/?\]*$/g, '').replace(/^\{*\/?|\/?\}*$/g, '').trim()).filter(Boolean));
     
     processedTags.forEach(tag => {
       // Escape tag for regex just in case
       const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       
-      // Match paired tags with optional attributes. Handle both < and &lt;
-      const pairedRe = new RegExp(`(?:<|&lt;)\\s*${escapedTag}(?:\\s+(?:[^>&]|&[^g])+)?(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\/\\s*${escapedTag}\\s*(?:>|&gt;)`, 'gi');
+      // Match paired tags with optional attributes. Handle <, &lt;, [, {
+      const pairedRe = new RegExp(`(?:<|&lt;|\\[|\\{)\\s*${escapedTag}(?:\\s+(?:[^>&\\]\\}]+))?(?:>|&gt;|\\]|\\})([\\s\\S]*?)(?:<|&lt;|\\[|\\{)\\/\\s*${escapedTag}\\s*(?:>|&gt;|\\]|\\})`, 'gi');
       result = result.replace(pairedRe, `<details class="text-sm bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-2 my-2 w-full max-w-full overflow-hidden"><summary class="cursor-pointer font-bold text-indigo-400 select-none">${tag}</summary><div class="mt-2 text-indigo-300/80 whitespace-pre-wrap break-words max-w-full overflow-x-auto">$1</div></details>`);
       
       // Match stray/single tags so they don't disappear in markdown rendering
-      const singleRe = new RegExp(`(?:<|&lt;)\\s*${escapedTag}(?:\\s+(?:[^>&]|&[^g])+)?\\/?\\s*(?:>|&gt;)`, 'gi');
+      const singleRe = new RegExp(`(?:<|&lt;|\\[|\\{)\\s*${escapedTag}(?:\\s+(?:[^>&\\]\\}]+))?\\/?\\s*(?:>|&gt;|\\]|\\})`, 'gi');
       result = result.replace(singleRe, `<div class="text-sm border-l-2 border-indigo-500/50 pl-3 py-1 my-2 text-indigo-400/80 italic text-xs"><span class="font-bold">&lt;${tag}&gt;</span></div>`);
       
       // Clean up stray closing tags
-      const singleCloseRe = new RegExp(`(?:<|&lt;)\\/\\s*${escapedTag}\\s*(?:>|&gt;)`, 'gi');
+      const singleCloseRe = new RegExp(`(?:<|&lt;|\\[|\\{)\\/\\s*${escapedTag}\\s*(?:>|&gt;|\\]|\\})`, 'gi');
       result = result.replace(singleCloseRe, `<div class="text-sm border-l-2 border-indigo-500/50 pl-3 py-1 my-2 text-indigo-400/80 italic text-xs"><span class="font-bold">&lt;/${tag}&gt;</span></div>`);
     });
 
@@ -467,16 +534,22 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
     }
   };
 
-  const handleRemoveChat = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm('确定要删除这条聊天记录吗？')) {
-      setSavedChats(prev => prev.filter(c => c.id !== id));
-      if (activeChatId === id) {
-        if (singleMode) onClose();
-        else setActiveChatId(null);
-      }
-      await deleteChat(id);
+  const [deleteChatId, setDeleteChatId] = useState<string | null>(null);
+
+  const confirmDeleteChat = async () => {
+    if (!deleteChatId) return;
+    setSavedChats(prev => prev.filter(c => c.id !== deleteChatId));
+    if (activeChatId === deleteChatId) {
+      if (singleMode) onClose();
+      else setActiveChatId(null);
     }
+    await deleteChat(deleteChatId);
+    setDeleteChatId(null);
+  };
+
+  const handleRemoveChat = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setDeleteChatId(id);
   };
 
   return (
@@ -624,13 +697,26 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         <div className="space-y-6 flex-1 flex flex-col min-h-0">
           <div className="flex items-center justify-between px-2 shrink-0">
               <h3 className="text-lg font-medium text-white">所有记录 ({savedChats.length})</h3>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg text-sm transition flex items-center gap-2"
-              >
-                <UploadCloud className="w-4 h-4" />
-                导入更多
-              </button>
+              
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <input
+                    type="text"
+                    placeholder="搜索角色名..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-32 sm:w-48 pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors placeholder:text-white/30"
+                  />
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg text-sm transition flex items-center gap-2"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span className="hidden sm:inline">导入</span>
+                </button>
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -653,8 +739,41 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
               <div className="flex-1 min-h-0">
                 <Virtuoso 
                   style={{ height: '100%' }}
-                  data={savedChats}
-                  itemContent={(index, chat) => {
+                  data={flattenedChatItems}
+                  itemContent={(index, item) => {
+                    if (item.type === 'header') {
+                      const { groupName, group } = item;
+                      const isExpanded = !!expandedGroups[groupName] || !!searchQuery;
+                      return (
+                        <div className="pb-4">
+                          <div
+                            onClick={() => toggleGroup(groupName)}
+                            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 cursor-pointer transition flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
+                                {group.characterId && avatarUrls[group.characterId] ? (
+                                  <img src={avatarUrls[group.characterId]} alt="avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-lg font-bold text-white/50">
+                                    {groupName.charAt(0)}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="truncate">
+                                <h4 className="font-semibold text-white/90 text-base truncate mb-0.5">{groupName}</h4>
+                                <p className="text-xs text-white/40">{group.chats.length} 个历史记录</p>
+                              </div>
+                            </div>
+                            <div className="text-white/40 shrink-0">
+                              {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const chat = item.chat;
                     let matchedChar = chat.characterId ? characters.find(c => c.id === chat.characterId) : null;
                     if (!matchedChar) {
                       if (chat.firstAiName) {
@@ -662,23 +781,12 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                       }
                     }
                     return (
-                      <div className="pb-4">
+                      <div className="pb-4 pl-4 sm:pl-8">
                         <div
                           onClick={() => setActiveChatId(chat.id)}
                           className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden"
                         >
                           <div className="flex justify-between items-start mb-2 gap-3">
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                              <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
-                                {matchedChar && avatarUrls[matchedChar.id] ? (
-                                  <img src={avatarUrls[matchedChar.id]} alt="avatar" className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="text-lg font-bold text-white/80">
-                                    {chat.name.charAt(0)}
-                                  </span>
-                                )}
-                              </div>
-                              
                               <div className="flex-1 min-w-0">
                                 {editingNoteFor === chat.id ? (
                                   <div className="w-full mb-1" onClick={e => e.stopPropagation()}>
@@ -714,29 +822,30 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                 )}
                                 <h4 className="font-medium text-white/90 truncate w-full text-sm" title={chat.name}>{chat.name}</h4>
                               </div>
+
+                              <button 
+                                onClick={(e) => handleRemoveChat(e, chat.id)}
+                                className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition z-10 shrink-0 mt-1"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
 
-                            <button 
-                              onClick={(e) => handleRemoveChat(e, chat.id)}
-                              className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition z-10 shrink-0"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <div className="flex justify-between items-center text-xs text-white/40 pb-2">
-                            <span className="flex items-center gap-1">
-                              <Book className="w-4 h-4 text-blue-400" />
-                              {chat.messageCount} 条消息
-                            </span>
-                            <span className="flex items-center gap-1">
-                              {new Date(chat.createdAt).toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="bg-black/30 rounded-lg p-4 border border-white/5 text-white/70 text-sm leading-relaxed ml-2 md:ml-16 max-w-none line-clamp-3 overflow-hidden break-words">
-                            {formatCustomTags(applyRegexes(chat.lastMessagePreview || '空记录', matchedChar)).replace(/<\/?[^>]+(>|$)/g, "")}
+                            <div className="flex justify-between items-center text-xs text-white/40 pb-2 border-b border-white/5">
+                              <span className="flex items-center gap-1">
+                                <Book className="w-4 h-4 text-blue-400" />
+                                {chat.messageCount} 条消息
+                              </span>
+                              <span className="flex items-center gap-1">
+                                {new Date(chat.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+
+                            <div className="text-white/60 text-xs leading-relaxed max-w-none line-clamp-3 overflow-hidden break-words">
+                              {formatCustomTags(applyRegexes(chat.lastMessagePreview || '空记录', matchedChar)).replace(/<\/?[^>]+(>|$)/g, "")}
+                            </div>
                           </div>
                         </div>
-                      </div>
                     );
                   }}
                 />
@@ -790,28 +899,43 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                             </div>
                             
                             <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                              <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-blue-200/70' : 'text-slate-400'}`}>
+                              <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-white/60' : 'text-slate-400'}`}>
                                 <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
                                 {dateString && <span>· {dateString}</span>}
                               </div>
                               
                               <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
                                 msg.is_user 
-                                  ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
+                                  ? 'bg-[#007aff] text-[#ffffff] rounded-tr-sm shadow-sm' 
                                   : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
                               }`}>
-                                 <div className="prose prose-invert prose-sm max-w-none 
-                                    prose-headings:text-white/90 prose-p:leading-relaxed 
-                                    prose-a:text-blue-400 hover:prose-a:text-blue-300
-                                    prose-strong:text-white prose-code:text-pink-300
+                                 <div className={`prose prose-sm max-w-none 
+                                    prose-p:leading-relaxed 
+                                    prose-a:text-blue-200 hover:prose-a:text-blue-100
+                                    prose-code:text-pink-200
                                     prose-pre:bg-black/30 prose-pre:max-w-full
-                                    [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full"
-                                  >
+                                    [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full 
+                                    ${msg.is_user ? 'prose-p:text-[#ffffff] prose-headings:text-[#ffffff] prose-strong:text-[#ffffff] text-[#ffffff]' : 'prose-invert prose-headings:text-[#ffffff] prose-strong:text-[#ffffff] prose-p:text-indigo-100'}
+                                  `}>
                                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                       {formatCustomTags(applyRegexes(msg.mes || '', activeCharacter))}
                                     </ReactMarkdown>
                                  </div>
                               </div>
+                              
+                              {/* Render ST Extensions / Status Bars */}
+                              {msg.extra && msg.extra.chara_status && (
+                                <div className="mt-1 px-4 py-2 bg-black/20 border border-white/5 rounded-xl backdrop-blur-sm text-xs font-mono text-white/70 max-w-full overflow-x-auto">
+                                  <div className="font-sans font-semibold text-white/50 mb-1 uppercase tracking-wider text-[10px]">Tavern Assistant Status</div>
+                                  <pre className="whitespace-pre-wrap">{typeof msg.extra.chara_status === 'string' ? msg.extra.chara_status : JSON.stringify(msg.extra.chara_status, null, 2)}</pre>
+                                </div>
+                              )}
+                              {msg.extra && msg.extra.tavernAStatus && (
+                                <div className="mt-1 px-4 py-2 bg-black/20 border border-white/5 rounded-xl backdrop-blur-sm text-xs font-mono text-white/70 max-w-full overflow-x-auto">
+                                  <div className="font-sans font-semibold text-white/50 mb-1 uppercase tracking-wider text-[10px]">Status Panel</div>
+                                  <pre className="whitespace-pre-wrap">{typeof msg.extra.tavernAStatus === 'string' ? msg.extra.tavernAStatus : JSON.stringify(msg.extra.tavernAStatus, null, 2)}</pre>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -925,6 +1049,44 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           </div>
         </div>
       )}
+
+      {/* Delete Chat Confirmation Modal */}
+      <AnimatePresence>
+        {deleteChatId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDeleteChatId(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+            >
+              <h3 className="text-xl font-bold mb-2 text-white">删除聊天记录？</h3>
+              <p className="text-slate-400 mb-6">此操作无法撤销，确定要删除这条聊天记录吗？</p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setDeleteChatId(null)}
+                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={confirmDeleteChat}
+                  className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition shadow-lg shadow-red-500/20"
+                >
+                  删除
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {imageToCrop && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
