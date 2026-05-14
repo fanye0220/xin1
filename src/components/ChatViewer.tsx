@@ -950,15 +950,15 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
-          <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl ring-1 ring-white/10 overflow-hidden [.light-theme_&]:bg-white/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Settings2 className="w-5 h-5 text-blue-400" />
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl ring-1 ring-white/10 overflow-hidden [.light-theme_&]:bg-[#ffffff]/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/10" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02] [.light-theme_&]:bg-black/[0.02] [.light-theme_&]:border-black/5">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 [.light-theme_&]:text-[#1c1c1e]">
+                <Settings2 className="w-5 h-5 text-blue-400 [.light-theme_&]:text-[#007aff]" />
                 界面设置
               </h3>
               <button 
                 onClick={() => setShowSettings(false)}
-                className="p-2 -mr-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition"
+                className="p-2 -mr-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition [.light-theme_&]:hover:bg-black/5 [.light-theme_&]:text-[#8e8e93] [.light-theme_&]:hover:text-[#1c1c1e]"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -967,26 +967,26 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
             <div className="p-5 flex flex-col gap-6 max-h-[70vh] overflow-y-auto">
               {/* User Avatar Settings */}
               <div className="flex flex-col gap-3">
-                <label className="text-sm font-medium text-white/80">你的头像</label>
+                <label className="text-sm font-medium text-white/80 [.light-theme_&]:text-[#1c1c1e]/80">你的头像</label>
                 <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg shrink-0 overflow-hidden relative group [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent">
+                  <div className="w-16 h-16 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg shrink-0 overflow-hidden relative group [.light-theme_&]:bg-black/5 [.light-theme_&]:text-[#8e8e93] [.light-theme_&]:border-black/10 [.light-theme_&]:shadow-sm">
                     {userAvatar ? (
                       <img src={userAvatar} alt="avatar" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-xl font-bold text-white">U</span>
+                      <span className="text-xl font-bold text-white [.light-theme_&]:text-[#1c1c1e]">U</span>
                     )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <button 
                       onClick={() => userAvatarInputRef.current?.click()}
-                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition"
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition [.light-theme_&]:bg-black/5 [.light-theme_&]:hover:bg-black/10 [.light-theme_&]:text-[#1c1c1e]"
                     >
                       上传头像
                     </button>
                     {userAvatar && (
                       <button 
                         onClick={handleClearUserAvatar}
-                        className="px-3 py-1.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg text-sm transition"
+                        className="px-3 py-1.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg text-sm transition [.light-theme_&]:border-[#ff3b30]/30 [.light-theme_&]:text-[#ff3b30] [.light-theme_&]:hover:bg-[#ff3b30]/10"
                       >
                         移除头像
                       </button>
@@ -1004,8 +1004,8 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
               
               {/* Custom Fold Tags Settings */}
               <div className="flex flex-col gap-3">
-                <label className="text-sm font-medium text-white/80 shrink-0 mt-1">自定义折叠标签</label>
-                <p className="text-xs text-white/50 leading-relaxed -mt-2">
+                <label className="text-sm font-medium text-white/80 shrink-0 mt-1 [.light-theme_&]:text-[#1c1c1e]/80">自定义折叠标签</label>
+                <p className="text-xs text-white/50 leading-relaxed -mt-2 [.light-theme_&]:text-[#1c1c1e]/50">
                   添加你想要自动折叠的标签。比如你输入 <strong>Real_Task</strong>，聊天记录中的 <i>&lt;Real_Task&gt;...&lt;/Real_Task&gt;</i> 就会被自动折叠。
                 </p>
                 
@@ -1018,12 +1018,12 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                       if (e.key === 'Enter') handleAddCustomTag();
                     }}
                     placeholder="输入标签名 (如 Real_Task)"
-                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
+                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 [.light-theme_&]:bg-[#ffffff] [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e] [.light-theme_&]:placeholder:text-[#8e8e93]"
                   />
                   <button 
                     onClick={handleAddCustomTag}
                     disabled={!newTagInput.trim()}
-                    className="p-2 bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:text-white/30 text-white rounded-xl transition"
+                    className="p-2 bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:text-white/30 text-white rounded-xl transition [.light-theme_&]:disabled:bg-black/5 [.light-theme_&]:disabled:text-[#8e8e93] [.light-theme_&]:bg-[#007aff] [.light-theme_&]:hover:bg-[#0056b3]"
                   >
                     <Plus className="w-5 h-5" />
                   </button>
@@ -1032,11 +1032,11 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                 {customTags.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {customTags.map((tag, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-lg text-sm">
+                      <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-lg text-sm [.light-theme_&]:bg-[#007aff]/10 [.light-theme_&]:text-[#007aff] [.light-theme_&]:border-[#007aff]/20">
                         {tag}
                         <button 
                           onClick={() => handleRemoveCustomTag(tag)}
-                          className="hover:text-red-400 p-0.5 rounded-full transition"
+                          className="hover:text-red-400 p-0.5 rounded-full transition [.light-theme_&]:text-[#007aff]/60 [.light-theme_&]:hover:text-[#ff3b30]"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -1065,20 +1065,20 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl [.light-theme_&]:bg-white/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5"
+              className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl [.light-theme_&]:bg-[#ffffff]/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5"
             >
-              <h3 className="text-xl font-bold mb-2 text-white">删除聊天记录？</h3>
-              <p className="text-slate-400 mb-6">此操作无法撤销，确定要删除这条聊天记录吗？</p>
+              <h3 className="text-xl font-bold mb-2 text-white [.light-theme_&]:text-[#1c1c1e]">删除聊天记录？</h3>
+              <p className="text-slate-400 mb-6 [.light-theme_&]:text-[#8e8e93]">此操作无法撤销，确定要删除这条聊天记录吗？</p>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setDeleteChatId(null)}
-                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition"
+                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition [.light-theme_&]:bg-black/5 [.light-theme_&]:hover:bg-black/10 [.light-theme_&]:text-[#1c1c1e] [.light-theme_&]:hover:text-[#1c1c1e]"
                 >
                   取消
                 </button>
                 <button
                   onClick={confirmDeleteChat}
-                  className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition shadow-lg shadow-red-500/20"
+                  className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition shadow-lg shadow-red-500/20 [.light-theme_&]:bg-[#ff3b30] [.light-theme_&]:hover:bg-[#b31f17] [.light-theme_&]:text-white"
                 >
                   删除
                 </button>
@@ -1090,12 +1090,12 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
 
       {imageToCrop && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden h-[500px] [.light-theme_&]:bg-white/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5">
-             <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-                <h3 className="text-lg font-bold text-white">调整头像</h3>
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden h-[500px] [.light-theme_&]:bg-[#ffffff]/90 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5">
+             <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02] [.light-theme_&]:bg-black/[0.02] [.light-theme_&]:border-black/5">
+                <h3 className="text-lg font-bold text-white [.light-theme_&]:text-[#1c1c1e]">调整头像</h3>
                 <button 
                   onClick={closeCrop}
-                  className="p-1 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition"
+                  className="p-1 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition [.light-theme_&]:hover:bg-black/5 [.light-theme_&]:text-[#8e8e93] [.light-theme_&]:hover:text-[#1c1c1e]"
                 >
                   <X className="w-5 h-5" />
                 </button>

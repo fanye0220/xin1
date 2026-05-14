@@ -53,8 +53,8 @@ function RetagReviewCard({ item }: { item: RetagReviewItem }) {
 
       <div className="flex-1 flex flex-col gap-5">
         {/* 旧标签对照区 */}
-        <div className="flex flex-col gap-2 bg-white/5 border border-white/10 rounded-xl p-3">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-white/50 px-1 border-b border-white/10 pb-1.5">
+        <div className="flex flex-col gap-2 bg-white/5 border border-white/[0.1] [.light-theme_&]:border-black/5 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-white/50 px-1 border-b border-white/[0.1] [.light-theme_&]:border-black/5 pb-1.5">
             <span>旧标签</span>
           </div>
           <div className="flex flex-wrap gap-1.5 min-h-[32px] content-start">
@@ -289,7 +289,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
-      <header className="sticky top-0 px-4 pb-4 pt-7 sm:px-6 sm:pb-6 sm:pt-7 flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 px-4 pb-4 pt-7 sm:px-6 sm:pb-6 sm:pt-7 flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/[0.1] [.light-theme_&]:border-black/5 z-20">
         <div className="flex items-center gap-4">
           <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />
@@ -302,7 +302,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
           </div>
         </div>
         
-        <div className="flex gap-4 border-b border-white/10 mt-2">
+        <div className="flex gap-4 border-b border-white/[0.1] [.light-theme_&]:border-black/5 mt-2">
           <button
             onClick={() => setActiveTab('untagged')}
             className={`pb-3 px-2 text-sm font-bold transition-all relative ${activeTab === 'untagged' ? 'text-blue-400' : 'text-white/40 hover:text-white/70'}`}
@@ -350,7 +350,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
 
           {activeTab === 'untagged' ? (
             <>
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <div className="bg-white/5 border border-white/[0.1] [.light-theme_&]:border-black/5 rounded-2xl p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                   <div>
                     <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -414,7 +414,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
             </>
           ) : (
             <div className="space-y-6">
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <div className="bg-white/5 border border-white/[0.1] [.light-theme_&]:border-black/5 rounded-2xl p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                   <div>
                     <h2 className="text-lg font-semibold text-white flex items-center gap-2">
