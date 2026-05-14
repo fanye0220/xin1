@@ -136,7 +136,11 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   
   const [pageSize, setPageSize] = useState(() => Number(localStorage.getItem('tavern_pageSize')) || 50);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'masonry'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'masonry'>(() => (localStorage.getItem('tavern_viewMode') as 'grid' | 'list' | 'masonry') || 'grid');
+  
+  useEffect(() => {
+    localStorage.setItem('tavern_viewMode', viewMode);
+  }, [viewMode]);
   const [sortBy, setSortBy] = useState<SortOption>(() => (localStorage.getItem('tavern_sortBy') as SortOption) || 'newest_import');
   const [isSortOpen, setIsSortOpen] = useState(false);
   

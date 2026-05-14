@@ -454,7 +454,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
                           </div>
                           <div className="flex-1 min-w-0 pr-6 sm:pr-0">
                             <h4 className="font-bold text-white truncate text-base">{char.name}</h4>
-                            <p className="text-[11px] text-white/50 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                            <p className="text-[11px] text-white/50 [.light-theme_&]:text-white/80 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                               <span>修改: {modifiedDate.toLocaleDateString()}</span>
                               <span title="设定字数">描: {(targetData.description || '').length}字</span>
                               {targetData.alternate_greetings?.length > 0 && <span>备用开场白: {targetData.alternate_greetings.length}</span>}
@@ -475,7 +475,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
                           <button
                             disabled={selectionMode}
                             onClick={() => handleMergeAndKeep(char, group)}
-                            className="w-full py-3 flex items-center justify-center gap-2 bg-purple-500/20 text-purple-200 hover:bg-purple-500/30 disabled:opacity-30 rounded-xl transition text-sm font-bold ring-1 ring-purple-500/30 shadow-lg shadow-purple-500/10 active:scale-95"
+                            className="w-full py-3 flex items-center justify-center gap-2 bg-purple-500/20 text-purple-200 hover:bg-purple-500/30 disabled:opacity-30 rounded-xl transition text-sm font-bold ring-1 ring-purple-500/30 shadow-lg shadow-purple-500/10 active:scale-95 [.light-theme_&]:bg-purple-400/10 [.light-theme_&]:text-purple-400 [.light-theme_&]:hover:bg-purple-400/20 [.light-theme_&]:ring-purple-400/30"
                           >
                             <Merge className="w-4 h-4" />
                             保留并合并
