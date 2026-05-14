@@ -1761,7 +1761,7 @@ function CharacterCardItem({
             {hasTags && (
               <div className="flex gap-1 overflow-hidden shrink-0">
                 {charTags.slice(0, 3).map((t: string) => (
-                  <span key={t} className="text-[9px] bg-white/10 text-white/60 px-1.5 py-0.5 rounded-sm flex-shrink-0 whitespace-nowrap">
+                  <span key={t} className="text-[9px] bg-slate-500/20 text-slate-400 px-1.5 py-0.5 rounded-sm flex-shrink-0 whitespace-nowrap">
                     {t}
                   </span>
                 ))}
@@ -1769,9 +1769,9 @@ function CharacterCardItem({
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            {char.data?.creator && <p className="text-xs text-white/40 truncate">by {char.data.creator}</p>}
+            {char.data?.creator && <p className="text-xs text-slate-500 truncate">by {char.data.creator}</p>}
             {folderName && (
-              <span className="text-[10px] bg-white/10 text-white/60 px-1.5 py-0.5 rounded-md border border-white/10 flex-shrink-0 whitespace-nowrap">
+              <span className="text-[10px] bg-slate-500/20 text-slate-400 px-1.5 py-0.5 rounded-md border border-white/10 flex-shrink-0 whitespace-nowrap">
                 📁 {folderName}
               </span>
             )}
@@ -1821,20 +1821,20 @@ function CharacterCardItem({
         className={`w-full ${viewMode === 'masonry' ? 'h-auto block' : 'h-full'} object-cover pointer-events-none`}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-[var(--overlay-bottom)] via-[var(--overlay-mid)] to-transparent flex flex-col justify-end p-3 pointer-events-none">
-        <h3 className="font-semibold text-white text-sm sm:text-base leading-tight drop-shadow-md break-words truncate">
+        <h3 className="font-semibold text-[#ffffff] text-sm sm:text-base leading-tight drop-shadow-md break-words truncate">
           {char.name}
         </h3>
         {hasTags && (
           <div className="flex flex-wrap gap-1 mt-1.5 h-[1.125rem] overflow-hidden -mr-1">
             {charTags.map((t: string) => (
-              <span key={t} className="text-[9px] bg-white/20 backdrop-blur-md text-white px-1 py-0.5 rounded-sm truncate max-w-[60px]">
+              <span key={t} className="text-[9px] bg-[#000000]/40 backdrop-blur-md text-[#ffffff] px-1 py-0.5 rounded-sm truncate max-w-[60px]">
                 {t}
               </span>
             ))}
           </div>
         )}
         {folderName && (
-          <span className="text-[10px] bg-black/40 backdrop-blur-md text-white/80 px-1.5 py-0.5 rounded-md border border-white/20 truncate w-fit mt-1.5">
+          <span className="text-[10px] bg-[#000000]/50 backdrop-blur-md text-[#ffffff] px-1.5 py-0.5 rounded-md border border-white/20 truncate w-fit mt-1.5">
             📁 {folderName}
           </span>
         )}

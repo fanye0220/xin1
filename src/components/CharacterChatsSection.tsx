@@ -386,13 +386,13 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.97, y: 20 }}
           transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-          className="fixed inset-0 z-[120] bg-slate-900 flex flex-col p-4 sm:p-6"
+          className="fixed inset-0 z-[120] bg-slate-900/80 backdrop-blur-sm flex flex-col p-4 sm:p-6"
         >
-          <div className="max-w-4xl mx-auto w-full flex flex-col h-full bg-slate-900/50 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
-            <div className="p-4 bg-white/5 border-b border-white/10 flex justify-between items-center shrink-0">
+          <div className="max-w-4xl mx-auto w-full flex flex-col h-full bg-slate-900/90 rounded-3xl border border-white/10 overflow-hidden shadow-2xl ring-1 ring-white/5">
+            <div className="p-4 sm:p-5 border-b border-white/10 flex justify-between items-center shrink-0 bg-transparent">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                <button onClick={() => setSelectedChat(null)} className="flex items-center gap-1.5 text-white/50 hover:text-white transition whitespace-nowrap shrink-0 p-2">
-                  <ArrowLeft className="w-5 h-5" /> 
+                <button onClick={() => setSelectedChat(null)} className="flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition shrink-0">
+                  <ArrowLeft className="w-4 h-4" /> 
                 </button>
                 <h3 className="text-base sm:text-lg font-medium text-white truncate" title={selectedChat.name}>{selectedChat.name}</h3>
               </div>
@@ -416,14 +416,14 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                       <div className={`flex gap-4 pb-6 mt-4 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0 px-4 sm:px-6`}>
                         <div className="shrink-0 pt-1">
                           {msg.is_user ? (
-                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
+                            <div className="w-10 h-10 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg font-bold [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent">
                               {msg.name?.charAt(0) || 'U'}
                             </div>
                           ) : (
                             avatar ? (
                               <img src={avatar} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
                             ) : (
-                              <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
+                              <div className="w-10 h-10 rounded-full bg-white/[0.05] flex items-center justify-center shadow-sm border border-white/10 text-slate-200 font-bold">
                                 {msg.name?.charAt(0) || 'AI'}
                               </div>
                             )
@@ -431,22 +431,22 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                         </div>
                         
                         <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                          <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-blue-200/70' : 'text-slate-400'}`}>
+                          <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-slate-400' : 'text-slate-400'}`}>
                             <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
                             {dateString && <span>· {dateString}</span>}
                           </div>
                           
                           <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
                             msg.is_user 
-                              ? 'bg-blue-600/90 text-white rounded-tr-sm backdrop-blur-md border border-blue-500/30' 
-                              : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
+                              ? 'bg-white/[0.08] border border-white/[0.15] text-slate-100 rounded-tr-sm shadow-sm [.light-theme_&]:bg-blue-500 [.light-theme_&]:text-white [.light-theme_&]:border-transparent' 
+                              : 'bg-white/[0.04] text-slate-200 rounded-tl-sm border border-white/[0.05] shadow-sm'
                           }`}>
                              <div className={`prose prose-sm max-w-none 
                                 prose-headings:text-white/90 prose-p:leading-relaxed 
                                 prose-a:text-blue-400 hover:prose-a:text-blue-300
                                 prose-strong:text-white prose-code:text-pink-300
                                 prose-pre:bg-black/30 prose-pre:max-w-full
-                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full \n                                 ${msg.is_user ? 'prose-p:text-white text-white' : 'prose-invert'}`}
+                                [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full \n                                 ${msg.is_user ? 'prose-p:text-slate-100 text-slate-100' : 'prose-invert'}`}
                               >
                               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                   {applyRegexes(msg.mes || '')}

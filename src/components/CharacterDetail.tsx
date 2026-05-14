@@ -651,8 +651,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
               onClick={() => setActiveTab(tab.id as any)}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === tab.id
-                  ? 'bg-white/20 text-white border border-white/30'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10 border border-transparent'
+                  ? 'bg-white/20 text-white border border-white/30 [.light-theme_&]:bg-blue-500/10 [.light-theme_&]:text-[#007aff] [.light-theme_&]:border-blue-500/20 [.light-theme_&]:shadow-sm'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10 border border-transparent [.light-theme_&]:text-slate-500 [.light-theme_&]:hover:bg-blue-500/5'
               }`}
             >
               <tab.icon className="w-4 h-4" />
@@ -663,7 +663,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
         {/* Content Area - Glassmorphism Card */}
         <div className="flex-1 px-2 sm:px-4 pb-32">
-          <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl min-h-[50vh]">
+          <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl min-h-[50vh] [.light-theme_&]:bg-blue-50/70 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-blue-200/40 [.light-theme_&]:shadow-[0_8px_40px_rgba(59,130,246,0.1)]">
             <AnimatePresence mode="wait">
               {activeTab === 'profile' && (
                 <motion.div

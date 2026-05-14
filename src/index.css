@@ -27,8 +27,8 @@
   --color-blue-200: #004080;
   --color-blue-100: #002244;
   
-  --overlay-bottom: rgba(255, 255, 255, 0.37);
-  --overlay-mid: rgba(255, 255, 255, 0.15);
+  --overlay-bottom: rgba(255, 255, 255, 0.20);
+  --overlay-mid: rgba(255, 255, 255, 0.05);
   
   --color-purple-600: #dcb8ff;
   --color-purple-500: #ebd4ff;
@@ -82,16 +82,22 @@
   border-color: rgba(0, 0, 0, 0.08) !important;
 }
 .light-theme .bg-white\/5 {
-  background-color: rgba(255, 255, 255, 0.6) !important;
+  background-color: rgba(255, 255, 255, 0.29) !important;
 }
 .light-theme .bg-white\/10 {
-  background-color: rgba(255, 255, 255, 0.8) !important;
+  background-color: rgba(255, 255, 255, 0.4) !important;
 }
-.light-theme .rounded-xl {
+.rounded-xl {
   border-radius: 1.25rem !important; /* Make things rounder */
 }
-.light-theme .rounded-2xl {
+.rounded-2xl {
   border-radius: 1.5rem !important;
+}
+.rounded-tr-sm {
+  border-top-right-radius: 0.25rem !important;
+}
+.rounded-tl-sm {
+  border-top-left-radius: 0.25rem !important;
 }
 
 body {

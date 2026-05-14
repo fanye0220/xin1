@@ -748,7 +748,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                         <div className="pb-4">
                           <div
                             onClick={() => toggleGroup(groupName)}
-                            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 cursor-pointer transition flex items-center justify-between"
+                            className="bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl p-4 cursor-pointer transition flex items-center justify-between shadow-sm"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
@@ -784,7 +784,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                       <div className="pb-4 pl-4 sm:pl-8">
                         <div
                           onClick={() => setActiveChatId(chat.id)}
-                          className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden"
+                          className="bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-2xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden ring-1 ring-white/5 hover:shadow-lg"
                         >
                           <div className="flex justify-between items-start mb-2 gap-3">
                               <div className="flex-1 min-w-0">
@@ -875,7 +875,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                       itemContent={(i, msg) => {
                         const dateString = msg.send_date ? new Date(msg.send_date).toLocaleString() : '';
                         return (
-                          <div className={`flex gap-4 pb-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0`}>
+                          <div className={`flex gap-4 pb-6 mt-4 px-2 ${msg.is_user ? 'flex-row-reverse' : ''} overflow-hidden w-full min-w-0`}>
                             <div className="shrink-0 pt-1">
                               {msg.is_user ? (
                                 userAvatar ? (
@@ -883,7 +883,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                     <img src={userAvatar} alt="user avatar" className="w-full h-full object-cover" />
                                   </div>
                                 ) : (
-                                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold">
+                                  <div className="w-10 h-10 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg font-bold [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent">
                                     {msg.name?.charAt(0) || 'U'}
                                   </div>
                                 )
@@ -891,7 +891,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                 activeCharacter && avatarUrls[activeCharacter.id] ? (
                                   <img src={avatarUrls[activeCharacter.id]} alt="avatar" className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10" />
                                 ) : (
-                                  <div className="w-10 h-10 rounded-full bg-indigo-900 flex items-center justify-center shadow-lg border border-indigo-500/30 text-indigo-200 font-bold">
+                                  <div className="w-10 h-10 rounded-full bg-white/[0.05] flex items-center justify-center shadow-sm border border-white/10 text-slate-200 font-bold">
                                     {msg.name?.charAt(0) || 'AI'}
                                   </div>
                                 )
@@ -899,23 +899,23 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                             </div>
                             
                             <div className={`max-w-[85%] md:max-w-[80%] min-w-0 ${msg.is_user ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                              <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-white/60' : 'text-slate-400'}`}>
+                              <div className={`flex items-center gap-2 text-xs ${msg.is_user ? 'flex-row-reverse text-slate-400' : 'text-slate-400'}`}>
                                 <span className="font-semibold">{msg.name || (msg.is_user ? 'User' : 'Character')}</span>
                                 {dateString && <span>· {dateString}</span>}
                               </div>
                               
                               <div className={`px-5 py-3 rounded-2xl max-w-full min-w-0 overflow-x-auto ${
                                 msg.is_user 
-                                  ? 'bg-[#007aff] text-[#ffffff] rounded-tr-sm shadow-sm' 
-                                  : 'bg-indigo-950/80 text-indigo-100 rounded-tl-sm border border-indigo-500/20 backdrop-blur-md'
+                                  ? 'bg-white/[0.08] border border-white/[0.15] text-slate-100 rounded-tr-sm shadow-sm [.light-theme_&]:bg-blue-500 [.light-theme_&]:text-white [.light-theme_&]:border-transparent' 
+                                  : 'bg-white/[0.04] text-slate-200 rounded-tl-sm border border-white/[0.05] shadow-sm'
                               }`}>
                                  <div className={`prose prose-sm max-w-none 
-                                    prose-p:leading-relaxed 
-                                    prose-a:text-blue-200 hover:prose-a:text-blue-100
-                                    prose-code:text-pink-200
+                                    prose-headings:text-white/90 prose-p:leading-relaxed 
+                                    prose-a:text-blue-400 hover:prose-a:text-blue-300
+                                    prose-strong:text-white prose-code:text-pink-300
                                     prose-pre:bg-black/30 prose-pre:max-w-full
                                     [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words w-full 
-                                    ${msg.is_user ? 'prose-p:text-[#ffffff] prose-headings:text-[#ffffff] prose-strong:text-[#ffffff] text-[#ffffff]' : 'prose-invert prose-headings:text-[#ffffff] prose-strong:text-[#ffffff] prose-p:text-indigo-100'}
+                                    ${msg.is_user ? 'prose-p:text-slate-100 text-slate-100' : 'prose-invert'}
                                   `}>
                                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                       {formatCustomTags(applyRegexes(msg.mes || '', activeCharacter))}
@@ -969,7 +969,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
               <div className="flex flex-col gap-3">
                 <label className="text-sm font-medium text-white/80">你的头像</label>
                 <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center shadow-lg border border-white/20 shrink-0 overflow-hidden relative group">
+                  <div className="w-16 h-16 rounded-full bg-white/10 text-slate-300 border border-white/20 flex items-center justify-center shadow-lg shrink-0 overflow-hidden relative group [.light-theme_&]:bg-blue-600 [.light-theme_&]:text-white [.light-theme_&]:border-transparent">
                     {userAvatar ? (
                       <img src={userAvatar} alt="avatar" className="w-full h-full object-cover" />
                     ) : (
