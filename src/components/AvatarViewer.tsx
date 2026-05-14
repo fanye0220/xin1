@@ -217,7 +217,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     
     a.download = `${character.name || 'avatar'}_image.${ext}`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   return createPortal(

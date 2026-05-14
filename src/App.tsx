@@ -110,10 +110,10 @@ function ExportWidget() {
   const [isMinimized, setIsMinimized] = useState(false);
 
   useEffect(() => {
-    if (isExporting && progress.current === 0 && progress.total === 0) {
+    if (isExporting) {
       setIsMinimized(false);
     }
-  }, [isExporting, progress.current, progress.total]);
+  }, [isExporting]);
 
   if (!isExporting && errorToast === null) return null;
 

@@ -202,9 +202,11 @@ class ExportState {
       
       // Delay removal and revoke to ensure browser starts download
       setTimeout(() => {
-        document.body.removeChild(a);
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
         URL.revokeObjectURL(url);
-      }, 1000);
+      }, 60000);
       
       // dismiss
       setTimeout(() => this.dismiss(), 2000);
