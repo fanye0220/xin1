@@ -221,7 +221,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     a.href = url;
     a.download = `${getSafeFilename(character.name)}.json`;
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    URL.revokeObjectURL(url);
   };
 
   const handleExportPng = async () => {
@@ -249,7 +249,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
         a.href = url;
         a.download = exportFileName;
         a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        URL.revokeObjectURL(url);
       } catch (e) {
         console.error("Failed to export PNG", e);
         if (!isPreset && !isStandaloneWorldbook) setShowExportAlert(true);
@@ -1478,7 +1478,7 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
               a.href = url;
               a.download = `${(book.name || (book.data && book.data.name) || 'worldbook').replace(/[\\/:*?"<>|]/g, '_')}.json`;
               a.click();
-              setTimeout(() => URL.revokeObjectURL(url), 60000);
+              URL.revokeObjectURL(url);
             }}
             className="p-2 rounded-full bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 transition"
             title="导出世界书"

@@ -238,10 +238,8 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => {
-        if (document.body.contains(a)) document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 60000);
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } else {
       const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
@@ -284,10 +282,8 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       a.download = `${character.name}_QRs.zip`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => {
-        if (document.body.contains(a)) document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 60000);
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
   };
 

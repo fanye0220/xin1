@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
 import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
 import { injectTavernData } from '../lib/png';
 import Cropper from 'react-easy-crop';
-import { exportState } from '../lib/exportState';
 import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -747,9 +746,57 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const handleBatchExport = async () => {
     if (selectedIds.size === 0) return;
     
-    exportState.startBatchExport(selectedIds);
-    setSelectionMode(false);
-    setSelectedIds(new Set());
+    try {
+      const zip = new JSZip();
+      
+      // Get all folders to resolve paths
+      const allFolders = await getFolders();
+      
+      for (const id of selectedIds) {
+        const folder = allFolders.find(f => f.id === id);
+        if (folder) {
+          // Export all characters in this folder and its subfolders
+          const exportFolderRecursive = async (currentFolderId: string, currentZip: JSZip) => {
+            const { characters: folderChars } = await getCharacters(1, 10000, currentFolderId);
+            for (const char of folderChars) {
+              await addCharacterToZip(char, currentZip);
+            }
+            
+            const subFolders = allFolders.filter(f => f.parentId === currentFolderId);
+            for (const subFolder of subFolders) {
+              const subZip = currentZip.folder(getSafeFilename(subFolder.name));
+              if (subZip) {
+                await exportFolderRecursive(subFolder.id, subZip);
+              }
+            }
+          };
+          
+          const folderZip = zip.folder(getSafeFilename(folder.name));
+          if (folderZip) {
+            await exportFolderRecursive(folder.id, folderZip);
+          }
+        } else {
+          const char = await getCharacter(id);
+          if (char) {
+            await addCharacterToZip(char, zip);
+          }
+        }
+      }
+      
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Tavern_Export_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    } catch (e) {
+      console.error("Batch export failed", e);
+      alert("导出失败，请重试");
+    }
   };
 
   const handleMoveToFolder = async (targetFolderId: string | null) => {

@@ -29,13 +29,20 @@ export interface ChatLog {
   id: string;
   characterId: string;
   name: string;
-  messages?: any[];
-  messageCount?: number;
-  firstAiName?: string;
-  lastMessagePreview?: string;
-  hasMessagesSeparated?: boolean;
+  messages: any[];
   createdAt: number;
   note?: string;
+}
+
+export interface ChatMetadata {
+  id: string;
+  characterId: string;
+  name: string;
+  createdAt: number;
+  note?: string;
+  messageCount: number;
+  firstAiName?: string;
+  lastMessagePreview?: string;
 }
 
 interface TavernDB extends DBSchema {
@@ -53,13 +60,14 @@ interface TavernDB extends DBSchema {
     key: string;
     value: { avatarBlob?: Blob; originalFile?: File; avatarHistory?: Blob[] };
   };
-  'chat-messages': {
-    key: string;
-    value: { messages: any[] };
-  };
   chats: {
     key: string;
     value: ChatLog;
+    indexes: { 'by-character': string; 'by-date': number };
+  };
+  chat_metadata: {
+    key: string;
+    value: ChatMetadata;
     indexes: { 'by-character': string; 'by-date': number };
   };
   memos: {
@@ -85,7 +93,7 @@ let dbPromise: Promise<IDBPDatabase<TavernDB>>;
 export function initDB() {
   if (!dbPromise) {
     dbPromise = openDB<TavernDB>('tavern-manager-v2', 6, {
-      upgrade(db, oldVersion, newVersion, transaction) {
+      async upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion < 1) {
           const store = db.createObjectStore('characters', { keyPath: 'id' });
           store.createIndex('by-date', 'createdAt');
@@ -111,7 +119,32 @@ export function initDB() {
           memoStore.createIndex('by-date', 'createdAt');
         }
         if (oldVersion < 6) {
-          db.createObjectStore('chat-messages');
+          const metaStore = db.createObjectStore('chat_metadata', { keyPath: 'id' });
+          metaStore.createIndex('by-character', 'characterId');
+          metaStore.createIndex('by-date', 'createdAt');
+          
+          // Prepopulate chat_metadata from existing chats
+          const chatStore = transaction.objectStore('chats');
+          let cursor = await chatStore.openCursor();
+          while (cursor) {
+            const val = cursor.value;
+            const aiMsg = val.messages?.find((m: any) => !m.is_user && m.name);
+            const lastMsg = val.messages?.length ? val.messages[val.messages.length - 1] : null;
+            let preview = lastMsg?.mes || '';
+            if (preview.length > 200) preview = preview.substring(0, 200) + '...';
+            
+            metaStore.put({
+              id: val.id,
+              characterId: val.characterId,
+              name: val.name,
+              createdAt: val.createdAt,
+              note: val.note,
+              messageCount: val.messages?.length || 0,
+              firstAiName: aiMsg?.name,
+              lastMessagePreview: preview,
+            });
+            cursor = await cursor.continue();
+          }
         }
       },
     });
@@ -124,20 +157,13 @@ export async function migrateDatabase(onProgress?: (current: number, total: numb
   
   const tx = db.transaction('characters', 'readonly');
   const allChars = await tx.objectStore('characters').getAll();
-  const unmigratedChars = allChars.filter(c => !c.hasBlobsSeparated);
+  const unmigrated = allChars.filter(c => !c.hasBlobsSeparated);
   
-  const chatTx = db.transaction('chats', 'readonly');
-  const allChats = await chatTx.objectStore('chats').getAll();
-  const unmigratedChats = allChats.filter(c => !c.hasMessagesSeparated);
-
-  const totalItems = unmigratedChars.length + unmigratedChats.length;
-  if (totalItems === 0) return;
-
-  let processed = 0;
+  if (unmigrated.length === 0) return;
 
   const CHUNK_SIZE = 50;
-  for (let i = 0; i < unmigratedChars.length; i += CHUNK_SIZE) {
-    const chunk = unmigratedChars.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < unmigrated.length; i += CHUNK_SIZE) {
+    const chunk = unmigrated.slice(i, i + CHUNK_SIZE);
     const writeTx = db.transaction(['characters', 'blobs'], 'readwrite');
     const charStore = writeTx.objectStore('characters');
     const blobStore = writeTx.objectStore('blobs');
@@ -157,46 +183,11 @@ export async function migrateDatabase(onProgress?: (current: number, total: numb
       char.hasBlobsSeparated = true;
       
       await charStore.put(char);
-      processed++;
     }
     await writeTx.done;
     
     if (onProgress) {
-      onProgress(processed, totalItems);
-    }
-  }
-
-  const CHAT_CHUNK_SIZE = 50;
-  for (let i = 0; i < unmigratedChats.length; i += CHAT_CHUNK_SIZE) {
-    const chunk = unmigratedChats.slice(i, i + CHAT_CHUNK_SIZE);
-    const writeTx = db.transaction(['chats', 'chat-messages'], 'readwrite');
-    const store = writeTx.objectStore('chats');
-    const msgStore = writeTx.objectStore('chat-messages');
-
-    for (const chat of chunk) {
-      const messagesData = { messages: chat.messages || [] };
-      const aiMsg = chat.messages?.find((m: any) => !m.is_user && m.name);
-      const lastMsg = chat.messages?.length ? chat.messages[chat.messages.length - 1] : null;
-      let preview = lastMsg?.mes || '';
-      if (preview.length > 200) preview = preview.substring(0, 200) + '...';
-
-      const charChat = {
-        ...chat,
-        messageCount: chat.messages?.length || 0,
-        firstAiName: aiMsg?.name || chat.firstAiName,
-        lastMessagePreview: preview || chat.lastMessagePreview,
-        hasMessagesSeparated: true,
-      };
-      delete charChat.messages;
-      
-      await msgStore.put(messagesData, chat.id);
-      await store.put(charChat);
-      processed++;
-    }
-    await writeTx.done;
-
-    if (onProgress) {
-      onProgress(processed, totalItems);
+      onProgress(Math.min(i + CHUNK_SIZE, unmigrated.length), unmigrated.length);
     }
   }
 }
@@ -803,119 +794,63 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
 
 export async function getChatsForCharacter(characterId: string): Promise<ChatLog[]> {
   const db = await initDB();
-  const chats = await db.getAllFromIndex('chats', 'by-character', characterId);
-  const tx = db.transaction('chat-messages', 'readonly');
-  const store = tx.objectStore('chat-messages');
-  for (const chat of chats) {
-    if (chat.hasMessagesSeparated) {
-      const msgs = await store.get(chat.id);
-      chat.messages = msgs?.messages || [];
-    }
-  }
-  return chats;
+  return db.getAllFromIndex('chats', 'by-character', characterId);
 }
 
 export async function getChatById(id: string): Promise<ChatLog | undefined> {
   const db = await initDB();
-  const chat = await db.get('chats', id);
-  if (chat && chat.hasMessagesSeparated) {
-    const msgs = await db.get('chat-messages', id);
-    chat.messages = msgs?.messages || [];
-  }
-  return chat;
+  return db.get('chats', id);
 }
 
-export async function getAllChatsMetadata(): Promise<(Omit<ChatLog, 'messages'> & { messageCount: number, firstAiName?: string, lastMessagePreview?: string })[]> {
+export async function getAllChatsMetadata(): Promise<ChatMetadata[]> {
   const db = await initDB();
-  const tx = db.transaction('chats', 'readonly');
-  const store = tx.objectStore('chats');
-  const chats = await store.getAll();
-  const res = [];
-  for (const val of chats) {
-    if (val.hasMessagesSeparated) {
-      res.push({
-        id: val.id,
-        characterId: val.characterId,
-        name: val.name,
-        createdAt: val.createdAt,
-        note: val.note,
-        messageCount: val.messageCount || 0,
-        firstAiName: val.firstAiName,
-        lastMessagePreview: val.lastMessagePreview,
-      });
-    } else {
-      const aiMsg = val.messages?.find((m: any) => !m.is_user && m.name);
-      const lastMsg = val.messages?.length ? val.messages[val.messages.length - 1] : null;
-      let preview = lastMsg?.mes || '';
-      if (preview.length > 200) preview = preview.substring(0, 200) + '...';
-      res.push({
-        id: val.id,
-        characterId: val.characterId,
-        name: val.name,
-        createdAt: val.createdAt,
-        note: val.note,
-        messageCount: val.messages?.length || 0,
-        firstAiName: aiMsg?.name,
-        lastMessagePreview: preview,
-      });
-    }
-  }
-  return res;
+  return db.getAll('chat_metadata');
 }
 
-export async function saveChat(chat: ChatLog): Promise<void> {
-  const db = await initDB();
-  const tx = db.transaction(['chats', 'chat-messages'], 'readwrite');
-  const messagesData = { messages: chat.messages || [] };
+function computeChatMetadata(chat: ChatLog): ChatMetadata {
   const aiMsg = chat.messages?.find((m: any) => !m.is_user && m.name);
   const lastMsg = chat.messages?.length ? chat.messages[chat.messages.length - 1] : null;
   let preview = lastMsg?.mes || '';
   if (preview.length > 200) preview = preview.substring(0, 200) + '...';
-
-  const charChat = {
-    ...chat,
-    messageCount: chat.messages?.length || 0,
-    firstAiName: aiMsg?.name || chat.firstAiName,
-    lastMessagePreview: preview || chat.lastMessagePreview,
-    hasMessagesSeparated: true,
-  };
-  delete charChat.messages;
   
-  await tx.objectStore('chat-messages').put(messagesData, chat.id);
-  await tx.objectStore('chats').put(charChat);
+  return {
+    id: chat.id,
+    characterId: chat.characterId,
+    name: chat.name,
+    createdAt: chat.createdAt,
+    note: chat.note,
+    messageCount: chat.messages?.length || 0,
+    firstAiName: aiMsg?.name,
+    lastMessagePreview: preview,
+  };
+}
+
+export async function saveChat(chat: ChatLog): Promise<void> {
+  const db = await initDB();
+  const tx = db.transaction(['chats', 'chat_metadata'], 'readwrite');
+  await tx.objectStore('chats').put(chat);
+  await tx.objectStore('chat_metadata').put(computeChatMetadata(chat));
   await tx.done;
 }
 
 export async function saveChatsBulk(chats: ChatLog[]): Promise<void> {
   const db = await initDB();
-  const tx = db.transaction(['chats', 'chat-messages'], 'readwrite');
-  for (const chat of chats) {
-    const messagesData = { messages: chat.messages || [] };
-    const aiMsg = chat.messages?.find((m: any) => !m.is_user && m.name);
-    const lastMsg = chat.messages?.length ? chat.messages[chat.messages.length - 1] : null;
-    let preview = lastMsg?.mes || '';
-    if (preview.length > 200) preview = preview.substring(0, 200) + '...';
-
-    const charChat = {
-      ...chat,
-      messageCount: chat.messages?.length || 0,
-      firstAiName: aiMsg?.name || chat.firstAiName,
-      lastMessagePreview: preview || chat.lastMessagePreview,
-      hasMessagesSeparated: true,
-    };
-    delete charChat.messages;
-    
-    await tx.objectStore('chat-messages').put(messagesData, chat.id);
-    await tx.objectStore('chats').put(charChat);
-  }
+  const tx = db.transaction(['chats', 'chat_metadata'], 'readwrite');
+  const chatStore = tx.objectStore('chats');
+  const metaStore = tx.objectStore('chat_metadata');
+  
+  chats.forEach(chat => {
+    chatStore.put(chat);
+    metaStore.put(computeChatMetadata(chat));
+  });
   await tx.done;
 }
 
 export async function deleteChat(id: string): Promise<void> {
   const db = await initDB();
-  const tx = db.transaction(['chats', 'chat-messages'], 'readwrite');
+  const tx = db.transaction(['chats', 'chat_metadata'], 'readwrite');
   await tx.objectStore('chats').delete(id);
-  await tx.objectStore('chat-messages').delete(id);
+  await tx.objectStore('chat_metadata').delete(id);
   await tx.done;
 }
 

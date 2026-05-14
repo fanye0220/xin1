@@ -116,7 +116,7 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
       a.href = url;
       a.download = memo.content;
       a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      URL.revokeObjectURL(url);
   };
 
   return (
