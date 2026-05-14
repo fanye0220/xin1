@@ -80,8 +80,10 @@ class ExportState {
     }
   }
 
-  async startBatchExport(selectedIds: Set<string>) {
-    if (this.isExporting || selectedIds.size === 0) return;
+  async startBatchExport(selectedIds: Set<string> | string[]) {
+    // Convert to array to ensure we capture the values right now
+    const idsToExport = Array.from(selectedIds);
+    if (this.isExporting || idsToExport.length === 0) return;
     
     this.isExporting = true;
     this.progress = { current: 0, total: 0, phase: '准备中...' };
@@ -101,7 +103,7 @@ class ExportState {
         }
       };
 
-      for (const id of selectedIds) {
+      for (const id of idsToExport) {
         if (allFolders.some(f => f.id === id)) {
            await countRecursive(id);
         } else {
@@ -109,12 +111,14 @@ class ExportState {
         }
       }
 
+      console.log(`[BatchExport] Target total to export: ${totalToExport}`);
+
       this.progress = { current: 0, total: totalToExport, phase: '正在打包角色...' };
       this.notify();
       
       let currentProcessed = 0;
       
-      for (const id of selectedIds) {
+      for (const id of idsToExport) {
         const folder = allFolders.find(f => f.id === id);
         if (folder) {
           const exportFolderRecursive = async (currentFolderId: string, currentZip: JSZip) => {
@@ -146,15 +150,23 @@ class ExportState {
         } else {
           const char = await getCharacter(id);
           if (char) {
+            console.log(`[BatchExport] Adding character ${char.name} (ID: ${char.id})`);
             await this.addCharacterToZip(char, zip);
             currentProcessed++;
             this.progress = { current: currentProcessed, total: totalToExport, phase: '正在打包角色...' };
             this.notify();
             await new Promise(resolve => setTimeout(resolve, 5));
+          } else {
+            console.warn(`[BatchExport] Character not found for ID: ${id}`);
           }
         }
       }
       
+      if (currentProcessed === 0) {
+        throw new Error("没有任何角色需要导出。");
+      }
+
+      console.log(`[BatchExport] Generating zip for ${currentProcessed} characters...`);
       this.progress = { current: currentProcessed, total: totalToExport, phase: '正在生成压缩包...' };
       this.notify();
       
@@ -166,12 +178,27 @@ class ExportState {
         this.notify();
       });
 
+      console.log(`[BatchExport] Zip generated, size: ${zipBlob.size} bytes`);
+      if (zipBlob.size < 100) {
+        console.warn("[BatchExport] Zip might be suspiciously small (empty).");
+      }
+
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
+      a.style.display = 'none';
       a.href = url;
       a.download = `Tavern_Export_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      
+      // Delay removal and revoke to ensure browser starts download
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+      
+      // dismiss
+      setTimeout(() => this.dismiss(), 2000);
       
     } catch (e: any) {
       console.error("Batch export failed", e);
