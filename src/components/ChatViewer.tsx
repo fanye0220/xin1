@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book, Search } from 'lucide-react';
+import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book, Search, CheckCircle2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -128,6 +128,111 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedChatIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const longPressRef = useRef<{ timer: NodeJS.Timeout | null, triggered: boolean, startY?: number }>({ timer: null, triggered: false });
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectGroup = (groupName: string, select: boolean, e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    const group = groupedChats.find(g => g.characterName === groupName);
+    if (!group) return;
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      group.chats.forEach(c => {
+        if (select) next.add(c.id);
+        else next.delete(c.id);
+      });
+      return next;
+    });
+  };
+
+  const isGroupSelected = (groupName: string) => {
+    const group = groupedChats.find(g => g.characterName === groupName);
+    if (!group || group.chats.length === 0) return false;
+    return group.chats.every(c => selectedChatIds.has(c.id));
+  };
+
+  const isGroupPartiallySelected = (groupName: string) => {
+    const group = groupedChats.find(g => g.characterName === groupName);
+    if (!group || group.chats.length === 0) return false;
+    const count = group.chats.filter(c => selectedChatIds.has(c.id)).length;
+    return count > 0 && count < group.chats.length;
+  };
+
+  const handleExportSelected = async () => {
+      if (selectedChatIds.size === 0) return;
+      const { getChatById } = await import('../lib/db');
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      for (const id of Array.from(selectedChatIds)) {
+         const chat = await getChatById(id);
+         if (chat) {
+            const jsonl = chat.messages.map(m => JSON.stringify(m)).join('\n');
+            let folderName = chat.characterId ? characters.find(c => c.id === chat.characterId)?.name : chat.firstAiName;
+            if (!folderName) folderName = "Unknown";
+            zip.folder(folderName)?.file(`${chat.name.endsWith('.jsonl') ? chat.name : chat.name + '.jsonl'}`, jsonl);
+         }
+      }
+      
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `exported_chats_${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+  };
+
+  const handleDeleteSelected = async () => {
+     if (selectedChatIds.size === 0) return;
+     if (!window.confirm(`确定要删除选中的 ${selectedChatIds.size} 个记录吗？此操作不可逆！`)) return;
+     const { deleteChat } = await import('../lib/db');
+     for (const id of Array.from(selectedChatIds)) {
+       await deleteChat(id);
+     }
+     setSelectionMode(false);
+     setSelectedIds(new Set());
+     loadData();
+  };
+
+  const findDuplicates = () => {
+     const map = new Map<string, typeof savedChats[0][]>();
+     savedChats.forEach(c => {
+        const key = `${c.characterId || c.firstAiName || 'unknown'}_${c.messageCount}_${c.lastMessagePreview}`;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(c);
+     });
+     const toSelect = new Set<string>();
+     map.forEach(list => {
+        if (list.length > 1) {
+           list.sort((a,b) => b.createdAt - a.createdAt);
+           for (let i = 1; i < list.length; i++) {
+              toSelect.add(list[i].id);
+           }
+        }
+     });
+     
+     if (toSelect.size > 0) {
+        setSelectionMode(true);
+        setSelectedIds(toSelect);
+        alert(`找到了 ${toSelect.size} 个疑似重复文件并已选中，请检查确认后再删除。`);
+     } else {
+        alert('没有发现重复的聊天记录');
+     }
+  };
 
   useEffect(() => {
     const savedTags = localStorage.getItem('chatViewer_customTags');
@@ -747,10 +852,48 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                       return (
                         <div className="pb-4">
                           <div
-                            onClick={() => toggleGroup(groupName)}
-                            className="bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl p-4 cursor-pointer transition flex items-center justify-between shadow-sm"
+                            onTouchStart={(e) => {
+                              longPressRef.current.triggered = false;
+                              longPressRef.current.startY = e.touches[0].clientY;
+                              longPressRef.current.timer = setTimeout(() => {
+                                longPressRef.current.triggered = true;
+                                if (!selectionMode) setSelectionMode(true);
+                                handleSelectGroup(groupName, !isGroupSelected(groupName), e as unknown as React.MouseEvent);
+                              }, 500);
+                            }}
+                            onTouchMove={(e) => {
+                              if (longPressRef.current.timer) {
+                                const dy = Math.abs(e.touches[0].clientY - (longPressRef.current.startY || 0));
+                                if (dy > 10) { clearTimeout(longPressRef.current.timer); longPressRef.current.timer = null; }
+                              }
+                            }}
+                            onTouchEnd={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
+                            onMouseDown={() => {
+                              longPressRef.current.triggered = false;
+                              longPressRef.current.timer = setTimeout(() => {
+                                longPressRef.current.triggered = true;
+                                if (!selectionMode) setSelectionMode(true);
+                                handleSelectGroup(groupName, !isGroupSelected(groupName), {} as React.MouseEvent);
+                              }, 500);
+                            }}
+                            onMouseUp={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
+                            onMouseLeave={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
+                            onClick={(e) => {
+                              if (longPressRef.current.triggered) { e.preventDefault(); return; }
+                              if (selectionMode) handleSelectGroup(groupName, !isGroupSelected(groupName), e);
+                              else toggleGroup(groupName);
+                            }}
+                            className="bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl p-4 cursor-pointer transition flex items-center justify-between shadow-sm select-none"
                           >
-                            <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              {selectionMode && (
+                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                                  isGroupSelected(groupName) ? 'bg-blue-500 border-blue-500' : 
+                                  isGroupPartiallySelected(groupName) ? 'bg-blue-500/50 border-blue-500/50 text-white' : 'border-white/20'
+                                }`}>
+                                  {(isGroupSelected(groupName) || isGroupPartiallySelected(groupName)) && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                </div>
+                              )}
                               <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
                                 {group.characterId && avatarUrls[group.characterId] ? (
                                   <img src={avatarUrls[group.characterId]} alt="avatar" className="w-full h-full object-cover" />
@@ -760,12 +903,12 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                   </span>
                                 )}
                               </div>
-                              <div className="truncate">
+                              <div className="truncate pr-2">
                                 <h4 className="font-semibold text-white/90 text-base truncate mb-0.5">{groupName}</h4>
                                 <p className="text-xs text-white/40">{group.chats.length} 个历史记录</p>
                               </div>
                             </div>
-                            <div className="text-white/40 shrink-0">
+                            <div className="text-white/40 shrink-0 border-l border-white/5 pl-3 ml-1">
                               {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                             </div>
                           </div>
@@ -783,10 +926,51 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                     return (
                       <div className="pb-4 pl-4 sm:pl-8">
                         <div
-                          onClick={() => setActiveChatId(chat.id)}
-                          className="bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-2xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden ring-1 ring-white/5 hover:shadow-lg"
+                          onTouchStart={(e) => {
+                            longPressRef.current.triggered = false;
+                            longPressRef.current.startY = e.touches[0].clientY;
+                            longPressRef.current.timer = setTimeout(() => {
+                              longPressRef.current.triggered = true;
+                              if (!selectionMode) setSelectionMode(true);
+                              toggleSelection(chat.id);
+                            }, 500);
+                          }}
+                          onTouchMove={(e) => {
+                            if (longPressRef.current.timer) {
+                              const dy = Math.abs(e.touches[0].clientY - (longPressRef.current.startY || 0));
+                              if (dy > 10) { clearTimeout(longPressRef.current.timer); longPressRef.current.timer = null; }
+                            }
+                          }}
+                          onTouchEnd={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
+                          onMouseDown={() => {
+                            longPressRef.current.triggered = false;
+                            longPressRef.current.timer = setTimeout(() => {
+                              longPressRef.current.triggered = true;
+                              if (!selectionMode) setSelectionMode(true);
+                              toggleSelection(chat.id);
+                            }, 500);
+                          }}
+                          onMouseUp={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
+                          onMouseLeave={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
+                          onClick={(e) => {
+                            if (longPressRef.current.triggered) { e.preventDefault(); return; }
+                            if (selectionMode) toggleSelection(chat.id);
+                            else setActiveChatId(chat.id);
+                          }}
+                          className={`bg-white/[0.03] hover:bg-white/[0.06] border rounded-2xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden select-none hover:shadow-lg ${
+                            selectedChatIds.has(chat.id) ? 'border-blue-500/50 bg-blue-500/5' : 'border-white/5 ring-1 ring-white/5'
+                          }`}
                         >
-                          <div className="flex justify-between items-start mb-2 gap-3">
+                          {selectionMode && (
+                            <div className="absolute top-4 right-4 z-10">
+                              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                selectedChatIds.has(chat.id) ? 'bg-blue-500 border-blue-500' : 'border-white/20 bg-black/20'
+                              }`}>
+                                {selectedChatIds.has(chat.id) && <CheckCircle2 className="w-4 h-4 text-white" />}
+                              </div>
+                            </div>
+                          )}
+                          <div className={`flex justify-between items-start mb-2 gap-3 ${selectionMode ? 'pr-8' : ''}`}>
                               <div className="flex-1 min-w-0">
                                 {editingNoteFor === chat.id ? (
                                   <div className="w-full mb-1" onClick={e => e.stopPropagation()}>
@@ -947,6 +1131,55 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           )}
         </AnimatePresence>
       </div>
+
+      {selectionMode && !activeChatId && (
+        <motion.div 
+          initial={{ y: 100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 100, opacity: 0 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 p-3 rounded-2xl shadow-2xl flex items-center gap-2 z-40 backdrop-blur-xl"
+        >
+          <div className="px-3 text-sm text-white/70 whitespace-nowrap hidden sm:block">
+            已选择 <span className="text-blue-400 font-bold">{selectedChatIds.size}</span> 个
+          </div>
+          <div className="w-px h-6 bg-white/10 mx-1 shrink-0 hidden sm:block" />
+          <button
+             onClick={() => {
+                if (selectedChatIds.size === savedChats.length) setSelectedIds(new Set());
+                else setSelectedIds(new Set(savedChats.map(c => c.id)));
+             }}
+             className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition whitespace-nowrap"
+          >
+            {selectedChatIds.size === savedChats.length ? '取消全选' : '全选'}
+          </button>
+          <button
+             onClick={findDuplicates}
+             className="px-3 sm:px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-xl text-sm font-medium transition whitespace-nowrap"
+          >
+            查重
+          </button>
+          <button 
+             onClick={handleExportSelected}
+             className="px-3 sm:px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+             disabled={selectedChatIds.size === 0}
+          >
+            导出
+          </button>
+          <button 
+             onClick={handleDeleteSelected}
+             className="px-3 sm:px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+             disabled={selectedChatIds.size === 0}
+          >
+            删除
+          </button>
+          <button
+             onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+             className="p-2 sm:px-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition ml-1 shrink-0"
+          >
+             <X className="w-5 h-5" />
+          </button>
+        </motion.div>
+      )}
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
