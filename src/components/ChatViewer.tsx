@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Virtuoso } from 'react-virtuoso';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book, Search, CheckCircle2 } from 'lucide-react';
+import JSZip from 'jszip';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -172,7 +173,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const handleExportSelected = async () => {
       if (selectedChatIds.size === 0) return;
       const { getChatById } = await import('../lib/db');
-      const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
       for (const id of Array.from(selectedChatIds)) {
@@ -371,7 +371,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith('.zip')) {
-          const { default: JSZip } = await import('jszip');
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
           
@@ -888,10 +887,10 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                             <div className="flex items-center gap-3 min-w-0 flex-1">
                               {selectionMode && (
                                 <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                                  isGroupSelected(groupName) ? 'bg-blue-500 border-blue-500' : 
-                                  isGroupPartiallySelected(groupName) ? 'bg-blue-500/50 border-blue-500/50 text-white' : 'border-white/20'
+                                  isGroupSelected(groupName) ? 'bg-white text-black border-white' : 
+                                  isGroupPartiallySelected(groupName) ? 'bg-white/50 text-black border-white/50' : 'border-white/20'
                                 }`}>
-                                  {(isGroupSelected(groupName) || isGroupPartiallySelected(groupName)) && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                  {(isGroupSelected(groupName) || isGroupPartiallySelected(groupName)) && <CheckCircle2 className="w-4 h-4" />}
                                 </div>
                               )}
                               <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
@@ -958,15 +957,15 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                             else setActiveChatId(chat.id);
                           }}
                           className={`bg-white/[0.03] hover:bg-white/[0.06] border rounded-2xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden select-none hover:shadow-lg ${
-                            selectedChatIds.has(chat.id) ? 'border-blue-500/50 bg-blue-500/5' : 'border-white/5 ring-1 ring-white/5'
+                            selectedChatIds.has(chat.id) ? 'border-white/40 bg-white/[0.08]' : 'border-white/5 ring-1 ring-white/5'
                           }`}
                         >
                           {selectionMode && (
                             <div className="absolute top-4 right-4 z-10">
                               <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                selectedChatIds.has(chat.id) ? 'bg-blue-500 border-blue-500' : 'border-white/20 bg-black/20'
+                                selectedChatIds.has(chat.id) ? 'bg-white text-black border-white' : 'border-white/20 bg-black/20'
                               }`}>
-                                {selectedChatIds.has(chat.id) && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                {selectedChatIds.has(chat.id) && <CheckCircle2 className="w-4 h-4" />}
                               </div>
                             </div>
                           )}
@@ -1140,7 +1139,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 p-3 rounded-2xl shadow-2xl flex items-center gap-2 z-40 backdrop-blur-xl"
         >
           <div className="px-3 text-sm text-white/70 whitespace-nowrap hidden sm:block">
-            已选择 <span className="text-blue-400 font-bold">{selectedChatIds.size}</span> 个
+            已选择 <span className="text-white font-bold">{selectedChatIds.size}</span> 个
           </div>
           <div className="w-px h-6 bg-white/10 mx-1 shrink-0 hidden sm:block" />
           <button
@@ -1154,20 +1153,20 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           </button>
           <button
              onClick={findDuplicates}
-             className="px-3 sm:px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-xl text-sm font-medium transition whitespace-nowrap"
+             className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition whitespace-nowrap"
           >
             查重
           </button>
           <button 
              onClick={handleExportSelected}
-             className="px-3 sm:px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+             className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
              disabled={selectedChatIds.size === 0}
           >
             导出
           </button>
           <button 
              onClick={handleDeleteSelected}
-             className="px-3 sm:px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+             className="px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
              disabled={selectedChatIds.size === 0}
           >
             删除

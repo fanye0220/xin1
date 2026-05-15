@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getChatsForCharacter, deleteChat, saveChat, saveChatsBulk, ChatLog } from '../lib/db';
 import { MessageSquare, Trash2, Calendar, FileJson, UploadCloud, Edit2, Plus, ArrowLeft, CheckCircle2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import JSZip from 'jszip';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -41,7 +42,6 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const handleExportSelected = async () => {
       if (selectedChatIds.size === 0) return;
       const { getChatById } = await import('../lib/db');
-      const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
       for (const id of Array.from(selectedChatIds)) {
@@ -208,7 +208,6 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith('.zip')) {
-          const { default: JSZip } = await import('jszip');
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
           
@@ -457,15 +456,15 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
                 else handleChatClick(chat);
               }}
               className={`group cursor-pointer border rounded-2xl p-4 transition-all relative h-full flex flex-col select-none ${
-                selectedChatIds.has(chat.id) ? 'bg-blue-500/5 border-blue-500/50' : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-blue-500/50 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)]'
+                selectedChatIds.has(chat.id) ? 'border-white/40 bg-white/[0.08]' : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-white/20 hover:shadow-lg'
               }`}
             >
               {selectionMode && (
                 <div className="absolute top-4 right-4 z-10">
                   <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                    selectedChatIds.has(chat.id) ? 'bg-blue-500 border-blue-500' : 'border-white/20 bg-black/20'
+                    selectedChatIds.has(chat.id) ? 'bg-white border-white text-black' : 'border-white/20 bg-black/20'
                   }`}>
-                    {selectedChatIds.has(chat.id) && <CheckCircle2 className="w-4 h-4 text-white" />}
+                    {selectedChatIds.has(chat.id) && <CheckCircle2 className="w-4 h-4" />}
                   </div>
                 </div>
               )}
@@ -540,7 +539,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 p-3 rounded-2xl shadow-2xl flex items-center gap-2 z-[100] backdrop-blur-xl"
       >
         <div className="px-3 text-sm text-white/70 whitespace-nowrap hidden sm:block">
-          已选择 <span className="text-blue-400 font-bold">{selectedChatIds.size}</span> 个
+          已选择 <span className="text-white font-bold">{selectedChatIds.size}</span> 个
         </div>
         <div className="w-px h-6 bg-white/10 mx-1 shrink-0 hidden sm:block" />
         <button
@@ -554,20 +553,20 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         </button>
         <button
            onClick={findDuplicates}
-           className="px-3 sm:px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-xl text-sm font-medium transition whitespace-nowrap"
+           className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition whitespace-nowrap"
         >
           查重
         </button>
         <button 
            onClick={handleExportSelected}
-           className="px-3 sm:px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+           className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
            disabled={selectedChatIds.size === 0}
         >
           导出
         </button>
         <button 
            onClick={handleDeleteSelected}
-           className="px-3 sm:px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+           className="px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
            disabled={selectedChatIds.size === 0}
         >
           删除
