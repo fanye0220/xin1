@@ -5,6 +5,7 @@ import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, Chevron
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import JSZip from 'jszip';
 import Cropper from 'react-easy-crop';
 import { ReactNode } from 'react';
 import { getCharacters, CharacterCard, saveChat, saveChatsBulk, deleteChat, ChatLog } from '../lib/db';
@@ -172,7 +173,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const handleExportSelected = async () => {
       if (selectedChatIds.size === 0) return;
       const { getChatById } = await import('../lib/db');
-      const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
       for (const id of Array.from(selectedChatIds)) {
@@ -371,7 +371,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith('.zip')) {
-          const { default: JSZip } = await import('jszip');
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
           
@@ -831,8 +830,8 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                 onChange={(e) => {
                   if (e.target.files?.length) {
                     handleFileUpload(e.target.files);
-                    e.target.value = '';
                   }
+                  e.target.value = '';
                 }}
               />
             </div>
@@ -1230,10 +1229,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                     <input 
                       type="file" 
                       ref={userAvatarInputRef}
-                    onChange={(e) => {
-                      handleUserAvatarUpload(e);
-                      e.target.value = '';
-                    }}
+                      onChange={handleUserAvatarUpload}
                       accept="image/*"
                       className="hidden"
                     />

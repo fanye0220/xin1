@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import JSZip from 'jszip';
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso';
 
 interface Props {
@@ -41,7 +42,6 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const handleExportSelected = async () => {
       if (selectedChatIds.size === 0) return;
       const { getChatById } = await import('../lib/db');
-      const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
       for (const id of Array.from(selectedChatIds)) {
@@ -208,7 +208,6 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith('.zip')) {
-          const { default: JSZip } = await import('jszip');
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
           
@@ -404,8 +403,8 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           onChange={(e) => {
             if (e.target.files?.length) {
               handleFileUpload(e.target.files);
-              e.target.value = '';
             }
+            e.target.value = '';
           }}
         />
       </div>

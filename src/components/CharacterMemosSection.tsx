@@ -154,10 +154,7 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
             multiple
             className="hidden" 
             ref={fileInputRef} 
-            onChange={(e) => {
-                handleFileUpload(e);
-                e.target.value = '';
-            }} 
+            onChange={handleFileUpload} 
             accept="image/*,.txt,.md"
         />
       </div>

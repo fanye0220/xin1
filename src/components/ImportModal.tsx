@@ -544,12 +544,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
             <input
               type="file"
               ref={fileInputRef}
-              onChange={(e) => {
-                if (e.target.files) {
-                  handleFiles(e.target.files);
-                  e.target.value = '';
-                }
-              }}
+              onChange={(e) => e.target.files && handleFiles(e.target.files)}
               accept=".png,.jpg,.jpeg,.webp,.gif,.json,.zip,image/*,application/json,application/zip,application/x-zip-compressed"
               className="hidden"
               multiple
@@ -557,12 +552,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
             <input
               type="file"
               ref={folderInputRef}
-              onChange={(e) => {
-                if (e.target.files) {
-                  handleFiles(e.target.files);
-                  e.target.value = '';
-                }
-              }}
+              onChange={(e) => e.target.files && handleFiles(e.target.files)}
               className="hidden"
               multiple
               {...({ webkitdirectory: "", directory: "" } as any)}
