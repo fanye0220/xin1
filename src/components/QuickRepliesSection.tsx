@@ -399,7 +399,10 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
           className="hidden" 
           accept=".json" 
           multiple
-          onChange={handleFileUpload}
+          onChange={(e) => {
+            handleFileUpload(e);
+            e.target.value = '';
+          }}
         />
       </div>
     </div>

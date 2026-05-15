@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Virtuoso } from 'react-virtuoso';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book, Search, CheckCircle2 } from 'lucide-react';
-import JSZip from 'jszip';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -173,6 +172,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const handleExportSelected = async () => {
       if (selectedChatIds.size === 0) return;
       const { getChatById } = await import('../lib/db');
+      const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
       for (const id of Array.from(selectedChatIds)) {
@@ -371,6 +371,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith('.zip')) {
+          const { default: JSZip } = await import('jszip');
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
           
@@ -828,7 +829,10 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                 accept=".json,.jsonl,.zip"
                 className="hidden"
                 onChange={(e) => {
-                  if (e.target.files?.length) handleFileUpload(e.target.files);
+                  if (e.target.files?.length) {
+                    handleFileUpload(e.target.files);
+                    e.target.value = '';
+                  }
                 }}
               />
             </div>
@@ -1166,7 +1170,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           </button>
           <button 
              onClick={handleDeleteSelected}
-             className="px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+             className="px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
              disabled={selectedChatIds.size === 0}
           >
             删除
@@ -1226,7 +1230,10 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                     <input 
                       type="file" 
                       ref={userAvatarInputRef}
-                      onChange={handleUserAvatarUpload}
+                    onChange={(e) => {
+                      handleUserAvatarUpload(e);
+                      e.target.value = '';
+                    }}
                       accept="image/*"
                       className="hidden"
                     />

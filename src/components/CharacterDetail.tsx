@@ -853,6 +853,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                             className="hidden" 
                             onChange={async (e) => {
                               const file = e.target.files?.[0];
+                              e.target.value = '';
                               if (!file) return;
                               try {
                                 const text = await file.text();

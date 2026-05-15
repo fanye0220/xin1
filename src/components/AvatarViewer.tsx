@@ -317,7 +317,10 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
             ref={fileInputRef} 
             className="hidden" 
             accept="image/png, image/jpeg, image/webp" 
-            onChange={handleUpload}
+            onChange={(e) => {
+              handleUpload(e);
+              e.target.value = '';
+            }}
           />
         </div>
 
