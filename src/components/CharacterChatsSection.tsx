@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getChatsForCharacter, deleteChat, saveChat, saveChatsBulk, ChatLog } from '../lib/db';
-import { MessageSquare, Trash2, Calendar, FileJson, UploadCloud, Edit2, Plus, ArrowLeft, CheckCircle2, X } from 'lucide-react';
+import { MessageSquare, Trash2, Calendar, FileJson, UploadCloud, Edit2, Plus, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import JSZip from 'jszip';
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso';
 
 interface Props {
@@ -25,81 +24,6 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
-
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedChatIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const longPressRef = useRef<{ timer: NodeJS.Timeout | null, triggered: boolean, startY?: number }>({ timer: null, triggered: false });
-
-  const toggleSelection = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleExportSelected = async () => {
-      if (selectedChatIds.size === 0) return;
-      const { getChatById } = await import('../lib/db');
-      const zip = new JSZip();
-
-      for (const id of Array.from(selectedChatIds)) {
-         const chat = await getChatById(id);
-         if (chat) {
-            const jsonl = chat.messages.map(m => JSON.stringify(m)).join('\n');
-            let folderName = chat.characterId ? characterName : chat.firstAiName || "Unknown";
-            zip.folder(folderName)?.file(`${chat.name.endsWith('.jsonl') ? chat.name : chat.name + '.jsonl'}`, jsonl);
-         }
-      }
-      
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `exported_chats_${characterName}_${Date.now()}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-  };
-
-  const handleDeleteSelected = async () => {
-     if (selectedChatIds.size === 0) return;
-     if (!window.confirm(`确定要删除选中的 ${selectedChatIds.size} 个记录吗？此操作不可逆！`)) return;
-     for (const id of Array.from(selectedChatIds)) {
-       await deleteChat(id);
-     }
-     setSelectionMode(false);
-     setSelectedIds(new Set());
-     loadChats();
-  };
-
-  const findDuplicates = () => {
-     const map = new Map<string, typeof chats[0][]>();
-     chats.forEach(c => {
-        const key = `${c.messageCount}_${c.lastMessagePreview}`;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(c);
-     });
-     const toSelect = new Set<string>();
-     map.forEach(list => {
-        if (list.length > 1) {
-           list.sort((a,b) => b.createdAt - a.createdAt);
-           for (let i = 1; i < list.length; i++) {
-              toSelect.add(list[i].id);
-           }
-        }
-     });
-     
-     if (toSelect.size > 0) {
-        setSelectionMode(true);
-        setSelectedIds(toSelect);
-        alert(`找到了 ${toSelect.size} 个疑似重复文件并已选中，请检查确认后再删除。`);
-     } else {
-        alert('没有发现重复的聊天记录');
-     }
-  };
 
   useEffect(() => {
     setScrollParent(document.getElementById('character-detail-scroll-container'));
@@ -208,6 +132,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith('.zip')) {
+          const { default: JSZip } = await import('jszip');
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
           
@@ -401,10 +326,7 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           accept=".json,.jsonl,.zip"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files?.length) {
-              handleFileUpload(e.target.files);
-            }
-            e.target.value = '';
+            if (e.target.files?.length) handleFileUpload(e.target.files);
           }}
         />
       </div>
@@ -427,51 +349,10 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
           itemContent={(index, chat) => (
             <div 
               key={chat.id}
-              onTouchStart={(e) => {
-                longPressRef.current.triggered = false;
-                longPressRef.current.startY = e.touches[0].clientY;
-                longPressRef.current.timer = setTimeout(() => {
-                  longPressRef.current.triggered = true;
-                  if (!selectionMode) setSelectionMode(true);
-                  toggleSelection(chat.id);
-                }, 500);
-              }}
-              onTouchMove={(e) => {
-                if (longPressRef.current.timer) {
-                  const dy = Math.abs(e.touches[0].clientY - (longPressRef.current.startY || 0));
-                  if (dy > 10) { clearTimeout(longPressRef.current.timer); longPressRef.current.timer = null; }
-                }
-              }}
-              onTouchEnd={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
-              onMouseDown={() => {
-                longPressRef.current.triggered = false;
-                longPressRef.current.timer = setTimeout(() => {
-                  longPressRef.current.triggered = true;
-                  if (!selectionMode) setSelectionMode(true);
-                  toggleSelection(chat.id);
-                }, 500);
-              }}
-              onMouseUp={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
-              onMouseLeave={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
-              onClick={(e) => {
-                if (longPressRef.current.triggered) { e.preventDefault(); return; }
-                if (selectionMode) toggleSelection(chat.id);
-                else handleChatClick(chat);
-              }}
-              className={`group cursor-pointer border rounded-2xl p-4 transition-all relative h-full flex flex-col select-none ${
-                selectedChatIds.has(chat.id) ? 'border-white/40 bg-white/[0.08]' : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-white/20 hover:shadow-lg'
-              }`}
+              onClick={() => handleChatClick(chat)}
+              className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] relative h-full flex flex-col"
             >
-              {selectionMode && (
-                <div className="absolute top-4 right-4 z-10">
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                    selectedChatIds.has(chat.id) ? 'bg-white border-white text-black' : 'border-white/20 bg-black/20'
-                  }`}>
-                    {selectedChatIds.has(chat.id) && <CheckCircle2 className="w-4 h-4" />}
-                  </div>
-                </div>
-              )}
-              <div className={`flex justify-between items-start mb-2 gap-3 ${selectionMode ? 'pr-8' : ''}`}>
+              <div className="flex justify-between items-start mb-2 gap-3">
                 <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
                   <MessageSquare className="w-5 h-5 text-blue-400" />
                 </div>
@@ -533,55 +414,6 @@ export function CharacterChatsSection({ characterId, characterName, regexScripts
         />
       ) : null}
     </motion.div>
-
-    {selectionMode && !selectedChat && !deleteChatId && (
-      <motion.div 
-        initial={{ y: 100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 100, opacity: 0 }}
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 p-3 rounded-2xl shadow-2xl flex items-center gap-2 z-[100] backdrop-blur-xl"
-      >
-        <div className="px-3 text-sm text-white/70 whitespace-nowrap hidden sm:block">
-          已选择 <span className="text-white font-bold">{selectedChatIds.size}</span> 个
-        </div>
-        <div className="w-px h-6 bg-white/10 mx-1 shrink-0 hidden sm:block" />
-        <button
-           onClick={() => {
-              if (selectedChatIds.size === chats.length) setSelectedIds(new Set());
-              else setSelectedIds(new Set(chats.map(c => c.id)));
-           }}
-           className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition whitespace-nowrap"
-        >
-          {selectedChatIds.size === chats.length ? '取消全选' : '全选'}
-        </button>
-        <button
-           onClick={findDuplicates}
-           className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition whitespace-nowrap"
-        >
-          查重
-        </button>
-        <button 
-           onClick={handleExportSelected}
-           className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-           disabled={selectedChatIds.size === 0}
-        >
-          导出
-        </button>
-        <button 
-           onClick={handleDeleteSelected}
-           className="px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-           disabled={selectedChatIds.size === 0}
-        >
-          删除
-        </button>
-        <button
-           onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
-           className="p-2 sm:px-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition ml-1 shrink-0"
-        >
-           <X className="w-5 h-5" />
-        </button>
-      </motion.div>
-    )}
 
     <AnimatePresence>
       {selectedChat && (

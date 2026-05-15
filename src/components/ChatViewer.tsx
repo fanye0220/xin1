@@ -1,11 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book, Search, CheckCircle2 } from 'lucide-react';
+import { UploadCloud, MessageSquare, User, FileJson, X, Settings2, Link, ChevronUp, ChevronDown, Trash2, ArrowLeft, ChevronLeft, ChevronRight, Edit2, Plus, Book, Search, CheckCircle2, Download, Copy } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import JSZip from 'jszip';
 import Cropper from 'react-easy-crop';
 import { ReactNode } from 'react';
 import { getCharacters, CharacterCard, saveChat, saveChatsBulk, deleteChat, ChatLog } from '../lib/db';
@@ -53,6 +52,98 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
+
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const touchStartPos = useRef<{ x: number, y: number } | null>(null);
+
+  const toggleDuplicatesMode = () => {
+    const nextState = !showDuplicatesOnly;
+    setShowDuplicatesOnly(nextState);
+    if (nextState) {
+      setIsBatchMode(true);
+      
+      const idsToSelect = new Set<string>();
+      const initialExpanded: Record<string, boolean> = { ...expandedGroups };
+      
+      const groups: Record<string, typeof savedChats> = {};
+      savedChats.forEach(chat => {
+         const matchedChar = chat.characterId ? characters.find(c => c.id === chat.characterId) : null;
+         const groupName = matchedChar?.name || chat.firstAiName || '未归类聊天';
+         if (!groups[groupName]) groups[groupName] = [];
+         groups[groupName].push(chat);
+      });
+      
+      for (const groupName in groups) {
+         const groupChats = groups[groupName];
+         const signatureMap = new Map<string, typeof groupChats>();
+         let hasDuplicate = false;
+         for (const chat of groupChats) {
+           const sig = `${chat.messageCount}_${chat.lastMessagePreview?.substring(0, 50) || ''}`;
+           if (!signatureMap.has(sig)) signatureMap.set(sig, []);
+           signatureMap.get(sig)!.push(chat);
+         }
+         
+         for (const chats of signatureMap.values()) {
+           if (chats.length > 1) {
+             hasDuplicate = true;
+             const sorted = [...chats].sort((a,b) => b.createdAt - a.createdAt);
+             for (let i = 1; i < sorted.length; i++) {
+               idsToSelect.add(sorted[i].id);
+             }
+           }
+         }
+         if (hasDuplicate) {
+            initialExpanded[groupName] = true;
+         }
+      }
+      setSelectedChatIds(idsToSelect);
+      setExpandedGroups(initialExpanded);
+    } else {
+      setIsBatchMode(false);
+      setSelectedChatIds(new Set());
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent | React.MouseEvent, chatOrGroupId: string, isGroup: boolean) => {
+    if (isBatchMode) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    touchStartPos.current = { x: clientX, y: clientY };
+    
+    longPressTimer.current = setTimeout(() => {
+      setIsBatchMode(true);
+      if (!isGroup) {
+        setSelectedChatIds(new Set([chatOrGroupId]));
+      } else {
+        const group = groupedChats.find(g => g.characterName === chatOrGroupId);
+        if (group) {
+          setSelectedChatIds(new Set(group.chats.map(c => c.id)));
+        }
+      }
+    }, 500);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
+    if (!touchStartPos.current) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const dx = clientX - touchStartPos.current.x;
+    const dy = clientY - touchStartPos.current.y;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      touchStartPos.current = null;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    touchStartPos.current = null;
+  };
+
   const groupedChats = useMemo(() => {
     const groups: { characterName: string, characterId: string | undefined, chats: typeof savedChats, aiName: string | undefined }[] = [];
     const map = new Map<string, number>();
@@ -66,7 +157,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
       const groupName = matchedChar?.name || chat.firstAiName || '未归类聊天';
       
       if (searchQuery && !groupName.toLowerCase().includes(searchQuery.toLowerCase()) && !chat.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return; // Skip if search query doesn't match character name or chat name
+        return; 
       }
 
       const charId = matchedChar?.id;
@@ -85,8 +176,35 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
       groups[index].chats.push(chat);
     });
 
-    return groups.sort((a,b) => b.chats[0].createdAt - a.chats[0].createdAt);
-  }, [savedChats, characters, searchQuery]);
+    let result = groups.sort((a,b) => b.chats[0].createdAt - a.chats[0].createdAt);
+    
+    if (showDuplicatesOnly) {
+      // Find groups that contain duplicates
+      const dupGroups = [];
+      for (const group of result) {
+         // Create subgroups within this character group based on messageCount and lastMessagePreview
+         const signatureMap = new Map<string, typeof group.chats>();
+         for (const chat of group.chats) {
+           const sig = `${chat.messageCount}_${chat.lastMessagePreview?.substring(0, 50) || ''}`;
+           if (!signatureMap.has(sig)) signatureMap.set(sig, []);
+           signatureMap.get(sig)!.push(chat);
+         }
+         
+         const duplicateChats: typeof group.chats = [];
+         for (const chats of signatureMap.values()) {
+           if (chats.length > 1) {
+             duplicateChats.push(...chats);
+           }
+         }
+         if (duplicateChats.length > 0) {
+            dupGroups.push({ ...group, chats: duplicateChats });
+         }
+      }
+      result = dupGroups;
+    }
+
+    return result;
+  }, [savedChats, characters, searchQuery, showDuplicatesOnly]);
 
   // Initially expand the group that contains the active chat
   useEffect(() => {
@@ -129,110 +247,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
-
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedChatIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const longPressRef = useRef<{ timer: NodeJS.Timeout | null, triggered: boolean, startY?: number }>({ timer: null, triggered: false });
-
-  const toggleSelection = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleSelectGroup = (groupName: string, select: boolean, e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    const group = groupedChats.find(g => g.characterName === groupName);
-    if (!group) return;
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      group.chats.forEach(c => {
-        if (select) next.add(c.id);
-        else next.delete(c.id);
-      });
-      return next;
-    });
-  };
-
-  const isGroupSelected = (groupName: string) => {
-    const group = groupedChats.find(g => g.characterName === groupName);
-    if (!group || group.chats.length === 0) return false;
-    return group.chats.every(c => selectedChatIds.has(c.id));
-  };
-
-  const isGroupPartiallySelected = (groupName: string) => {
-    const group = groupedChats.find(g => g.characterName === groupName);
-    if (!group || group.chats.length === 0) return false;
-    const count = group.chats.filter(c => selectedChatIds.has(c.id)).length;
-    return count > 0 && count < group.chats.length;
-  };
-
-  const handleExportSelected = async () => {
-      if (selectedChatIds.size === 0) return;
-      const { getChatById } = await import('../lib/db');
-      const zip = new JSZip();
-
-      for (const id of Array.from(selectedChatIds)) {
-         const chat = await getChatById(id);
-         if (chat) {
-            const jsonl = chat.messages.map(m => JSON.stringify(m)).join('\n');
-            let folderName = chat.characterId ? characters.find(c => c.id === chat.characterId)?.name : chat.firstAiName;
-            if (!folderName) folderName = "Unknown";
-            zip.folder(folderName)?.file(`${chat.name.endsWith('.jsonl') ? chat.name : chat.name + '.jsonl'}`, jsonl);
-         }
-      }
-      
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `exported_chats_${Date.now()}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-  };
-
-  const handleDeleteSelected = async () => {
-     if (selectedChatIds.size === 0) return;
-     if (!window.confirm(`确定要删除选中的 ${selectedChatIds.size} 个记录吗？此操作不可逆！`)) return;
-     const { deleteChat } = await import('../lib/db');
-     for (const id of Array.from(selectedChatIds)) {
-       await deleteChat(id);
-     }
-     setSelectionMode(false);
-     setSelectedIds(new Set());
-     loadData();
-  };
-
-  const findDuplicates = () => {
-     const map = new Map<string, typeof savedChats[0][]>();
-     savedChats.forEach(c => {
-        const key = `${c.characterId || c.firstAiName || 'unknown'}_${c.messageCount}_${c.lastMessagePreview}`;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(c);
-     });
-     const toSelect = new Set<string>();
-     map.forEach(list => {
-        if (list.length > 1) {
-           list.sort((a,b) => b.createdAt - a.createdAt);
-           for (let i = 1; i < list.length; i++) {
-              toSelect.add(list[i].id);
-           }
-        }
-     });
-     
-     if (toSelect.size > 0) {
-        setSelectionMode(true);
-        setSelectedIds(toSelect);
-        alert(`找到了 ${toSelect.size} 个疑似重复文件并已选中，请检查确认后再删除。`);
-     } else {
-        alert('没有发现重复的聊天记录');
-     }
-  };
 
   useEffect(() => {
     const savedTags = localStorage.getItem('chatViewer_customTags');
@@ -371,6 +385,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith('.zip')) {
+          const { default: JSZip } = await import('jszip');
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
           
@@ -656,8 +671,101 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
     setDeleteChatId(id);
   };
 
+  const handleBatchExport = async () => {
+    if (selectedChatIds.size === 1) {
+      const chatId = Array.from(selectedChatIds)[0];
+      const { getChatById } = await import('../lib/db');
+      const fullChat = await getChatById(chatId);
+      if (fullChat) {
+        const jsonlString = fullChat.messages.map(m => JSON.stringify({
+           name: m.name,
+           is_user: m.is_user,
+           is_name: m.is_name,
+           send_date: m.send_date,
+           mes: m.mes,
+           extra: m.extra
+        })).join('\n');
+        
+        const blob = new Blob([jsonlString], { type: 'application/jsonl' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        let safeChatName = fullChat.name.replace(/[/\\?%*:|"<>]/g, '-');
+        if (!safeChatName.endsWith('.jsonl')) safeChatName += '.jsonl';
+        a.href = url;
+        a.download = safeChatName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setIsBatchMode(false);
+        setShowDuplicatesOnly(false);
+        setSelectedChatIds(new Set());
+        return;
+      }
+    }
+
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    const { getChatById } = await import('../lib/db');
+    
+    for (const chatId of selectedChatIds) {
+      const fullChat = await getChatById(chatId);
+      if (!fullChat) continue;
+      
+      const matchedChar = fullChat.characterId ? characters.find(c => c.id === fullChat.characterId) : null;
+      let folderName = matchedChar?.name || fullChat.firstAiName || '未归类聊天';
+      // simple sanitization for folder name
+      folderName = folderName.replace(/[/\\?%*:|"<>]/g, '-');
+      
+      const jsonlString = fullChat.messages.map(m => JSON.stringify({
+         name: m.name,
+         is_user: m.is_user,
+         is_name: m.is_name,
+         send_date: m.send_date,
+         mes: m.mes,
+         extra: m.extra
+      })).join('\n');
+      
+      let safeChatName = fullChat.name.replace(/[/\\?%*:|"<>]/g, '-');
+      if (!safeChatName.endsWith('.jsonl')) safeChatName += '.jsonl';
+      
+      zip.file(`${folderName}/${safeChatName}`, jsonlString);
+    }
+    
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chats_export_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    setIsBatchMode(false);
+    setShowDuplicatesOnly(false);
+    setSelectedChatIds(new Set());
+  };
+
+  const handleBatchDelete = async () => {
+    if (confirm(`确定要删除选中的 ${selectedChatIds.size} 条记录吗？\n此操作无法撤销。`)) {
+      setSavedChats(prev => prev.filter(c => !selectedChatIds.has(c.id)));
+      if (activeChatId && selectedChatIds.has(activeChatId)) {
+        if (singleMode) onClose();
+        else setActiveChatId(null);
+      }
+      for (const id of selectedChatIds) {
+        await deleteChat(id);
+      }
+      setSelectedChatIds(new Set());
+      setIsBatchMode(false);
+      setShowDuplicatesOnly(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-900 relative overflow-hidden [.light-theme_&]:bg-[#F0F2F5]">
+
       
       {/* Dynamic CSS Styles from the active character's configuration */}
       {cssStyleString && (
@@ -799,42 +907,85 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
         )}
 
         <div className="space-y-6 flex-1 flex flex-col min-h-0">
-          <div className="flex items-center justify-between px-2 shrink-0">
-              <h3 className="text-lg font-medium text-white">所有记录 ({savedChats.length})</h3>
-              
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                  <input
-                    type="text"
-                    placeholder="搜索角色名..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-32 sm:w-48 pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors placeholder:text-white/30"
-                  />
-                </div>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg text-sm transition flex items-center gap-2"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span className="hidden sm:inline">导入</span>
-                </button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".json,.jsonl,.zip"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files?.length) {
-                    handleFileUpload(e.target.files);
-                  }
-                  e.target.value = '';
-                }}
-              />
-            </div>
+                <AnimatePresence mode="wait">
+                {isBatchMode ? (
+                  <motion.div 
+                    key="batch"
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full flex items-center justify-between bg-slate-800/90 backdrop-blur-md p-4 rounded-2xl border border-white/10 shadow-xl mb-4 shrink-0 cursor-default"
+                  >
+                    <button onClick={() => { setIsBatchMode(false); setSelectedChatIds(new Set()); setShowDuplicatesOnly(false); }} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
+                      <X className="w-6 h-6" />
+                    </button>
+                    <span className="font-bold text-lg flex-1 text-center">已选择 {selectedChatIds.size} 项</span>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => {
+                           if (selectedChatIds.size === savedChats.length) {
+                             setSelectedChatIds(new Set());
+                           } else {
+                             setSelectedChatIds(new Set(savedChats.map(c => c.id)));
+                           }
+                        }} 
+                        className="text-purple-400 font-medium px-3 py-1.5 hover:bg-purple-400/10 rounded-lg transition text-sm whitespace-nowrap"
+                      >
+                        {selectedChatIds.size === savedChats.length ? '全不选' : '全选所有'}
+                      </button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    key="normal"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center justify-between px-2 shrink-0 flex-wrap gap-2 mb-4"
+                  >
+                    <h3 className="text-lg font-medium text-white">所有记录 ({savedChats.length})</h3>
+                    
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                        <input
+                          type="text"
+                          placeholder="搜索..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-24 sm:w-40 pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-white focus:outline-none focus:border-purple-500/50 transition-colors placeholder:text-white/30"
+                        />
+                      </div>
+                      <button
+                        onClick={toggleDuplicatesMode}
+                        className={`p-2 border rounded-full transition shrink-0 ${showDuplicatesOnly ? 'bg-orange-500/20 border-orange-500/50 text-orange-400' : 'bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10'}`}
+                        title="重复项"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full text-sm transition flex items-center gap-2"
+                      >
+                        <UploadCloud className="w-4 h-4" />
+                        <span className="hidden sm:inline">导入</span>
+                      </button>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".json,.jsonl,.zip"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.length) handleFileUpload(e.target.files);
+                      }}
+                    />
+                  </motion.div>
+                )}
+                </AnimatePresence>
 
             {savedChats.length === 0 ? (
               <div className="py-20 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-3xl">
@@ -843,7 +994,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                 <p className="text-white/40 mb-8">支持批量导入 .zip 或 .jsonl 格式文件</p>
               </div>
             ) : (
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 relative">
                 <Virtuoso 
                   style={{ height: '100%' }}
                   data={flattenedChatItems}
@@ -851,51 +1002,59 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                     if (item.type === 'header') {
                       const { groupName, group } = item;
                       const isExpanded = !!expandedGroups[groupName] || !!searchQuery;
+                      const allSelected = group.chats.every(c => selectedChatIds.has(c.id));
+                      const anySelected = group.chats.some(c => selectedChatIds.has(c.id));
+                      
                       return (
-                        <div className="pb-4">
+                        <div className="pb-4"
+                             onTouchStart={(e) => handleTouchStart(e, groupName, true)}
+                             onTouchMove={handleTouchMove}
+                             onTouchEnd={handleTouchEnd}
+                             onMouseDown={(e) => handleTouchStart(e, groupName, true)}
+                             onMouseMove={handleTouchMove}
+                             onMouseUp={handleTouchEnd}
+                             onMouseLeave={handleTouchEnd}
+                        >
                           <div
-                            onTouchStart={(e) => {
-                              longPressRef.current.triggered = false;
-                              longPressRef.current.startY = e.touches[0].clientY;
-                              longPressRef.current.timer = setTimeout(() => {
-                                longPressRef.current.triggered = true;
-                                if (!selectionMode) setSelectionMode(true);
-                                handleSelectGroup(groupName, !isGroupSelected(groupName), e as unknown as React.MouseEvent);
-                              }, 500);
-                            }}
-                            onTouchMove={(e) => {
-                              if (longPressRef.current.timer) {
-                                const dy = Math.abs(e.touches[0].clientY - (longPressRef.current.startY || 0));
-                                if (dy > 10) { clearTimeout(longPressRef.current.timer); longPressRef.current.timer = null; }
-                              }
-                            }}
-                            onTouchEnd={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
-                            onMouseDown={() => {
-                              longPressRef.current.triggered = false;
-                              longPressRef.current.timer = setTimeout(() => {
-                                longPressRef.current.triggered = true;
-                                if (!selectionMode) setSelectionMode(true);
-                                handleSelectGroup(groupName, !isGroupSelected(groupName), {} as React.MouseEvent);
-                              }, 500);
-                            }}
-                            onMouseUp={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
-                            onMouseLeave={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
                             onClick={(e) => {
-                              if (longPressRef.current.triggered) { e.preventDefault(); return; }
-                              if (selectionMode) handleSelectGroup(groupName, !isGroupSelected(groupName), e);
-                              else toggleGroup(groupName);
+                               if (isBatchMode) {
+                                 e.stopPropagation();
+                                 const newSet = new Set(selectedChatIds);
+                                 if (allSelected) {
+                                    group.chats.forEach(c => newSet.delete(c.id));
+                                 } else {
+                                    group.chats.forEach(c => newSet.add(c.id));
+                                 }
+                                 setSelectedChatIds(newSet);
+                               } else {
+                                 toggleGroup(groupName);
+                               }
                             }}
-                            className="bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl p-4 cursor-pointer transition flex items-center justify-between shadow-sm select-none"
+                            className={`border rounded-2xl p-4 cursor-pointer transition flex items-center justify-between shadow-sm relative overflow-hidden ${
+                              isBatchMode && allSelected
+                                ? 'bg-purple-500/20 border-purple-500/50 [.light-theme_&]:bg-[#D4A6D5]/20 [.light-theme_&]:border-[#D4A6D5]/90 [.light-theme_&]:shadow-[0_0_15px_rgba(212,166,213,0.3)]' 
+                                : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/5'
+                            }`}
                           >
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              {selectionMode && (
-                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                                  isGroupSelected(groupName) ? 'bg-white text-black border-white' : 
-                                  isGroupPartiallySelected(groupName) ? 'bg-white/50 text-black border-white/50' : 'border-white/20'
+                            <AnimatePresence>
+                            {isBatchMode && (
+                              <motion.div 
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.8 }}
+                                className="absolute top-2 right-2 z-10"
+                              >
+                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                  allSelected
+                                    ? 'bg-purple-500 border-purple-500 [.light-theme_&]:bg-[#D4A6D5]/90 [.light-theme_&]:border-[#D4A6D5]/90' 
+                                    : 'border-white/40 bg-black/20 backdrop-blur-md'
                                 }`}>
-                                  {(isGroupSelected(groupName) || isGroupPartiallySelected(groupName)) && <CheckCircle2 className="w-4 h-4" />}
+                                  {allSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
                                 </div>
-                              )}
+                              </motion.div>
+                            )}
+                            </AnimatePresence>
+                            <div className="flex items-center gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-full border border-white/20 bg-black/30 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
                                 {group.characterId && avatarUrls[group.characterId] ? (
                                   <img src={avatarUrls[group.characterId]} alt="avatar" className="w-full h-full object-cover" />
@@ -905,14 +1064,15 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                   </span>
                                 )}
                               </div>
-                              <div className="truncate pr-2">
+                              <div className="truncate">
                                 <h4 className="font-semibold text-white/90 text-base truncate mb-0.5">{groupName}</h4>
                                 <p className="text-xs text-white/40">{group.chats.length} 个历史记录</p>
                               </div>
                             </div>
-                            <div className="text-white/40 shrink-0 border-l border-white/5 pl-3 ml-1">
-                              {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                            <div className="text-white/40 shrink-0">
+                              {!isBatchMode && (isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />)}
                             </div>
+
                           </div>
                         </div>
                       );
@@ -925,57 +1085,58 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                         matchedChar = characters.find(c => c.name.toLowerCase() === chat.firstAiName?.toLowerCase()) || null;
                       }
                     }
+                    const isSelected = selectedChatIds.has(chat.id);
                     return (
-                      <div className="pb-4 pl-4 sm:pl-8">
+                      <div className="pb-4 pl-4 sm:pl-8"
+                           onTouchStart={(e) => handleTouchStart(e, chat.id, false)}
+                           onTouchMove={handleTouchMove}
+                           onTouchEnd={handleTouchEnd}
+                           onMouseDown={(e) => handleTouchStart(e, chat.id, false)}
+                           onMouseMove={handleTouchMove}
+                           onMouseUp={handleTouchEnd}
+                           onMouseLeave={handleTouchEnd}
+                      >
                         <div
-                          onTouchStart={(e) => {
-                            longPressRef.current.triggered = false;
-                            longPressRef.current.startY = e.touches[0].clientY;
-                            longPressRef.current.timer = setTimeout(() => {
-                              longPressRef.current.triggered = true;
-                              if (!selectionMode) setSelectionMode(true);
-                              toggleSelection(chat.id);
-                            }, 500);
-                          }}
-                          onTouchMove={(e) => {
-                            if (longPressRef.current.timer) {
-                              const dy = Math.abs(e.touches[0].clientY - (longPressRef.current.startY || 0));
-                              if (dy > 10) { clearTimeout(longPressRef.current.timer); longPressRef.current.timer = null; }
-                            }
-                          }}
-                          onTouchEnd={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
-                          onMouseDown={() => {
-                            longPressRef.current.triggered = false;
-                            longPressRef.current.timer = setTimeout(() => {
-                              longPressRef.current.triggered = true;
-                              if (!selectionMode) setSelectionMode(true);
-                              toggleSelection(chat.id);
-                            }, 500);
-                          }}
-                          onMouseUp={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
-                          onMouseLeave={() => { if(longPressRef.current.timer) clearTimeout(longPressRef.current.timer); }}
                           onClick={(e) => {
-                            if (longPressRef.current.triggered) { e.preventDefault(); return; }
-                            if (selectionMode) toggleSelection(chat.id);
-                            else setActiveChatId(chat.id);
+                             if (isBatchMode) {
+                               e.stopPropagation();
+                               const newSet = new Set(selectedChatIds);
+                               if (newSet.has(chat.id)) newSet.delete(chat.id);
+                               else newSet.add(chat.id);
+                               setSelectedChatIds(newSet);
+                             } else {
+                               setActiveChatId(chat.id);
+                             }
                           }}
-                          className={`bg-white/[0.03] hover:bg-white/[0.06] border rounded-2xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden select-none hover:shadow-lg ${
-                            selectedChatIds.has(chat.id) ? 'border-white/40 bg-white/[0.08]' : 'border-white/5 ring-1 ring-white/5'
+                          className={`rounded-2xl p-5 cursor-pointer transition flex flex-col gap-3 relative overflow-hidden ring-1 hover:shadow-lg ${
+                            isSelected && isBatchMode 
+                              ? 'bg-purple-500/20 ring-purple-500/50 [.light-theme_&]:bg-[#D4A6D5]/20 [.light-theme_&]:ring-[#D4A6D5]/90 [.light-theme_&]:shadow-[0_0_15px_rgba(212,166,213,0.3)]' 
+                              : 'bg-white/[0.03] hover:bg-white/[0.06] ring-white/5'
                           }`}
                         >
-                          {selectionMode && (
-                            <div className="absolute top-4 right-4 z-10">
+                          <AnimatePresence>
+                          {isBatchMode && (
+                            <motion.div 
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              className="absolute top-2 right-2 z-10"
+                            >
                               <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                selectedChatIds.has(chat.id) ? 'bg-white text-black border-white' : 'border-white/20 bg-black/20'
+                                isSelected 
+                                  ? 'bg-purple-500 border-purple-500 [.light-theme_&]:bg-[#D4A6D5]/90 [.light-theme_&]:border-[#D4A6D5]/90' 
+                                  : 'border-white/40 bg-black/20 backdrop-blur-md'
                               }`}>
-                                {selectedChatIds.has(chat.id) && <CheckCircle2 className="w-4 h-4" />}
+                                {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
                               </div>
-                            </div>
+                            </motion.div>
                           )}
-                          <div className={`flex justify-between items-start mb-2 gap-3 ${selectionMode ? 'pr-8' : ''}`}>
-                              <div className="flex-1 min-w-0">
-                                {editingNoteFor === chat.id ? (
-                                  <div className="w-full mb-1" onClick={e => e.stopPropagation()}>
+                          </AnimatePresence>
+                          <div className="flex justify-between items-start mb-2 gap-3">
+                              <div className="flex-1 min-w-0 flex items-start gap-3">
+                                <div className="flex-1 min-w-0">
+                                  {editingNoteFor === chat.id ? (
+                                    <div className="w-full mb-1" onClick={e => e.stopPropagation()}>
                                     <input 
                                       autoFocus
                                       className="w-full bg-black/40 border border-blue-500/50 rounded flex px-2 py-1 text-sm text-blue-300 focus:outline-none placeholder-blue-300/30"
@@ -1008,6 +1169,7 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                                 )}
                                 <h4 className="font-medium text-white/90 truncate w-full text-sm" title={chat.name}>{chat.name}</h4>
                               </div>
+                            </div>
 
                               <button 
                                 onClick={(e) => handleRemoveChat(e, chat.id)}
@@ -1133,55 +1295,6 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           )}
         </AnimatePresence>
       </div>
-
-      {selectionMode && !activeChatId && (
-        <motion.div 
-          initial={{ y: 100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 100, opacity: 0 }}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 p-3 rounded-2xl shadow-2xl flex items-center gap-2 z-40 backdrop-blur-xl"
-        >
-          <div className="px-3 text-sm text-white/70 whitespace-nowrap hidden sm:block">
-            已选择 <span className="text-white font-bold">{selectedChatIds.size}</span> 个
-          </div>
-          <div className="w-px h-6 bg-white/10 mx-1 shrink-0 hidden sm:block" />
-          <button
-             onClick={() => {
-                if (selectedChatIds.size === savedChats.length) setSelectedIds(new Set());
-                else setSelectedIds(new Set(savedChats.map(c => c.id)));
-             }}
-             className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition whitespace-nowrap"
-          >
-            {selectedChatIds.size === savedChats.length ? '取消全选' : '全选'}
-          </button>
-          <button
-             onClick={findDuplicates}
-             className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition whitespace-nowrap"
-          >
-            查重
-          </button>
-          <button 
-             onClick={handleExportSelected}
-             className="px-3 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-             disabled={selectedChatIds.size === 0}
-          >
-            导出
-          </button>
-          <button 
-             onClick={handleDeleteSelected}
-             className="px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-             disabled={selectedChatIds.size === 0}
-          >
-            删除
-          </button>
-          <button
-             onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
-             className="p-2 sm:px-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-medium transition ml-1 shrink-0"
-          >
-             <X className="w-5 h-5" />
-          </button>
-        </motion.div>
-      )}
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
@@ -1369,6 +1482,40 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
           </div>
         </div>
       )}
+
+      {/* Floating Batch Actions Bar */}
+      <AnimatePresence>
+        {isBatchMode && selectedChatIds.size > 0 && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-black/60 backdrop-blur-xl border border-white/10 rounded-full px-4 sm:px-6 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2 sm:gap-6 w-auto max-w-[90vw] overflow-x-auto hide-scrollbar"
+          >
+            <button
+              onClick={handleBatchExport}
+              disabled={selectedChatIds.size === 0}
+              className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-green-400 transition disabled:opacity-50 group shrink-0"
+            >
+              <div className="p-2 rounded-full bg-white/5 group-hover:bg-green-400/20 transition">
+                <Download className="w-5 h-5" />
+              </div>
+              <span className="font-medium text-[10px]">导出</span>
+            </button>
+            <div className="w-px h-8 bg-white/10 shrink-0" />
+            <button
+              onClick={handleBatchDelete}
+              disabled={selectedChatIds.size === 0}
+              className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-red-500/10 text-white/70 hover:text-red-400 transition disabled:opacity-50 group shrink-0"
+            >
+              <div className="p-2 rounded-full bg-white/5 group-hover:bg-red-400/20 transition">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <span className="font-medium text-[10px]">删除</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
