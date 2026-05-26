@@ -15,7 +15,6 @@ import { AutoTagger } from './components/AutoTagger';
 import { AIRecommender } from './components/AIRecommender';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatViewer } from './components/ChatViewer';
-import { CloudSyncSection } from './components/CloudSyncSection';
 import { migrateDatabase } from './lib/db';
 import { useTaggerState } from './lib/taggerState';
 import { Tag, Loader2, AlertCircle, Pause, X } from 'lucide-react';
@@ -193,8 +192,6 @@ export default function App() {
           />
         ) : selectedFolderId === 'chatviewer' ? (
           <ChatViewer onClose={() => { setSelectedFolderId(null); setRefreshKey(prev => prev + 1); }} />
-        ) : selectedFolderId === 'cloudsync' ? (
-          <CloudSyncSection onClose={() => { setSelectedFolderId(null); setRefreshKey(prev => prev + 1); }} />
         ) : (
           <CharacterList
             key={selectedFolderId}

@@ -291,16 +291,6 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
             </button>
             <button
               onClick={() => {
-                onSelectFolder('cloudsync');
-                onClose();
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition ${selectedFolderId === 'cloudsync' ? 'bg-blue-500/20 text-blue-400 font-medium' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19C19.9853 19 22 16.9853 22 14.5C22 12.1332 20.177 10.201 17.868 10.021C17.3871 6.6111 14.4326 4 10.875 4C7.07844 4 4 7.078 4 10.875C4 11.238 4.02798 11.5946 4.08182 11.9427C2.33649 12.6394 1 14.3986 1 16.5C1 19.5376 3.46243 22 6.5 22H17.5C18.6046 22 19.5 21.1046 19.5 20C19.5 18.8954 18.6046 18 17.5 18"/></svg>
-              <span>Google Drive 同步</span>
-            </button>
-            <button
-              onClick={() => {
                 onSelectFolder('trash');
                 onClose();
               }}
