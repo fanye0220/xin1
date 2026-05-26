@@ -1,0 +1,8 @@
+{
+  "apiKey": "MISSING_API_KEY",
+  "authDomain": "MISSING_AUTH_DOMAIN",
+  "projectId": "MISSING_PROJECT_ID",
+  "storageBucket": "MISSING_STORAGE_BUCKET",
+  "messagingSenderId": "MISSING_SENDER_ID",
+  "appId": "MISSING_APP_ID"
+}
