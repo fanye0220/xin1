@@ -155,20 +155,33 @@ export function initDB() {
 export async function migrateDatabase(onProgress?: (current: number, total: number) => void) {
   const db = await initDB();
   
-  const tx = db.transaction('characters', 'readonly');
-  const allChars = await tx.objectStore('characters').getAll();
-  const unmigrated = allChars.filter(c => !c.hasBlobsSeparated);
+  // First, just count how many need migration without loading full objects into RAM, or we just rely on counting via cursor
+  let totalToMigrate = 0;
+  let txCheck = db.transaction('characters', 'readonly');
+  let cursorCheck = await txCheck.objectStore('characters').openCursor();
+  const unmigratedIds: string[] = [];
   
-  if (unmigrated.length === 0) return;
+  while (cursorCheck) {
+    if (!cursorCheck.value.hasBlobsSeparated) {
+      unmigratedIds.push(cursorCheck.key as string);
+    }
+    cursorCheck = await cursorCheck.continue();
+  }
+  
+  totalToMigrate = unmigratedIds.length;
+  if (totalToMigrate === 0) return;
 
-  const CHUNK_SIZE = 50;
-  for (let i = 0; i < unmigrated.length; i += CHUNK_SIZE) {
-    const chunk = unmigrated.slice(i, i + CHUNK_SIZE);
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < totalToMigrate; i += CHUNK_SIZE) {
+    const chunkIds = unmigratedIds.slice(i, i + CHUNK_SIZE);
     const writeTx = db.transaction(['characters', 'blobs'], 'readwrite');
     const charStore = writeTx.objectStore('characters');
     const blobStore = writeTx.objectStore('blobs');
     
-    for (const char of chunk) {
+    for (const id of chunkIds) {
+      const char = await charStore.get(id);
+      if (!char) continue;
+      
       if (char.avatarBlob || char.originalFile || char.avatarHistory) {
         await blobStore.put({
           avatarBlob: char.avatarBlob,
@@ -187,7 +200,7 @@ export async function migrateDatabase(onProgress?: (current: number, total: numb
     await writeTx.done;
     
     if (onProgress) {
-      onProgress(Math.min(i + CHUNK_SIZE, unmigrated.length), unmigrated.length);
+      onProgress(Math.min(i + CHUNK_SIZE, totalToMigrate), totalToMigrate);
     }
   }
 }
@@ -318,28 +331,52 @@ export async function getCharacters(
   const tx = db.transaction('characters', 'readonly');
   const store = tx.store;
   
-  let allCharacters: CharacterCard[] = [];
-
-  if (folderId && folderId !== 'all') {
-    const index = store.index('by-folder');
-    allCharacters = await index.getAll(folderId);
-  } else if (folderId === null && !searchQuery && tags.length === 0) {
-    // OPTIMIZATION: getting keys and filtering first avoids deserializing ALL characters
-    const index = store.index('by-folder');
-    const allKeys = await store.getAllKeys();
-    const folderKeys = await index.getAllKeys();
-    const folderKeySet = new Set(folderKeys);
-    const rootKeys = allKeys.filter(k => !folderKeySet.has(k));
-    allCharacters = await Promise.all(rootKeys.map(k => store.get(k))) as CharacterCard[];
-  } else {
-    allCharacters = await store.getAll();
+  interface CharMeta {
+    id: string;
+    createdAt: number;
+    updatedAt?: number;
+    name: string;
+    sortOrder?: number;
+    deletedAt?: number;
+    folderId?: string;
+    tags: string[];
   }
   
-  // Filter out soft-deleted characters
-  allCharacters = allCharacters.filter(c => !c.deletedAt);
+  let allMeta: CharMeta[] = [];
+  
+  // Use a cursor to lazily extract metadata so huge 'data' objects get garbage collected
+  let cursor;
+  if (folderId && folderId !== 'all') {
+    const index = store.index('by-folder');
+    cursor = await index.openCursor(folderId);
+  } else {
+    cursor = await store.openCursor();
+  }
+  
+  while (cursor) {
+    const val = cursor.value;
+    if (!val.deletedAt) {
+      if (!(folderId === null && !searchQuery && tags.length === 0 && val.folderId)) {
+         let charTags = val.data?.data?.tags || val.data?.tags;
+         if (!Array.isArray(charTags)) charTags = [];
+         
+         allMeta.push({
+           id: val.id,
+           createdAt: val.createdAt,
+           updatedAt: val.updatedAt,
+           name: val.name || '',
+           sortOrder: val.sortOrder,
+           deletedAt: val.deletedAt,
+           folderId: val.folderId,
+           tags: charTags
+         });
+      }
+    }
+    cursor = await cursor.continue();
+  }
   
   // Apply sorting
-  allCharacters.sort((a, b) => {
+  allMeta.sort((a, b) => {
     switch (sortBy) {
       case 'custom':
         if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
@@ -365,31 +402,36 @@ export async function getCharacters(
 
   if (searchQuery) {
     const query = searchQuery.toLowerCase();
-    allCharacters = allCharacters.filter(c => {
-      const charTags = c.data?.data?.tags || c.data?.tags;
-      return c.name.toLowerCase().includes(query) || 
-        (charTags && charTags.some((t: string) => t.toLowerCase().includes(query)));
-    });
+    allMeta = allMeta.filter(c => c.name.toLowerCase().includes(query) || c.tags.some(t => t.toLowerCase().includes(query)));
   }
 
   if (tags.length > 0) {
-    allCharacters = allCharacters.filter(c => {
-      const charTags = c.data?.data?.tags || c.data?.tags;
-      return charTags && tags.every(t => charTags.includes(t));
-    });
+    allMeta = allMeta.filter(c => tags.every(t => c.tags.includes(t)));
   }
 
   if (folderId === null) {
-    // Only filter to root characters if we are NOT searching or filtering by tags
     if (!searchQuery && tags.length === 0) {
-      allCharacters = allCharacters.filter(c => !c.folderId);
+      allMeta = allMeta.filter(c => !c.folderId);
     }
   } else if (folderId && folderId !== 'all') {
-    allCharacters = allCharacters.filter(c => c.folderId === folderId);
+    allMeta = allMeta.filter(c => c.folderId === folderId);
   }
   
-  const total = allCharacters.length;
-  const characters = allCharacters.slice((page - 1) * pageSize, page * pageSize);
+  const total = allMeta.length;
+  const paginatedMeta = allMeta.slice((page - 1) * pageSize, page * pageSize);
+  
+  // Now fetch full objects ONLY for the paginated slice
+  // Using a new transaction to fetch the full cards safely
+  const fetchTx = db.transaction('characters', 'readonly');
+  const fetchStore = fetchTx.store;
+  const characters: CharacterCard[] = [];
+  
+  for (const meta of paginatedMeta) {
+    const fullChar = await fetchStore.get(meta.id);
+    if (fullChar) {
+      characters.push(fullChar);
+    }
+  }
   
   // Load blobs only for the paginated characters
   if (includeBlobs) {
@@ -413,15 +455,23 @@ let tagsCache: string[] | null = null;
 export async function getAllTags(): Promise<string[]> {
   if (tagsCache) return tagsCache;
   const db = await initDB();
-  const characters = await db.getAll('characters');
+  const tx = db.transaction('characters', 'readonly');
+  const store = tx.store;
+  let cursor = await store.openCursor();
+  
   const tags = new Set<string>();
-  characters.forEach(c => {
-    if (c.deletedAt) return;
-    const charTags = c.data?.data?.tags || c.data?.tags;
-    if (charTags && Array.isArray(charTags)) {
-      charTags.forEach((t: string) => tags.add(t));
+  
+  while (cursor) {
+    const c = cursor.value;
+    if (!c.deletedAt) {
+      const charTags = c.data?.data?.tags || c.data?.tags;
+      if (charTags && Array.isArray(charTags)) {
+        charTags.forEach((t: string) => tags.add(t));
+      }
     }
-  });
+    cursor = await cursor.continue();
+  }
+  
   tagsCache = Array.from(tags).sort();
   return tagsCache;
 }
@@ -431,9 +481,10 @@ export async function renameTag(oldTag: string, newTag: string): Promise<void> {
   const db = await initDB();
   const tx = db.transaction('characters', 'readwrite');
   const store = tx.store;
-  const characters = await store.getAll();
+  let cursor = await store.openCursor();
   
-  for (const char of characters) {
+  while (cursor) {
+    const char = cursor.value;
     const charTags = char.data?.data?.tags || char.data?.tags;
     if (charTags && Array.isArray(charTags) && charTags.includes(oldTag)) {
       const newTags = charTags.map((t: string) => t === oldTag ? newTag : t);
@@ -443,8 +494,9 @@ export async function renameTag(oldTag: string, newTag: string): Promise<void> {
         char.data.tags = Array.from(new Set(newTags));
       }
       char.updatedAt = Date.now();
-      await store.put(char);
+      await cursor.update(char);
     }
+    cursor = await cursor.continue();
   }
   await tx.done;
 }
@@ -454,9 +506,10 @@ export async function deleteTag(tagToDelete: string): Promise<void> {
   const db = await initDB();
   const tx = db.transaction('characters', 'readwrite');
   const store = tx.store;
-  const characters = await store.getAll();
+  let cursor = await store.openCursor();
   
-  for (const char of characters) {
+  while (cursor) {
+    const char = cursor.value;
     const charTags = char.data?.data?.tags || char.data?.tags;
     if (charTags && Array.isArray(charTags) && charTags.includes(tagToDelete)) {
       const newTags = charTags.filter((t: string) => t !== tagToDelete);
@@ -466,8 +519,9 @@ export async function deleteTag(tagToDelete: string): Promise<void> {
         char.data.tags = newTags;
       }
       char.updatedAt = Date.now();
-      await store.put(char);
+      await cursor.update(char);
     }
+    cursor = await cursor.continue();
   }
   await tx.done;
 }
@@ -563,8 +617,20 @@ export async function restoreCharacter(id: string): Promise<void> {
 
 export async function getTrashedCharacters(includeBlobs: boolean = false): Promise<CharacterCard[]> {
   const db = await initDB();
-  const allCharacters = await db.getAll('characters');
-  const trashed = allCharacters.filter(c => c.deletedAt).sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+  const trashed: CharacterCard[] = [];
+  const tx = db.transaction('characters', 'readonly');
+  const store = tx.store;
+  let cursor = await store.openCursor();
+  
+  while (cursor) {
+    const char = cursor.value;
+    if (char.deletedAt) {
+      trashed.push(char);
+    }
+    cursor = await cursor.continue();
+  }
+  
+  trashed.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
   
   if (includeBlobs) {
     for (const char of trashed) {
@@ -586,13 +652,15 @@ export async function emptyTrash(): Promise<void> {
   const tx = db.transaction(['characters', 'blobs'], 'readwrite');
   const store = tx.objectStore('characters');
   const blobStore = tx.objectStore('blobs');
-  const allCharacters = await store.getAll();
+  let cursor = await store.openCursor();
   
-  for (const char of allCharacters) {
+  while (cursor) {
+    const char = cursor.value;
     if (char.deletedAt) {
-      await store.delete(char.id);
+      await cursor.delete();
       await blobStore.delete(char.id);
     }
+    cursor = await cursor.continue();
   }
   await tx.done;
 }
@@ -602,16 +670,18 @@ export async function cleanupOldTrash(): Promise<void> {
   const tx = db.transaction(['characters', 'blobs'], 'readwrite');
   const store = tx.objectStore('characters');
   const blobStore = tx.objectStore('blobs');
-  const allCharacters = await store.getAll();
+  let cursor = await store.openCursor();
   
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   
-  for (const char of allCharacters) {
+  while (cursor) {
+    const char = cursor.value;
     if (char.deletedAt && (now - char.deletedAt > SEVEN_DAYS_MS)) {
-      await store.delete(char.id);
+      await cursor.delete();
       await blobStore.delete(char.id);
     }
+    cursor = await cursor.continue();
   }
   await tx.done;
 }
@@ -628,35 +698,40 @@ export interface DuplicateGroup {
 
 export async function findDuplicates(): Promise<DuplicateGroup[]> {
   const db = await initDB();
-  const allCharacters = await db.getAll('characters');
-  const activeCharacters = allCharacters.filter(c => !c.deletedAt);
+  const precomputed: any[] = [];
   
-  // Precompute cleaned strings for faster O(N^2) matching
-  const precomputed = activeCharacters.map(char => {
-    const data = char.data?.data || char.data || {};
-    const firstMes = data.first_mes || '';
-    const desc = data.description || '';
-    const name = (char.name || data.name || '').trim().toLowerCase();
-    
-    return {
-      char,
-      id: char.id,
-      name,
-      firstMes,
-      desc,
-      descClean: desc.replace(/\s+/g, ''),
-      firstClean: firstMes.replace(/\s+/g, '')
-    };
-  });
+  const tx = db.transaction('characters', 'readonly');
+  const store = tx.store;
+  let cursor = await store.openCursor();
   
-  const groups: CharacterCard[][] = [];
+  while (cursor) {
+    const char = cursor.value;
+    if (!char.deletedAt) {
+      const data = char.data?.data || char.data || {};
+      const firstMes = data.first_mes || '';
+      const desc = data.description || '';
+      const name = (char.name || data.name || '').trim().toLowerCase();
+      
+      precomputed.push({
+        id: char.id,
+        name,
+        firstMes,
+        desc,
+        descClean: desc.replace(/\s+/g, ''),
+        firstClean: firstMes.replace(/\s+/g, '')
+      });
+    }
+    cursor = await cursor.continue();
+  }
+  
+  const groups: string[][] = [];
   const processedIds = new Set<string>();
   
   for (let i = 0; i < precomputed.length; i++) {
     const itemA = precomputed[i];
     if (processedIds.has(itemA.id)) continue;
     
-    const duplicates: CharacterCard[] = [itemA.char];
+    const duplicates: string[] = [itemA.id];
     
     for (let j = i + 1; j < precomputed.length; j++) {
       const itemB = precomputed[j];
@@ -665,17 +740,14 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
       let isDup = false;
       
       if (itemA.name && itemB.name && itemA.name === itemB.name) {
-        // Same name: Check if major fields are identical (ignoring whitespace)
         if (itemA.descClean && itemB.descClean && itemA.descClean === itemB.descClean) {
           isDup = true;
         } else if (itemA.firstClean && itemB.firstClean && itemA.firstClean === itemB.firstClean) {
           isDup = true;
         } else if (!itemA.descClean && !itemB.descClean && !itemA.firstClean && !itemB.firstClean) {
-          // Empty cards with same name
           isDup = true;
         }
       } else {
-        // Different name: Only duplicate if BOTH description and first message are substantial and completely match
         if (itemA.descClean && itemB.descClean && itemA.firstClean && itemB.firstClean && 
             itemA.descClean === itemB.descClean && itemA.firstClean === itemB.firstClean && 
             itemA.descClean.length > 50) {
@@ -684,7 +756,7 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
       }
       
       if (isDup) {
-        duplicates.push(itemB.char);
+        duplicates.push(itemB.id);
         processedIds.add(itemB.id);
       }
     }
@@ -696,9 +768,16 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
   }
   
   const finalGroups: DuplicateGroup[] = [];
+  const fetchTx = db.transaction('characters', 'readonly');
+  const fetchStore = fetchTx.store;
   
-  for (const groupChars of groups) {
-    // Load blobs
+  for (const groupIds of groups) {
+    const groupChars: CharacterCard[] = [];
+    for (const id of groupIds) {
+      const char = await fetchStore.get(id);
+      if (char) groupChars.push(char);
+    }
+    
     for (const char of groupChars) {
       if (char.hasBlobsSeparated) {
         const blobs = await db.get('blobs', char.id);
@@ -710,7 +789,6 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
       }
     }
     
-    // Sort by createdAt ascending
     const sorted = [...groupChars].sort((a, b) => a.createdAt - b.createdAt);
     const analyzedChars: DuplicateCharacter[] = [];
     

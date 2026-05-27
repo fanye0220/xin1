@@ -713,7 +713,11 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
       if (!fullChat) continue;
       
       const matchedChar = fullChat.characterId ? characters.find(c => c.id === fullChat.characterId) : null;
-      let folderName = matchedChar?.name || fullChat.firstAiName || '未归类聊天';
+      let aiName = '';
+      const aiMsg = fullChat.messages?.find((m: any) => !m.is_user && m.name);
+      if (aiMsg) aiName = aiMsg.name;
+      
+      let folderName = matchedChar?.name || aiName || '未归类聊天';
       // simple sanitization for folder name
       folderName = folderName.replace(/[/\\?%*:|"<>]/g, '-');
       
