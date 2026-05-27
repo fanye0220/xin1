@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
 import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, getCharacterBlob, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
+import { useInView } from '../lib/useInView';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
@@ -1715,22 +1716,7 @@ function CharacterCardItem({
   const timerRef = useRef<any>(null);
   const isLongPress = useRef(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const [isInView, setIsInView] = useState(false);
-
-  useEffect(() => {
-    const el = cardRef.current;
-    if (!el) return;
-    
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        setIsInView(true);
-        observer.disconnect();
-      }
-    }, { rootMargin: '400px' });
-    
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const isInView = useInView(cardRef);
 
   useEffect(() => {
     if (!isInView) return;

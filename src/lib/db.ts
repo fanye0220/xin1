@@ -318,6 +318,62 @@ export async function deleteFolder(id: string): Promise<void> {
 
 export type SortOption = 'newest_import' | 'oldest_import' | 'recently_modified' | 'a_z' | 'z_a' | 'custom';
 
+export interface CharMeta {
+  id: string;
+  createdAt: number;
+  updatedAt?: number;
+  name: string;
+  sortOrder?: number;
+  deletedAt?: number;
+  folderId?: string;
+  tags: string[];
+}
+
+let cachedMeta: CharMeta[] | null = null;
+let isBuildingCache = false;
+
+export async function getCachedMeta(): Promise<CharMeta[]> {
+  if (cachedMeta) return cachedMeta;
+  
+  if (isBuildingCache) {
+    while (isBuildingCache) await new Promise(r => setTimeout(r, 50));
+    if (cachedMeta) return cachedMeta;
+  }
+  isBuildingCache = true;
+  
+  const db = await initDB();
+  const tx = db.transaction('characters', 'readonly');
+  const store = tx.store;
+  let cursor = await store.openCursor();
+  
+  const newMeta: CharMeta[] = [];
+  while (cursor) {
+    const val = cursor.value;
+    let charTags = val.data?.data?.tags || val.data?.tags;
+    if (!Array.isArray(charTags)) charTags = [];
+    newMeta.push({
+      id: val.id,
+      createdAt: val.createdAt,
+      updatedAt: val.updatedAt,
+      name: val.name || '',
+      sortOrder: val.sortOrder,
+      deletedAt: val.deletedAt,
+      folderId: val.folderId,
+      tags: charTags
+    });
+    cursor = await cursor.continue();
+  }
+  
+  cachedMeta = newMeta;
+  isBuildingCache = false;
+  return cachedMeta;
+}
+
+export function invalidateCache() {
+  cachedMeta = null;
+  tagsCache = null;
+}
+
 export async function getCharacters(
   page: number, 
   pageSize: number, 
@@ -328,53 +384,27 @@ export async function getCharacters(
   includeBlobs: boolean = true
 ): Promise<{ characters: CharacterCard[], total: number }> {
   const db = await initDB();
-  const tx = db.transaction('characters', 'readonly');
-  const store = tx.store;
   
-  interface CharMeta {
-    id: string;
-    createdAt: number;
-    updatedAt?: number;
-    name: string;
-    sortOrder?: number;
-    deletedAt?: number;
-    folderId?: string;
-    tags: string[];
+  let allMeta = await getCachedMeta();
+  allMeta = allMeta.filter(c => !c.deletedAt);
+
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    allMeta = allMeta.filter(c => c.name.toLowerCase().includes(query) || c.tags.some(t => t.toLowerCase().includes(query)));
   }
-  
-  let allMeta: CharMeta[] = [];
-  
-  // Use a cursor to lazily extract metadata so huge 'data' objects get garbage collected
-  let cursor;
-  if (folderId && folderId !== 'all') {
-    const index = store.index('by-folder');
-    cursor = await index.openCursor(folderId);
-  } else {
-    cursor = await store.openCursor();
+
+  if (tags.length > 0) {
+    allMeta = allMeta.filter(c => tags.every(t => c.tags.includes(t)));
   }
-  
-  while (cursor) {
-    const val = cursor.value;
-    if (!val.deletedAt) {
-      if (!(folderId === null && !searchQuery && tags.length === 0 && val.folderId)) {
-         let charTags = val.data?.data?.tags || val.data?.tags;
-         if (!Array.isArray(charTags)) charTags = [];
-         
-         allMeta.push({
-           id: val.id,
-           createdAt: val.createdAt,
-           updatedAt: val.updatedAt,
-           name: val.name || '',
-           sortOrder: val.sortOrder,
-           deletedAt: val.deletedAt,
-           folderId: val.folderId,
-           tags: charTags
-         });
-      }
+
+  if (folderId === null) {
+    if (!searchQuery && tags.length === 0) {
+      allMeta = allMeta.filter(c => !c.folderId);
     }
-    cursor = await cursor.continue();
+  } else if (folderId && folderId !== 'all') {
+    allMeta = allMeta.filter(c => c.folderId === folderId);
   }
-  
+
   // Apply sorting
   allMeta.sort((a, b) => {
     switch (sortBy) {
@@ -400,28 +430,10 @@ export async function getCharacters(
     }
   });
 
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    allMeta = allMeta.filter(c => c.name.toLowerCase().includes(query) || c.tags.some(t => t.toLowerCase().includes(query)));
-  }
-
-  if (tags.length > 0) {
-    allMeta = allMeta.filter(c => tags.every(t => c.tags.includes(t)));
-  }
-
-  if (folderId === null) {
-    if (!searchQuery && tags.length === 0) {
-      allMeta = allMeta.filter(c => !c.folderId);
-    }
-  } else if (folderId && folderId !== 'all') {
-    allMeta = allMeta.filter(c => c.folderId === folderId);
-  }
-  
   const total = allMeta.length;
   const paginatedMeta = allMeta.slice((page - 1) * pageSize, page * pageSize);
   
   // Now fetch full objects ONLY for the paginated slice
-  // Using a new transaction to fetch the full cards safely
   const fetchTx = db.transaction('characters', 'readonly');
   const fetchStore = fetchTx.store;
   const characters: CharacterCard[] = [];
@@ -454,30 +466,22 @@ let tagsCache: string[] | null = null;
 
 export async function getAllTags(): Promise<string[]> {
   if (tagsCache) return tagsCache;
-  const db = await initDB();
-  const tx = db.transaction('characters', 'readonly');
-  const store = tx.store;
-  let cursor = await store.openCursor();
+  const meta = await getCachedMeta();
   
   const tags = new Set<string>();
   
-  while (cursor) {
-    const c = cursor.value;
+  meta.forEach(c => {
     if (!c.deletedAt) {
-      const charTags = c.data?.data?.tags || c.data?.tags;
-      if (charTags && Array.isArray(charTags)) {
-        charTags.forEach((t: string) => tags.add(t));
-      }
+      c.tags.forEach(t => tags.add(t));
     }
-    cursor = await cursor.continue();
-  }
+  });
   
   tagsCache = Array.from(tags).sort();
   return tagsCache;
 }
 
 export async function renameTag(oldTag: string, newTag: string): Promise<void> {
-  tagsCache = null;
+  invalidateCache();
   const db = await initDB();
   const tx = db.transaction('characters', 'readwrite');
   const store = tx.store;
@@ -502,7 +506,7 @@ export async function renameTag(oldTag: string, newTag: string): Promise<void> {
 }
 
 export async function deleteTag(tagToDelete: string): Promise<void> {
-  tagsCache = null;
+  invalidateCache();
   const db = await initDB();
   const tx = db.transaction('characters', 'readwrite');
   const store = tx.store;
@@ -546,12 +550,12 @@ export async function getCharacter(id: string): Promise<CharacterCard | undefine
 }
 
 export async function saveCharacter(character: CharacterCard): Promise<void> {
-  tagsCache = null;
+  invalidateCache();
   return saveCharacters([character]);
 }
 
 export async function saveCharacters(characters: CharacterCard[]): Promise<void> {
-  tagsCache = null;
+  invalidateCache();
   if (characters.length === 0) return;
   const db = await initDB();
   const tx = db.transaction(['characters', 'blobs'], 'readwrite');
@@ -593,7 +597,7 @@ export async function saveCharacters(characters: CharacterCard[]): Promise<void>
 }
 
 export async function deleteCharacter(id: string): Promise<void> {
-  tagsCache = null;
+  invalidateCache();
   const db = await initDB();
   const char = await db.get('characters', id);
   if (char) {
@@ -612,6 +616,7 @@ export async function deleteCharacter(id: string): Promise<void> {
 }
 
 export async function restoreCharacter(id: string): Promise<void> {
+  invalidateCache();
   const db = await initDB();
   const char = await db.get('characters', id);
   if (char && char.deletedAt) {
@@ -653,6 +658,7 @@ export async function getTrashedCharacters(includeBlobs: boolean = false): Promi
 }
 
 export async function emptyTrash(): Promise<void> {
+  invalidateCache();
   const db = await initDB();
   const tx = db.transaction(['characters', 'blobs'], 'readwrite');
   const store = tx.objectStore('characters');
@@ -671,6 +677,7 @@ export async function emptyTrash(): Promise<void> {
 }
 
 export async function cleanupOldTrash(): Promise<void> {
+  invalidateCache();
   const db = await initDB();
   const tx = db.transaction(['characters', 'blobs'], 'readwrite');
   const store = tx.objectStore('characters');
