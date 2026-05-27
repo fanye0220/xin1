@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
-import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
+import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, getCharacterBlob, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
@@ -49,7 +49,7 @@ function FolderCover({ folder, previews, viewMode }: { folder: Folder, previews:
   return <FolderIcon className="w-1/2 h-1/2 text-white/50 pointer-events-none" />;
 }
 
-function SortableItemWrapper({ id, children, disabled }: { id: string, children: React.ReactNode, disabled?: boolean }) {
+function SortableItemWrapper({ id, children, disabled, className = '' }: { id: string, children: React.ReactNode, disabled?: boolean, className?: string }) {
   const {
     attributes,
     listeners,
@@ -70,7 +70,7 @@ function SortableItemWrapper({ id, children, disabled }: { id: string, children:
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="select-none">
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={`select-none ${className}`}>
       {children}
     </div>
   );
@@ -442,7 +442,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   };
 
   const loadData = () => {
-    getCharacters(page, pageSize, folderId, searchQuery, selectedTags, sortBy).then(({ characters, total }) => {
+    getCharacters(page, pageSize, folderId, searchQuery, selectedTags, sortBy, false).then(({ characters, total }) => {
       setCharacters(characters);
       setTotalCharacters(total);
     });
@@ -1187,7 +1187,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
             >
               {(!searchQuery && selectedTags.length === 0 && page === 1) && (
                 <div className={
-                  viewMode === 'list' ? "flex flex-col gap-2 mb-6" : 
+                  viewMode === 'list' ? "flex flex-col gap-2 mb-2" : 
                   viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 mb-6" :
                   "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6"
                 }>
@@ -1317,7 +1317,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
               <div className={
                 viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4" : 
-                viewMode === 'masonry' ? "columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4 space-y-4" : 
+                viewMode === 'masonry' ? "columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4" : 
                 "flex flex-col gap-2"
               }>
 
@@ -1327,7 +1327,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                 : undefined;
                 
               return (
-                <SortableItemWrapper key={`char-${char.id}`} id={`char-${char.id}`} disabled={!!searchQuery || selectedTags.length > 0}>
+                <SortableItemWrapper key={`char-${char.id}`} id={`char-${char.id}`} disabled={!!searchQuery || selectedTags.length > 0} className={viewMode === 'masonry' ? 'break-inside-avoid inline-block w-full mb-4' : ''}>
                   <CharacterCardItem
                     char={char}
                     selectionMode={selectionMode}
@@ -1714,14 +1714,47 @@ function CharacterCardItem({
   const [url, setUrl] = useState<string>(char.avatarUrlFallback || '');
   const timerRef = useRef<any>(null);
   const isLongPress = useRef(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [isInView, setIsInView] = useState(false);
 
   useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setIsInView(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '400px' });
+    
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isInView) return;
+    
+    let objectUrl: string | null = null;
+    let isMounted = true;
+    
     if (char.avatarBlob) {
-      const objectUrl = URL.createObjectURL(char.avatarBlob);
+      objectUrl = URL.createObjectURL(char.avatarBlob);
       setUrl(objectUrl);
-      return () => URL.revokeObjectURL(objectUrl);
+    } else if (char.hasBlobsSeparated) {
+      getCharacterBlob(char.id).then(blobs => {
+        if (blobs && blobs.avatarBlob && isMounted) {
+          objectUrl = URL.createObjectURL(blobs.avatarBlob);
+          setUrl(objectUrl);
+        }
+      });
     }
-  }, [char.avatarBlob]);
+    
+    return () => {
+      isMounted = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [char.avatarBlob, char.hasBlobsSeparated, char.id, isInView]);
 
   const handleTouchStart = () => {
     isLongPress.current = false;
@@ -1751,6 +1784,7 @@ function CharacterCardItem({
   if (viewMode === 'list') {
     return (
       <motion.div
+        ref={cardRef}
         whileHover={{ scale: selectionMode ? 1 : 1.02 }}
         whileTap={{ scale: 0.98 }}
         onClick={handleClick}
@@ -1812,6 +1846,7 @@ function CharacterCardItem({
 
   return (
     <motion.div
+      ref={cardRef}
       whileHover={{ scale: selectionMode ? 1 : 1.05 }}
       whileTap={{ scale: 0.95 }}
       onClick={handleClick}
@@ -1821,7 +1856,7 @@ function CharacterCardItem({
       onMouseDown={handleTouchStart}
       onMouseUp={handleTouchEnd}
       onMouseLeave={handleTouchEnd}
-      className={`relative ${viewMode === 'masonry' ? 'break-inside-avoid w-full h-auto mb-4' : 'aspect-[2/3]'} rounded-2xl overflow-hidden cursor-pointer shadow-lg border transition-all duration-300 group select-none ${isSelected ? 'border-purple-500 ring-2 ring-purple-500' : 'border-white/10'}`}
+      className={`relative ${viewMode === 'masonry' ? 'w-full h-auto min-h-[150px] bg-white/5' : 'aspect-[2/3]'} rounded-2xl overflow-hidden cursor-pointer shadow-lg border transition-all duration-300 group select-none ${isSelected ? 'border-purple-500 ring-2 ring-purple-500' : 'border-white/10'}`}
     >
       <motion.img
         animate={{ scale: isSelected ? 0.9 : 1 }}

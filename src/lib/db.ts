@@ -526,6 +526,11 @@ export async function deleteTag(tagToDelete: string): Promise<void> {
   await tx.done;
 }
 
+export async function getCharacterBlob(id: string) {
+  const db = await initDB();
+  return await db.get('blobs', id);
+}
+
 export async function getCharacter(id: string): Promise<CharacterCard | undefined> {
   const db = await initDB();
   const char = await db.get('characters', id);

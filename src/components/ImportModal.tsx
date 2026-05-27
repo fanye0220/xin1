@@ -32,9 +32,9 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  const getOrCreateNestedFolder = async (pathParts: string[]): Promise<string | undefined> => {
-    if (pathParts.length === 0) return undefined;
-    let currentParentId: string | null = null;
+  const getOrCreateNestedFolder = async (pathParts: string[], startParentId?: string | null): Promise<string | undefined> => {
+    if (pathParts.length === 0) return startParentId || undefined;
+    let currentParentId: string | null = startParentId || null;
     
     const folders = await getFolders();
     
@@ -252,9 +252,9 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         }
         
         if (pathPrefix.length > 0) {
-          targetFolderId = await getOrCreateNestedFolder([...pathPrefix, ...folderParts]);
+          targetFolderId = await getOrCreateNestedFolder([...pathPrefix, ...folderParts], folderId);
         } else if (folderParts.length > 0) {
-          targetFolderId = await getOrCreateNestedFolder(folderParts);
+          targetFolderId = await getOrCreateNestedFolder(folderParts, folderId);
         } else {
           targetFolderId = folderId || undefined;
         }
