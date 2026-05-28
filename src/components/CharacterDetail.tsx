@@ -295,6 +295,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
       const formData = new FormData();
       formData.append('avatar', pngBlob, `${getSafeFilename(character.name)}.png`);
+      formData.append('file_type', 'png');
 
       const headers: Record<string, string> = {};
       if (aiSettings.sillyTavernApiKey) {
