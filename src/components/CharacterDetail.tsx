@@ -298,10 +298,12 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
       const headers: Record<string, string> = {};
       if (aiSettings.sillyTavernApiKey) {
-        // Many ST versions require X-API-KEY or Authorization
-        // We can pass both or just one, typically X-API-KEY or Bearer
-        headers['X-API-KEY'] = aiSettings.sillyTavernApiKey;
-        headers['Authorization'] = `Bearer ${aiSettings.sillyTavernApiKey}`;
+        if (aiSettings.sillyTavernApiKey.includes(':')) {
+           headers['Authorization'] = `Basic ${btoa(aiSettings.sillyTavernApiKey)}`;
+        } else {
+           headers['X-API-KEY'] = aiSettings.sillyTavernApiKey;
+           headers['Authorization'] = `Bearer ${aiSettings.sillyTavernApiKey}`;
+        }
       }
 
       const res = await fetch(`${stUrl}/api/characters/import`, {
