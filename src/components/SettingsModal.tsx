@@ -238,6 +238,37 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 </div>
             </motion.div>
 
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="pt-4 border-t border-white/10 space-y-4">
+              <h3 className="text-sm font-medium text-white/80">SillyTavern (酒馆) 联动设置</h3>
+              <p className="text-xs text-white/50">用于一键发送角色卡至本地的 SillyTavern。如果失败，请检查酒馆的「API操作」功能是否开启，并允许跨域请求。</p>
+              
+              <div>
+                <label className="block text-sm font-medium text-white/80 mb-2">
+                  酒馆 API 地址
+                </label>
+                <input
+                  type="text"
+                  value={settings.sillyTavernUrl || ''}
+                  onChange={(e) => setSettings({ ...settings, sillyTavernUrl: e.target.value })}
+                  placeholder="例如: http://127.0.0.1:8000"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-white/80 mb-2">
+                  酒馆 API Key (选填)
+                </label>
+                <input
+                  type="password"
+                  value={settings.sillyTavernApiKey || ''}
+                  onChange={(e) => setSettings({ ...settings, sillyTavernApiKey: e.target.value })}
+                  placeholder="如果开启了密码保护，请填入"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                />
+              </div>
+            </motion.div>
+
             {/* Test Connection Result */}
             {testStatus !== 'idle' && (
               <div className={`p-3 rounded-xl flex items-start gap-2 text-sm ${

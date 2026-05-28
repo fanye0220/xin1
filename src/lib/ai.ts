@@ -12,6 +12,8 @@ export interface AISettings {
   type: 'custom';
   customEndpoints: CustomEndpoint[];
   activeCustomId: string;
+  sillyTavernUrl?: string;
+  sillyTavernApiKey?: string;
 }
 
 export function getAISettings(): AISettings {

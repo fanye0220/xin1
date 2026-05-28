@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload, Send, Loader2 } from 'lucide-react';
 import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
+import { getAISettings } from '../lib/ai';
 import { AvatarViewer } from './AvatarViewer';
 import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
@@ -25,6 +26,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showExportAlert, setShowExportAlert] = useState(false);
   const [showAvatarViewer, setShowAvatarViewer] = useState(false);
+  const [isSendingToST, setIsSendingToST] = useState(false);
+  const [stFeedback, setStFeedback] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const [isEditingTags, setIsEditingTags] = useState(false);
   const [tempTags, setTempTags] = useState<string>('');
@@ -261,6 +264,70 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     }
   };
 
+  const handleSendToST = async () => {
+    let baseBlob = character.avatarBlob;
+    if (!baseBlob && character.originalFile && (character.originalFile.type === 'image/png' || character.originalFile.name.endsWith('.png'))) {
+      baseBlob = character.originalFile;
+    }
+
+    if (!baseBlob) {
+      setStFeedback({ msg: '缺少头像，无法发送', type: 'error' });
+      setTimeout(() => setStFeedback(null), 3000);
+      return;
+    }
+
+    const aiSettings = getAISettings();
+    let stUrl = aiSettings.sillyTavernUrl?.trim();
+    if (!stUrl) {
+      setStFeedback({ msg: '请先在"设置"中配置酒馆 API 地址', type: 'error' });
+      setTimeout(() => setStFeedback(null), 3000);
+      return;
+    }
+
+    if (stUrl.endsWith('/')) stUrl = stUrl.slice(0, -1);
+    
+    setIsSendingToST(true);
+    setStFeedback(null);
+    try {
+      const buffer = await baseBlob.arrayBuffer();
+      const newBuffer = injectTavernData(buffer, getNormalizedExportData());
+      const pngBlob = new Blob([newBuffer], { type: 'image/png' });
+
+      const formData = new FormData();
+      formData.append('avatar', pngBlob, `${getSafeFilename(character.name)}.png`);
+
+      const headers: Record<string, string> = {};
+      if (aiSettings.sillyTavernApiKey) {
+        // Many ST versions require X-API-KEY or Authorization
+        // We can pass both or just one, typically X-API-KEY or Bearer
+        headers['X-API-KEY'] = aiSettings.sillyTavernApiKey;
+        headers['Authorization'] = `Bearer ${aiSettings.sillyTavernApiKey}`;
+      }
+
+      const res = await fetch(`${stUrl}/api/characters/import`, {
+        method: 'POST',
+        body: formData,
+        headers
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      }
+
+      setStFeedback({ msg: '发送成功！', type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      if (err.message.includes('Failed to fetch')) {
+        setStFeedback({ msg: '发送失败: 无法连接。请确保酒馆已开启"API操作"并允许跨域(CORS)。', type: 'error' });
+      } else {
+        setStFeedback({ msg: `发送失败: ${err.message}`, type: 'error' });
+      }
+    } finally {
+      setIsSendingToST(false);
+      setTimeout(() => setStFeedback(null), 3000);
+    }
+  };
+
   const handleDelete = async () => {
     await deleteCharacter(id);
     onBack();
@@ -287,7 +354,17 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex gap-2">
-            <button onClick={handleExportPng} className="p-2 rounded-full hover:bg-white/10 transition" title="导出 PNG">
+            {!isPreset && !isStandaloneWorldbook && !isTheme && (
+              <button 
+                onClick={handleSendToST} 
+                className="p-2 rounded-full hover:bg-white/10 transition relative group" 
+                title="发送到酒馆"
+                disabled={isSendingToST}
+              >
+                {isSendingToST ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 text-blue-400 group-hover:text-blue-300" />}
+              </button>
+            )}
+            <button onClick={handleExportPng} className="p-2 rounded-full hover:bg-white/10 transition" title="导出">
               <Download className="w-5 h-5" />
             </button>
             <button onClick={() => setShowDeleteConfirm(true)} className="p-2 rounded-full hover:bg-red-500/20 text-red-400 transition" title="删除">
@@ -298,6 +375,21 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
         {/* Alerts & Modals */}
         <AnimatePresence>
+          {stFeedback && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className={`fixed top-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm backdrop-blur-md z-[60] flex items-center gap-2 shadow-xl border ${
+                stFeedback.type === 'success' 
+                  ? 'bg-green-500/20 border-green-500/50 text-green-200' 
+                  : 'bg-red-500/20 border-red-500/50 text-red-200 w-[90%] max-w-sm text-center'
+              }`}
+            >
+              {stFeedback.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <XIcon className="w-4 h-4 shrink-0" />}
+              <span className="truncate whitespace-normal">{stFeedback.msg}</span>
+            </motion.div>
+          )}
           {showExportAlert && (
             <motion.div
               initial={{ opacity: 0, y: -20 }}
