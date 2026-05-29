@@ -947,31 +947,31 @@ export function ChatViewer({ onClose, initialChatId, singleMode }: { onClose: ()
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ duration: 0.2 }}
-                    className="flex items-center justify-between px-2 shrink-0 flex-wrap gap-2 mb-4"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between px-2 shrink-0 gap-3 mb-4"
                   >
-                    <h3 className="text-lg font-medium text-white">所有记录 ({savedChats.length})</h3>
+                    <h3 className="text-lg font-medium text-white shrink-0">所有记录 ({savedChats.length})</h3>
                     
-                    <div className="flex items-center gap-2">
-                      <div className="relative">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <div className="relative flex-1 sm:flex-initial">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
                         <input
                           type="text"
                           placeholder="搜索..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-24 sm:w-40 pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-white focus:outline-none focus:border-purple-500/50 transition-colors placeholder:text-white/30"
+                          className="w-full sm:w-40 pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-white focus:outline-none focus:border-purple-500/50 transition-colors placeholder:text-white/30"
                         />
                       </div>
                       <button
                         onClick={toggleDuplicatesMode}
-                        className={`p-2 border rounded-full transition shrink-0 ${showDuplicatesOnly ? 'bg-orange-500/20 border-orange-500/50 text-orange-400' : 'bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10'}`}
+                        className={`p-2.5 border rounded-full transition shrink-0 flex items-center justify-center ${showDuplicatesOnly ? 'bg-orange-500/20 border-orange-500/50 text-orange-400' : 'bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10'}`}
                         title="重复项"
                       >
                         <Copy className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full text-sm transition flex items-center gap-2"
+                        className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full text-sm transition flex items-center justify-center gap-2 shrink-0"
                       >
                         <UploadCloud className="w-4 h-4" />
                         <span className="hidden sm:inline">导入</span>
