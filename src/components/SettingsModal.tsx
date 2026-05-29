@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Key, ExternalLink, Save, Globe, CheckCircle2, AlertCircle, Loader2, RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { X, Key, ExternalLink, Save, Globe, CheckCircle2, AlertCircle, Loader2, RefreshCw, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { AISettings, CustomEndpoint, getAISettings, saveAISettings, testConnection, fetchCustomModels } from '../lib/ai';
 
 export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<AISettings>(getAISettings());
   const [activeTab, setActiveTab] = useState<'api' | 'st'>('api');
+  const [isStSetupOpen, setIsStSetupOpen] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMsg, setTestMsg] = useState('');
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -260,6 +262,59 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-4">
                 <p className="text-xs text-white/50">用于一键发送角色卡至本地的 SillyTavern。如果发送失败，请确保酒馆已开启「API操作」并允许跨域请求 (CORS)。</p>
                 
+                {/* Collapsible Setup Instructions */}
+                <div className="bg-white/5 rounded-xl overflow-hidden border border-white/5">
+                  <button 
+                    onClick={() => setIsStSetupOpen(!isStSetupOpen)}
+                    className="w-full flex items-center justify-between p-3 text-sm font-medium text-white/80 hover:bg-white/10 transition-colors"
+                  >
+                    <span>配置教程 (需要修改的地方)</span>
+                    {isStSetupOpen ? <ChevronUp className="w-4 h-4 text-white/50" /> : <ChevronDown className="w-4 h-4 text-white/50" />}
+                  </button>
+                  <AnimatePresence>
+                    {isStSetupOpen && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }} 
+                        animate={{ height: 'auto', opacity: 1 }} 
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-4 pt-0 text-xs text-white/60 space-y-4 border-t border-white/5 mt-2">
+                          <p className="text-white/80 font-medium">请在酒馆目录的 <code>config.yaml</code> 文件里修改：</p>
+                          
+                          <div className="space-y-1">
+                            <p className="font-medium text-white/70">1. 关闭 CSRF 拦截：</p>
+                            <p>找到 <code className="text-white/80">disableCsrfProtection: false</code> 这一行，把它改成 <code className="text-white/80">true</code>：</p>
+                            <div className="bg-black/40 p-2 rounded border border-white/5 font-mono text-white/70">
+                              disableCsrfProtection: true
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <p className="font-medium text-white/70">2. 添加跨域允许 (CORS)：</p>
+                            <p>在 <code className="text-white/80">disableCsrfProtection: true</code> 的下面直接另起一行加上：</p>
+                            <div 
+                              className="bg-black/40 p-2 rounded border border-white/5 font-mono text-white/70 relative group cursor-pointer hover:bg-black/60 transition-colors"
+                              onClick={() => {
+                                navigator.clipboard.writeText('# corsAllowedOrigins:\n#   - "*"');
+                                setIsCopied(true);
+                                setTimeout(() => setIsCopied(false), 2000);
+                              }}
+                              title="点击复制"
+                            >
+                              <pre><code>{`# corsAllowedOrigins:\n#   - "*"`}</code></pre>
+                              <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] bg-white/10 px-1.5 py-0.5 rounded">
+                                {isCopied ? '已复制' : '点击复制'}
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-white/40 mt-1">（*号内可替换本站网址）</p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-2">
                     酒馆 API 地址

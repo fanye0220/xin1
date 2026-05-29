@@ -385,17 +385,17 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
         <AnimatePresence>
           {stFeedback && (
             <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className={`fixed top-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm backdrop-blur-md z-[60] flex items-center gap-2 shadow-xl border ${
+              initial={{ opacity: 0, y: -20, x: '-50%' }}
+              animate={{ opacity: 1, y: 0, x: '-50%' }}
+              exit={{ opacity: 0, y: -20, x: '-50%' }}
+              className={`fixed top-20 left-1/2 px-4 py-3 rounded-xl text-sm shadow-xl z-[60] flex items-start sm:items-center gap-2 w-[90vw] sm:w-auto max-w-sm border ${
                 stFeedback.type === 'success' 
-                  ? 'bg-green-500/20 border-green-500/50 text-green-200' 
-                  : 'bg-red-500/20 border-red-500/50 text-red-200 w-[90%] max-w-sm text-center'
+                  ? 'bg-green-100 dark:bg-green-900 border-green-200 dark:border-green-800 text-green-800 dark:text-green-100' 
+                  : 'bg-red-100 dark:bg-red-900 border-red-200 dark:border-red-800 text-red-800 dark:text-red-100'
               }`}
             >
-              {stFeedback.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <XIcon className="w-4 h-4 shrink-0" />}
-              <span className="truncate whitespace-normal">{stFeedback.msg}</span>
+              {stFeedback.type === 'success' ? <Check className="w-5 h-5 shrink-0 mt-0.5 sm:mt-0" /> : <XIcon className="w-5 h-5 shrink-0 mt-0.5 sm:mt-0" />}
+              <span className="flex-1 break-words">{stFeedback.msg}</span>
             </motion.div>
           )}
           {showExportAlert && (
