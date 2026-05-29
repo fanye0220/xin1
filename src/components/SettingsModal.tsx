@@ -5,6 +5,7 @@ import { AISettings, CustomEndpoint, getAISettings, saveAISettings, testConnecti
 
 export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<AISettings>(getAISettings());
+  const [activeTab, setActiveTab] = useState<'api' | 'st'>('api');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMsg, setTestMsg] = useState('');
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -122,17 +123,33 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
           <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5 shrink-0">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <Key className="w-5 h-5 text-purple-400" />
-              API 设置
+              设置
             </h2>
             <button onClick={onClose} className="p-1 text-white/50 hover:text-white hover:bg-white/10 rounded-lg transition">
               <X className="w-5 h-5" />
             </button>
           </div>
+
+          <div className="flex px-6 pt-2 border-b border-white/10 shrink-0 gap-6">
+            <button 
+              onClick={() => setActiveTab('api')}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'api' ? 'border-blue-500 text-blue-400' : 'border-transparent text-white/50 hover:text-white/80'}`}
+            >
+              API 设置
+            </button>
+            <button 
+              onClick={() => setActiveTab('st')}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'st' ? 'border-blue-500 text-blue-400' : 'border-transparent text-white/50 hover:text-white/80'}`}
+            >
+              酒馆联动
+            </button>
+          </div>
           
           <div className="p-6 space-y-6 overflow-y-auto">
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-              
-              {/* Profile Selector */}
+            {activeTab === 'api' && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                
+                {/* Profile Selector */}
               <div className="flex items-center gap-2">
                 <select
                   value={settings.activeCustomId}
@@ -236,41 +253,56 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                     />
                   )}
                 </div>
-            </motion.div>
+              </motion.div>
+            )}
 
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="pt-4 border-t border-white/10 space-y-4">
-              <h3 className="text-sm font-medium text-white/80">SillyTavern (酒馆) 联动设置</h3>
-              <p className="text-xs text-white/50">用于一键发送角色卡至本地的 SillyTavern。如果失败，请检查酒馆的「API操作」功能是否开启，并允许跨域请求。</p>
-              
-              <div>
-                <label className="block text-sm font-medium text-white/80 mb-2">
-                  酒馆 API 地址
-                </label>
-                <input
-                  type="text"
-                  value={settings.sillyTavernUrl || ''}
-                  onChange={(e) => setSettings({ ...settings, sillyTavernUrl: e.target.value })}
-                  placeholder="例如: http://127.0.0.1:8000"
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-blue-500 transition-colors text-sm"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-white/80 mb-2">
-                  酒馆 API Key (选填)
-                </label>
-                <input
-                  type="password"
-                  value={settings.sillyTavernApiKey || ''}
-                  onChange={(e) => setSettings({ ...settings, sillyTavernApiKey: e.target.value })}
-                  placeholder="如果开启了密码保护，请填入"
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-blue-500 transition-colors text-sm"
-                />
-              </div>
-            </motion.div>
+            {activeTab === 'st' && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-4">
+                <p className="text-xs text-white/50">用于一键发送角色卡至本地的 SillyTavern。如果发送失败，请确保酒馆已开启「API操作」并允许跨域请求 (CORS)。</p>
+                
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-2">
+                    酒馆 API 地址
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.sillyTavernUrl || ''}
+                    onChange={(e) => setSettings({ ...settings, sillyTavernUrl: e.target.value })}
+                    placeholder="例如: http://127.0.0.1:8000"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-2">
+                    Username (账号)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.sillyTavernUsername || ''}
+                    onChange={(e) => setSettings({ ...settings, sillyTavernUsername: e.target.value })}
+                    placeholder="如果你在酒馆设置了基础认证账号"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-2">
+                    Password (密码)
+                  </label>
+                  <input
+                    type="password"
+                    value={settings.sillyTavernPassword || ''}
+                    onChange={(e) => setSettings({ ...settings, sillyTavernPassword: e.target.value })}
+                    placeholder="如果你在酒馆设置了基础认证密码"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+                </div>
+              </motion.div>
+            )}
 
             {/* Test Connection Result */}
-            {testStatus !== 'idle' && (
+            {testStatus !== 'idle' && activeTab === 'api' && (
               <div className={`p-3 rounded-xl flex items-start gap-2 text-sm ${
                 testStatus === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 
                 testStatus === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 
@@ -285,13 +317,17 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
           </div>
 
           <div className="p-4 border-t border-white/10 bg-white/5 flex justify-between gap-3 shrink-0">
-            <button
-              onClick={handleTest}
-              disabled={testStatus === 'testing'}
-              className="px-4 py-2 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 text-white transition disabled:opacity-50"
-            >
-              测试连接
-            </button>
+            {activeTab === 'api' ? (
+              <button
+                onClick={handleTest}
+                disabled={testStatus === 'testing'}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 text-white transition disabled:opacity-50"
+              >
+                测试连接
+              </button>
+            ) : (
+              <div></div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={onClose}

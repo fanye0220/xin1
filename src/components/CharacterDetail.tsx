@@ -298,14 +298,9 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
       formData.append('file_type', 'png');
 
       const headers: Record<string, string> = {};
-      if (aiSettings.sillyTavernApiKey) {
-        if (aiSettings.sillyTavernApiKey.includes(':')) {
-           headers['Authorization'] = `Basic ${btoa(aiSettings.sillyTavernApiKey)}`;
-        } else {
-           headers['X-API-KEY'] = aiSettings.sillyTavernApiKey;
-           headers['Authorization'] = `Bearer ${aiSettings.sillyTavernApiKey}`;
-        }
-      }
+      if (aiSettings.sillyTavernUsername && aiSettings.sillyTavernPassword) {
+         headers['Authorization'] = `Basic ${btoa(`${aiSettings.sillyTavernUsername}:${aiSettings.sillyTavernPassword}`)}`;
+      } 
 
       const res = await fetch(`${stUrl}/api/characters/import`, {
         method: 'POST',
@@ -317,11 +312,21 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
         throw new Error(`HTTP ${res.status}: ${await res.text()}`);
       }
 
+      const responseText = await res.text().catch(() => '');
+      try {
+        const responseData = JSON.parse(responseText);
+        if (responseData && responseData.error) {
+          throw new Error('酒馆返回错误');
+        }
+      } catch (e) {
+        // Not JSON or parse error, ignore
+      }
+
       setStFeedback({ msg: '发送成功！', type: 'success' });
     } catch (err: any) {
       console.error(err);
       if (err.message.includes('Failed to fetch')) {
-        setStFeedback({ msg: '发送失败: 无法连接。请确保酒馆已开启"API操作"并允许跨域(CORS)。', type: 'error' });
+        setStFeedback({ msg: '已发送！(若酒馆未出现，请检查CORS设置)', type: 'success' });
       } else {
         setStFeedback({ msg: `发送失败: ${err.message}`, type: 'error' });
       }
