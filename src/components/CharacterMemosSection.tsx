@@ -7,6 +7,71 @@ import remarkGfm from 'remark-gfm';
 
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    if (!src) return null;
+
+    return (
+        <>
+            <img 
+                src={src} 
+                alt={alt} 
+                className="cursor-zoom-in rounded-lg max-h-[60vh] object-contain hover:opacity-90 transition"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(true);
+                }}
+            />
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[120] bg-black/95 flex items-center justify-center cursor-zoom-out"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsExpanded(false);
+                        }}
+                    >
+                        <TransformWrapper
+                            initialScale={1}
+                            minScale={0.5}
+                            maxScale={5}
+                            centerOnInit
+                        >
+                            <TransformComponent 
+                                wrapperClass="w-full h-full" 
+                                wrapperStyle={{ width: '100%', height: '100%' }}
+                                contentClass="w-full h-full flex items-center justify-center"
+                                contentStyle={{ width: '100%', height: '100%' }}
+                            >
+                                <img 
+                                    src={src} 
+                                    alt={alt} 
+                                    className="w-full h-full object-contain cursor-grab active:cursor-grabbing"
+                                    onClick={(e) => e.stopPropagation()} 
+                                    draggable={false}
+                                />
+                            </TransformComponent>
+                        </TransformWrapper>
+                        <button 
+                            className="absolute top-4 right-4 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition z-10"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsExpanded(false);
+                            }}
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </>
+    );
+}
+
 export function CharacterMemosSection({ characterId }: { characterId: string }) {
   const [memos, setMemos] = useState<CharacterMemo[]>([]);
   const [isAddingMode, setIsAddingMode] = useState(false);
@@ -165,14 +230,14 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6"
+            className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 sm:p-6"
             onClick={() => setIsAddingMode(false)}
           >
             <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="bg-slate-900 sm:border border-white/10 sm:rounded-2xl flex flex-col w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-3xl overflow-hidden shadow-2xl"
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-slate-900 border border-white/10 shadow-2xl rounded-2xl flex flex-col w-full max-h-[85vh] max-w-3xl overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
@@ -313,14 +378,14 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
              initial={{ opacity: 0 }}
              animate={{ opacity: 1 }}
              exit={{ opacity: 0 }}
-             className="fixed inset-0 z-[100] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6"
+             className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 sm:p-6"
              onClick={() => setReadingMemo(null)}
            >
              <motion.div
-               initial={{ opacity: 0, y: 20 }}
-               animate={{ opacity: 1, y: 0 }}
-               exit={{ opacity: 0, y: 20 }}
-               className="bg-slate-900 flex flex-col w-full h-full sm:h-auto sm:border border-white/10 sm:rounded-3xl shadow-2xl sm:max-w-4xl sm:max-h-[85vh] overflow-hidden"
+               initial={{ scale: 0.95, opacity: 0, y: 20 }}
+               animate={{ scale: 1, opacity: 1, y: 0 }}
+               exit={{ scale: 0.95, opacity: 0, y: 20 }}
+               className="bg-slate-900 border border-white/10 shadow-2xl rounded-2xl flex flex-col w-full max-h-[85vh] max-w-4xl overflow-hidden"
                onClick={e => e.stopPropagation()}
              >
                <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
@@ -357,8 +422,13 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                        </div>
                     </div>
                   ) : (
-                    <div className="prose prose-invert prose-base sm:prose-lg max-w-none text-white/80 leading-relaxed markdown-body">
-                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <div className="prose prose-invert prose-base sm:prose-lg max-w-none text-white/80 leading-relaxed markdown-body" onClick={e => e.stopPropagation()}>
+                       <ReactMarkdown 
+                           remarkPlugins={[remarkGfm]}
+                           components={{
+                               img: ({node, ...props}) => <MarkdownImage src={props.src} alt={props.alt} />
+                           }}
+                       >
                             {readingMemo.content}
                        </ReactMarkdown>
                     </div>

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, UploadCloud, FileJson, Image as ImageIcon, Folder, AlertCircle, FileArchive } from 'lucide-react';
+import { X, UploadCloud, FileJson, Image as ImageIcon, AlertCircle, FileArchive } from 'lucide-react';
 import { extractTavernData } from '../lib/png';
 import { saveCharacter, saveCharacters, CharacterCard, getFolders, saveFolder, Folder as DBFolder } from '../lib/db';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
@@ -30,7 +30,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
   const [importErrors, setImportErrors] = useState<{file: string, error: string}[]>([]);
   const [progress, setProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const getOrCreateNestedFolder = async (pathParts: string[], startParentId?: string | null): Promise<string | undefined> => {
     if (pathParts.length === 0) return startParentId || undefined;
@@ -516,19 +515,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-col items-center gap-2">
-                  <button 
-                    onClick={() => folderInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl transition text-sm text-slate-300"
-                  >
-                    <Folder className="w-4 h-4" />
-                    选择单个文件夹 (仅限电脑端)
-                  </button>
-                  <p className="text-xs text-slate-500 text-center">
-                    提示：手机端受系统限制无法直接选择文件夹，请将文件夹打包成 ZIP 压缩包后上传，或直接多选文件。
-                  </p>
-                </div>
-
                 {error && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -548,14 +534,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
               accept=".png,.jpg,.jpeg,.webp,.gif,.json,.zip,image/*,application/json,application/zip,application/x-zip-compressed"
               className="hidden"
               multiple
-            />
-            <input
-              type="file"
-              ref={folderInputRef}
-              onChange={(e) => e.target.files && handleFiles(e.target.files)}
-              className="hidden"
-              multiple
-              {...({ webkitdirectory: "", directory: "" } as any)}
             />
           </motion.div>
         </>
