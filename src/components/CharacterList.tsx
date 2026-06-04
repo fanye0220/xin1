@@ -657,8 +657,18 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     }
   };
 
-  const addCharacterToZip = async (char: CharacterCard, zipFolder: JSZip) => {
-    const safeName = getSafeFilename(char.name);
+  const addCharacterToZip = async (char: CharacterCard, zipFolder: JSZip, folderPath: string[] = [], usedNamesTracker: Set<string> = new Set()) => {
+    const baseSafeName = getSafeFilename(char.name);
+    let safeName = baseSafeName;
+    
+    let counter = 1;
+    const currentFolderStr = folderPath.join('/');
+    while (usedNamesTracker.has(`${currentFolderStr}/${safeName}`)) {
+        safeName = `${baseSafeName}_同名卡${counter}`;
+        counter++;
+    }
+    usedNamesTracker.add(`${currentFolderStr}/${safeName}`);
+
     const exportFileName = `${safeName}.png`;
     
     const rawData = char.data;
@@ -793,6 +803,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       
       let chunkIndex = 1;
       let currentCount = 0;
+      const usedNamesTracker = new Set<string>();
       
       for (let i = 0; i < totalTasks; i += CHUNK_SIZE) {
         const chunkTasks = uniqueTasks.slice(i, i + CHUNK_SIZE);
@@ -805,7 +816,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
             for (const p of task.path) {
               currentZip = currentZip.folder(p) || currentZip;
             }
-            await addCharacterToZip(char, currentZip);
+            await addCharacterToZip(char, currentZip, task.path, usedNamesTracker);
           }
           currentCount++;
           setExportProgress(prev => ({ ...prev, current: currentCount }));
