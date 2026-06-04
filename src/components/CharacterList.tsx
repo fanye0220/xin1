@@ -138,6 +138,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [pageSize, setPageSize] = useState(() => Number(localStorage.getItem('tavern_pageSize')) || 50);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'masonry'>(() => (localStorage.getItem('tavern_viewMode') as 'grid' | 'list' | 'masonry') || 'grid');
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   
   useEffect(() => {
     localStorage.setItem('tavern_viewMode', viewMode);
@@ -747,56 +749,89 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const handleBatchExport = async () => {
     if (selectedIds.size === 0) return;
     
+    setIsExporting(true);
     try {
-      const zip = new JSZip();
-      
       // Get all folders to resolve paths
       const allFolders = await getFolders();
+      const tasks: { charId: string, path: string[] }[] = [];
       
       for (const id of selectedIds) {
         const folder = allFolders.find(f => f.id === id);
         if (folder) {
           // Export all characters in this folder and its subfolders
-          const exportFolderRecursive = async (currentFolderId: string, currentZip: JSZip) => {
+          const collectFolderRecursive = async (currentFolderId: string, currentPath: string[]) => {
             const { characters: folderChars } = await getCharacters(1, 10000, currentFolderId);
             for (const char of folderChars) {
-              await addCharacterToZip(char, currentZip);
+              tasks.push({ charId: char.id, path: currentPath });
             }
             
             const subFolders = allFolders.filter(f => f.parentId === currentFolderId);
             for (const subFolder of subFolders) {
-              const subZip = currentZip.folder(getSafeFilename(subFolder.name));
-              if (subZip) {
-                await exportFolderRecursive(subFolder.id, subZip);
-              }
+              await collectFolderRecursive(subFolder.id, [...currentPath, getSafeFilename(subFolder.name)]);
             }
           };
           
-          const folderZip = zip.folder(getSafeFilename(folder.name));
-          if (folderZip) {
-            await exportFolderRecursive(folder.id, folderZip);
-          }
+          await collectFolderRecursive(folder.id, [getSafeFilename(folder.name)]);
         } else {
-          const char = await getCharacter(id);
-          if (char) {
-            await addCharacterToZip(char, zip);
-          }
+          tasks.push({ charId: id, path: [] });
+        }
+      }
+
+      // Remove duplicate by charId (in case of folder and character both selected)
+      const uniqueCharIds = new Set<string>();
+      const uniqueTasks: typeof tasks = [];
+      for (const task of tasks) {
+        if (!uniqueCharIds.has(task.charId)) {
+          uniqueCharIds.add(task.charId);
+          uniqueTasks.push(task);
         }
       }
       
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Tavern_Export_${new Date().toISOString().slice(0, 10)}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const CHUNK_SIZE = 50;
+      const totalTasks = uniqueTasks.length;
+      setExportProgress({ current: 0, total: totalTasks });
+      
+      let chunkIndex = 1;
+      let currentCount = 0;
+      
+      for (let i = 0; i < totalTasks; i += CHUNK_SIZE) {
+        const chunkTasks = uniqueTasks.slice(i, i + CHUNK_SIZE);
+        const zip = new JSZip();
+        
+        for (const task of chunkTasks) {
+          const char = await getCharacter(task.charId);
+          if (char) {
+            let currentZip = zip;
+            for (const p of task.path) {
+              currentZip = currentZip.folder(p) || currentZip;
+            }
+            await addCharacterToZip(char, currentZip);
+          }
+          currentCount++;
+          setExportProgress(prev => ({ ...prev, current: currentCount }));
+        }
+        
+        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        const suffix = totalTasks > CHUNK_SIZE ? `_Part${chunkIndex}` : '';
+        a.download = `Tavern_Export_${new Date().toISOString().slice(0, 10)}${suffix}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        chunkIndex++;
+        // Allow memory cleanup and UI thread update before processing next chunk
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
       
       setSelectionMode(false);
       setSelectedIds(new Set());
     } catch (e) {
       console.error("Batch export failed", e);
       alert("导出失败，请重试");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -845,6 +880,35 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
   return (
     <div className="pb-32 min-h-full bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+      <AnimatePresence>
+        {isExporting && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          >
+            <div className="bg-slate-900 p-6 sm:p-8 rounded-2xl max-w-sm w-full border border-white/10 shadow-2xl text-center">
+              <Download className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-bounce" />
+              <h3 className="text-xl font-bold mb-2">正在打包导出</h3>
+              <p className="text-white/60 mb-6 text-sm">
+                为了防止崩溃，大量角色将被分块导出。<br/>
+                请勿关闭此页面。
+              </p>
+              
+              <div className="w-full bg-slate-800 rounded-full h-3 mb-2 overflow-hidden shadow-inner">
+                <div 
+                  className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.max(2, Math.min(100, (exportProgress.current / exportProgress.total) * 100))}%` }}
+                />
+              </div>
+              <div className="text-sm font-medium text-blue-400">
+                {exportProgress.current} / {exportProgress.total}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverUpload} />
       <motion.header 
         initial={{ y: 0 }}
@@ -1740,7 +1804,7 @@ function CharacterCardItem({
       isMounted = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [char.avatarBlob, char.hasBlobsSeparated, char.id, isInView]);
+  }, [char.avatarBlob, char.hasBlobsSeparated, char.id, isInView, char.updatedAt]);
 
   const handleTouchStart = () => {
     isLongPress.current = false;

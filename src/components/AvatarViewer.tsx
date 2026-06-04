@@ -173,10 +173,23 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       console.error("Failed to inject data into history avatar", err);
     }
 
+    const newHistory = (character.avatarHistory || []).map(b => 
+      b === previewBlob || (b.size === previewBlob.size && b.type === previewBlob.type) 
+        ? finalFile 
+        : b
+    );
+    
+    // Also add to beginning if it wasn't there
+    const isCurrentInHistory = newHistory.some(b => b === finalFile || (b.size === finalFile.size && b.type === finalFile.type));
+    if (!isCurrentInHistory && character.avatarBlob) {
+       newHistory.unshift(character.avatarBlob); // push old avatar to history
+    }
+
     const updatedCharacter = {
       ...character,
       avatarBlob: finalFile,
-      originalFile: finalFile
+      originalFile: finalFile,
+      avatarHistory: newHistory
     };
 
     await saveCharacter(updatedCharacter);
