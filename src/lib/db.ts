@@ -434,14 +434,27 @@ export async function getCharacters(
   const paginatedMeta = allMeta.slice((page - 1) * pageSize, page * pageSize);
   
   // Now fetch full objects ONLY for the paginated slice
-  const fetchTx = db.transaction('characters', 'readonly');
-  const fetchStore = fetchTx.store;
   const characters: CharacterCard[] = [];
   
-  for (const meta of paginatedMeta) {
-    const fullChar = await fetchStore.get(meta.id);
-    if (fullChar) {
-      characters.push(fullChar);
+  // Optimization for large page sizes: fetch all and filter in memory, or fetch in parallel chunks
+  if (paginatedMeta.length > 50) {
+    const allChars = await db.getAll('characters');
+    const charMap = new Map();
+    for (const c of allChars) {
+      charMap.set(c.id, c);
+    }
+    for (const meta of paginatedMeta) {
+      const fullChar = charMap.get(meta.id);
+      if (fullChar) characters.push(fullChar);
+    }
+  } else {
+    const fetchTx = db.transaction('characters', 'readonly');
+    const fetchStore = fetchTx.store;
+    for (const meta of paginatedMeta) {
+      const fullChar = await fetchStore.get(meta.id);
+      if (fullChar) {
+        characters.push(fullChar);
+      }
     }
   }
   
@@ -727,8 +740,6 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
       precomputed.push({
         id: char.id,
         name,
-        firstMes,
-        desc,
         descClean: desc.replace(/\s+/g, ''),
         firstClean: firstMes.replace(/\s+/g, '')
       });
@@ -736,46 +747,70 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
     cursor = await cursor.continue();
   }
   
-  const groups: string[][] = [];
-  const processedIds = new Set<string>();
+  const buckets = new Map<string, number[]>();
   
   for (let i = 0; i < precomputed.length; i++) {
-    const itemA = precomputed[i];
-    if (processedIds.has(itemA.id)) continue;
+    const c = precomputed[i];
+    const keys: string[] = [];
     
-    const duplicates: string[] = [itemA.id];
-    
-    for (let j = i + 1; j < precomputed.length; j++) {
-      const itemB = precomputed[j];
-      if (processedIds.has(itemB.id)) continue;
-      
-      let isDup = false;
-      
-      if (itemA.name && itemB.name && itemA.name === itemB.name) {
-        if (itemA.descClean && itemB.descClean && itemA.descClean === itemB.descClean) {
-          isDup = true;
-        } else if (itemA.firstClean && itemB.firstClean && itemA.firstClean === itemB.firstClean) {
-          isDup = true;
-        } else if (!itemA.descClean && !itemB.descClean && !itemA.firstClean && !itemB.firstClean) {
-          isDup = true;
-        }
-      } else {
-        if (itemA.descClean && itemB.descClean && itemA.firstClean && itemB.firstClean && 
-            itemA.descClean === itemB.descClean && itemA.firstClean === itemB.firstClean && 
-            itemA.descClean.length > 50) {
-          isDup = true;
-        }
-      }
-      
-      if (isDup) {
-        duplicates.push(itemB.id);
-        processedIds.add(itemB.id);
-      }
+    if (c.name) {
+      if (c.descClean) keys.push(`N_D:${c.name}:::${c.descClean}`);
+      if (c.firstClean) keys.push(`N_F:${c.name}:::${c.firstClean}`);
+      if (!c.descClean && !c.firstClean) keys.push(`N_E:${c.name}`);
+    }
+    if (c.descClean && c.firstClean && c.descClean.length > 50) {
+      keys.push(`D_F:${c.descClean}:::${c.firstClean}`);
     }
     
-    if (duplicates.length > 1) {
-      processedIds.add(itemA.id);
-      groups.push(duplicates);
+    for (const key of keys) {
+      let list = buckets.get(key);
+      if (!list) {
+        list = [];
+        buckets.set(key, list);
+      }
+      list.push(i);
+    }
+  }
+
+  const parent = new Int32Array(precomputed.length);
+  for (let i = 0; i < precomputed.length; i++) parent[i] = i;
+  
+  const find = (i: number): number => {
+    if (parent[i] === i) return i;
+    return parent[i] = find(parent[i]);
+  };
+  
+  const union = (i: number, j: number) => {
+    const rootI = find(i);
+    const rootJ = find(j);
+    if (rootI !== rootJ) {
+      parent[rootI] = rootJ;
+    }
+  };
+
+  for (const list of buckets.values()) {
+    if (list.length > 1) {
+      for (let j = 1; j < list.length; j++) {
+        union(list[0], list[j]);
+      }
+    }
+  }
+
+  const groupsMap = new Map<number, string[]>();
+  for (let i = 0; i < precomputed.length; i++) {
+    const root = find(i);
+    let group = groupsMap.get(root);
+    if (!group) {
+      group = [];
+      groupsMap.set(root, group);
+    }
+    group.push(precomputed[i].id);
+  }
+
+  const groups: string[][] = [];
+  for (const group of groupsMap.values()) {
+    if (group.length > 1) {
+      groups.push(group);
     }
   }
   
