@@ -787,7 +787,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         }
       }
       
-      const CHUNK_SIZE = 50;
+      const CHUNK_SIZE = 100;
       const totalTasks = uniqueTasks.length;
       setExportProgress({ current: 0, total: totalTasks });
       
