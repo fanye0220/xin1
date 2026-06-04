@@ -721,6 +721,22 @@ export interface DuplicateGroup {
   characters: DuplicateCharacter[];
 }
 
+function computeHashAndLength(str: string): { hash: number, length: number } {
+  if (!str) return { hash: 0, length: 0 };
+  let hash = 2166136261;
+  let len = 0;
+  for (let i = 0; i < str.length; i++) {
+    const charCode = str.charCodeAt(i);
+    if (charCode <= 32 && (charCode === 32 || charCode === 9 || charCode === 10 || charCode === 13)) {
+      continue;
+    }
+    hash ^= charCode;
+    hash = Math.imul(hash, 16777619);
+    len++;
+  }
+  return { hash: hash >>> 0, length: len };
+}
+
 export async function findDuplicates(): Promise<DuplicateGroup[]> {
   const db = await initDB();
   const precomputed: any[] = [];
@@ -729,6 +745,7 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
   const store = tx.store;
   let cursor = await store.openCursor();
   
+  let count = 0;
   while (cursor) {
     const char = cursor.value;
     if (!char.deletedAt) {
@@ -737,14 +754,25 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
       const desc = data.description || '';
       const name = (char.name || data.name || '').trim().toLowerCase();
       
+      const descInfo = computeHashAndLength(desc);
+      const firstInfo = computeHashAndLength(firstMes);
+      
       precomputed.push({
         id: char.id,
         name,
-        descClean: desc.replace(/\s+/g, ''),
-        firstClean: firstMes.replace(/\s+/g, '')
+        descHash: descInfo.hash,
+        descLen: descInfo.length,
+        firstHash: firstInfo.hash,
+        firstLen: firstInfo.length
       });
     }
     cursor = await cursor.continue();
+    
+    count++;
+    if (count % 100 === 0) {
+      // Yield to main thread every 100 records to prevent UI freezing
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
   }
   
   const buckets = new Map<string, number[]>();
@@ -754,12 +782,12 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
     const keys: string[] = [];
     
     if (c.name) {
-      if (c.descClean) keys.push(`N_D:${c.name}:::${c.descClean}`);
-      if (c.firstClean) keys.push(`N_F:${c.name}:::${c.firstClean}`);
-      if (!c.descClean && !c.firstClean) keys.push(`N_E:${c.name}`);
+      if (c.descLen > 0) keys.push(`N_D:${c.name}:${c.descHash}`);
+      if (c.firstLen > 0) keys.push(`N_F:${c.name}:${c.firstHash}`);
+      if (c.descLen === 0 && c.firstLen === 0) keys.push(`N_E:${c.name}`);
     }
-    if (c.descClean && c.firstClean && c.descClean.length > 50) {
-      keys.push(`D_F:${c.descClean}:::${c.firstClean}`);
+    if (c.descLen > 50 && c.firstLen > 0) {
+      keys.push(`D_F:${c.descHash}:${c.firstHash}`);
     }
     
     for (const key of keys) {
@@ -769,6 +797,10 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
         buckets.set(key, list);
       }
       list.push(i);
+    }
+    
+    if (i % 500 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
 
