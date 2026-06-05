@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, UploadCloud, FileJson, Image as ImageIcon, AlertCircle, FileArchive } from 'lucide-react';
 import { extractTavernData } from '../lib/png';
-import { saveCharacter, saveCharacters, CharacterCard, getFolders, saveFolder, Folder as DBFolder } from '../lib/db';
+import { saveCharacter, saveCharacters, CharacterCard, getFolders, saveFolder, Folder as DBFolder, getUsedOriginalFileNames } from '../lib/db';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
 import { parseTavernCard } from '../types/tavern';
 import JSZip from 'jszip';
@@ -185,6 +185,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
       errors.push({ file: alt.file.name, error: alt.errorMsg || '作为替换卡面导入失败：未找到所属角色卡' });
     }
     
+    const usedOriginalFileNames = await getUsedOriginalFileNames();
     const charsToSave: CharacterCard[] = [];
     let successCount = 0;
     
@@ -201,6 +202,30 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         
         const data = item.data;
         const file = item.file;
+        
+        let uniqueOriginalFile: File | undefined = undefined;
+        let finalAvatarBlob: File | undefined = undefined;
+        if (file.type === 'image/png' || file.name.endsWith('.png')) {
+           let safeName = file.name;
+           const match = safeName.match(/^(.*?)(\.[^.]+)$/);
+           const baseFileName = match ? match[1] : safeName;
+           const extFileName = match ? match[2] : "";
+           
+           let counter = 1;
+           while (usedOriginalFileNames.has(safeName)) {
+             safeName = `${baseFileName}_${counter}${extFileName}`;
+             counter++;
+           }
+           usedOriginalFileNames.add(safeName);
+           
+           if (safeName !== file.name) {
+             uniqueOriginalFile = new File([file], safeName, { type: file.type, lastModified: file.lastModified });
+             finalAvatarBlob = uniqueOriginalFile;
+           } else {
+             uniqueOriginalFile = file;
+             finalAvatarBlob = file;
+           }
+        }
         
         // Normalize worldbook entries
         if (data.entries) {
@@ -265,10 +290,10 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         const newChar: CharacterCard = {
           id: crypto.randomUUID(),
           name: charName,
-          avatarBlob: (file.type === 'image/png' || file.name.endsWith('.png')) ? file : undefined,
+          avatarBlob: finalAvatarBlob,
           avatarUrlFallback,
           data: data,
-          originalFile: (file.type === 'image/png' || file.name.endsWith('.png')) ? file : undefined,
+          originalFile: uniqueOriginalFile,
           createdAt: Date.now(),
           folderId: targetFolderId,
           avatarHistory: altImagesByMain.get(item) || []

@@ -454,6 +454,11 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
                           </div>
                           <div className="flex-1 min-w-0 pr-6 sm:pr-0">
                             <h4 className="font-bold text-white truncate text-base">{char.name}</h4>
+                            {char.originalFile?.name && (
+                              <div className="text-[10px] text-white/40 truncate select-all" title={char.originalFile.name}>
+                                {char.originalFile.name}
+                              </div>
+                            )}
                             <p className="text-[11px] text-white/50 [.light-theme_&]:text-white/80 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                               <span>修改: {modifiedDate.toLocaleDateString()}</span>
                               <span title="设定字数">描: {(targetData.description || '').length}字</span>

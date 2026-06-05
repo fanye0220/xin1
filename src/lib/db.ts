@@ -548,6 +548,18 @@ export async function getCharacterBlob(id: string) {
   return await db.get('blobs', id);
 }
 
+export async function getUsedOriginalFileNames(): Promise<Set<string>> {
+  const db = await initDB();
+  const blobs = await db.getAll('blobs');
+  const usedNames = new Set<string>();
+  for (const blob of blobs) {
+    if (blob.originalFile && blob.originalFile.name) {
+      usedNames.add(blob.originalFile.name);
+    }
+  }
+  return usedNames;
+}
+
 export async function getCharacter(id: string): Promise<CharacterCard | undefined> {
   const db = await initDB();
   const char = await db.get('characters', id);
@@ -742,13 +754,12 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
   const precomputed: any[] = [];
   
   const tx = db.transaction('characters', 'readonly');
-  const store = tx.store;
-  let cursor = await store.openCursor();
+  const allCharacters = await tx.store.getAll();
+  const charMap = new Map<string, CharacterCard>();
   
-  let count = 0;
-  while (cursor) {
-    const char = cursor.value;
+  for (const char of allCharacters) {
     if (!char.deletedAt) {
+      charMap.set(char.id, char);
       const data = char.data?.data || char.data || {};
       const firstMes = data.first_mes || '';
       const desc = data.description || '';
@@ -765,13 +776,6 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
         firstHash: firstInfo.hash,
         firstLen: firstInfo.length
       });
-    }
-    cursor = await cursor.continue();
-    
-    count++;
-    if (count % 100 === 0) {
-      // Yield to main thread every 100 records to prevent UI freezing
-      await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
   
@@ -847,25 +851,36 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
   }
   
   const finalGroups: DuplicateGroup[] = [];
-  const fetchTx = db.transaction('characters', 'readonly');
-  const fetchStore = fetchTx.store;
+  
+  
+  if (groups.length > 0) {
+    const blobsTx = db.transaction('blobs', 'readonly');
+    const blobsStore = blobsTx.store;
+    const blobPromises: Promise<void>[] = [];
+    
+    for (const groupIds of groups) {
+      for (const id of groupIds) {
+        const char = charMap.get(id);
+        if (char && char.hasBlobsSeparated) {
+             const p = blobsStore.get(char.id).then(blobs => {
+                if (blobs) {
+                  char.avatarBlob = blobs.avatarBlob;
+                  char.originalFile = blobs.originalFile;
+                  char.avatarHistory = blobs.avatarHistory;
+                }
+             });
+             blobPromises.push(p);
+        }
+      }
+    }
+    await Promise.all(blobPromises);
+  }
   
   for (const groupIds of groups) {
     const groupChars: CharacterCard[] = [];
     for (const id of groupIds) {
-      const char = await fetchStore.get(id);
+      const char = charMap.get(id);
       if (char) groupChars.push(char);
-    }
-    
-    for (const char of groupChars) {
-      if (char.hasBlobsSeparated) {
-        const blobs = await db.get('blobs', char.id);
-        if (blobs) {
-          char.avatarBlob = blobs.avatarBlob;
-          char.originalFile = blobs.originalFile;
-          char.avatarHistory = blobs.avatarHistory;
-        }
-      }
     }
     
     const sorted = [...groupChars].sort((a, b) => a.createdAt - b.createdAt);

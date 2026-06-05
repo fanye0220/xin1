@@ -664,8 +664,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     let counter = 1;
     const currentFolderStr = folderPath.join('/');
     while (usedNamesTracker.has(`${currentFolderStr}/${safeName}`)) {
-        counter++;
         safeName = `${baseSafeName}_${counter}`;
+        counter++;
     }
     usedNamesTracker.add(`${currentFolderStr}/${safeName}`);
 
