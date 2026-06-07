@@ -1,9 +1,11 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { X, Upload, Check, Trash2, Download } from 'lucide-react';
-import { CharacterCard, saveCharacter } from '../lib/db';
+import { CharacterCard, saveCharacter, resolveFolderPath } from '../lib/db';
+import { isAndroid, getLocalImageUrl } from '../lib/appBridge';
 
 interface Props {
   isOpen: boolean;
@@ -19,18 +21,24 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let objectUrl: string | null = null;
     if (previewBlob) {
-      const url = URL.createObjectURL(previewBlob);
-      setCurrentAvatarUrl(url);
-      return () => URL.revokeObjectURL(url);
+      objectUrl = URL.createObjectURL(previewBlob);
+      setCurrentAvatarUrl(objectUrl);
     } else if (character.avatarBlob) {
-      const url = URL.createObjectURL(character.avatarBlob);
-      setCurrentAvatarUrl(url);
-      return () => URL.revokeObjectURL(url);
+      objectUrl = URL.createObjectURL(character.avatarBlob);
+      setCurrentAvatarUrl(objectUrl);
+    } else if (character.localFilePath) {
+      setCurrentAvatarUrl(getLocalImageUrl(character.localFilePath, character.updatedAt || character.createdAt));
     } else {
-      setCurrentAvatarUrl(character.avatarUrlFallback || '');
+      const defaultFallback = getFallbackAvatar(character.name || character.id);
+      setCurrentAvatarUrl((character.avatarUrlFallback && !character.avatarUrlFallback.includes('api.dicebear.com') ? character.avatarUrlFallback : defaultFallback));
     }
-  }, [character.avatarBlob, character.avatarUrlFallback, previewBlob]);
+    
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [character.avatarBlob, character.localFilePath, character.avatarUrlFallback, previewBlob, character.updatedAt, character.createdAt]);
 
   useEffect(() => {
     const urls = (character.avatarHistory || []).map(blob => ({
@@ -47,14 +55,22 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
           url: URL.createObjectURL(character.avatarBlob)
         });
       }
+    } else if (character.localFilePath && (!character.avatarHistory || character.avatarHistory.length === 0)) {
+      const localUrl = getLocalImageUrl(character.localFilePath, character.updatedAt || character.createdAt);
+      urls.unshift({
+        blob: null as any,
+        url: localUrl
+      });
     }
 
     setHistoryUrls(urls);
 
     return () => {
-      urls.forEach(item => URL.revokeObjectURL(item.url));
+      urls.forEach(item => {
+        if (item.blob) URL.revokeObjectURL(item.url);
+      });
     };
-  }, [character.avatarHistory, character.avatarBlob]);
+  }, [character.avatarHistory, character.avatarBlob, character.localFilePath]);
 
   const convertToPng = async (blob: Blob): Promise<Blob> => {
     return new Promise((resolve, reject) => {
@@ -101,6 +117,23 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       if (!isCurrentInHistory) {
         newHistory.unshift(character.avatarBlob);
       }
+    } else if (character.localFilePath) {
+      try {
+        const { readLocalFileBuffer } = await import('../lib/appBridge');
+        const buffer = await readLocalFileBuffer(character.localFilePath);
+        if (buffer) {
+          let ext = 'image/png';
+          if (character.localFilePath.endsWith('.jpg') || character.localFilePath.endsWith('.jpeg')) ext = 'image/jpeg';
+          else if (character.localFilePath.endsWith('.webp')) ext = 'image/webp';
+          const blob = new Blob([buffer], { type: ext });
+          const isCurrentInHistory = newHistory.some(b => b.size === blob.size && b.type === blob.type);
+          if (!isCurrentInHistory) {
+             newHistory.unshift(blob);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to read local old avatar", err);
+      }
     }
     
     // Inject current character data into the new PNG so it becomes a valid Tavern card
@@ -121,7 +154,13 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       
       const newBuffer = injectTavernData(buffer, charData);
       
-      finalFile = new File([newBuffer], (file.name || 'avatar').replace(/\.[^/.]+$/, "") + ".png", { type: 'image/png' });
+      const fileName = (file.name || 'avatar').replace(/\.[^/.]+$/, "") + ".png";
+      try {
+        finalFile = new File([newBuffer], fileName, { type: 'image/png' });
+      } catch (e) {
+        finalFile = new Blob([newBuffer], { type: 'image/png' }) as any;
+        Object.defineProperty(finalFile, 'name', { value: fileName });
+      }
     } catch (err) {
       console.error("Failed to inject data into new avatar", err);
     }
@@ -132,8 +171,11 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       ...character,
       avatarBlob: finalFile,
       originalFile: finalFile,
-      avatarHistory: newHistory
+      avatarHistory: newHistory,
+      updatedAt: Date.now()
     };
+    
+    delete updatedCharacter.localFilePath;
 
     await saveCharacter(updatedCharacter);
     onUpdate(updatedCharacter);
@@ -147,10 +189,15 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     if (!previewBlob || previewBlob === character.avatarBlob) return;
 
     let finalFile: File;
-    if (previewBlob instanceof File) {
+    if (typeof File !== 'undefined' && previewBlob instanceof File) {
       finalFile = previewBlob;
     } else {
-      finalFile = new File([previewBlob], 'avatar.png', { type: previewBlob.type });
+      try {
+        finalFile = new File([previewBlob], 'avatar.png', { type: previewBlob.type });
+      } catch (e) {
+        finalFile = new Blob([previewBlob], { type: previewBlob.type }) as any;
+        Object.defineProperty(finalFile, 'name', { value: 'avatar.png' });
+      }
     }
     
     try {
@@ -168,29 +215,27 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       
       const newBuffer = injectTavernData(buffer, charData);
       
-      finalFile = new File([newBuffer], 'avatar.png', { type: 'image/png' });
+      try {
+        finalFile = new File([newBuffer], 'avatar.png', { type: 'image/png' });
+      } catch (e) {
+        finalFile = new Blob([newBuffer], { type: 'image/png' }) as any;
+        Object.defineProperty(finalFile, 'name', { value: 'avatar.png' });
+      }
     } catch (err) {
       console.error("Failed to inject data into history avatar", err);
     }
 
-    const newHistory = (character.avatarHistory || []).map(b => 
-      b === previewBlob || (b.size === previewBlob.size && b.type === previewBlob.type) 
-        ? finalFile 
-        : b
-    );
-    
-    // Also add to beginning if it wasn't there
-    const isCurrentInHistory = newHistory.some(b => b === finalFile || (b.size === finalFile.size && b.type === finalFile.type));
-    if (!isCurrentInHistory && character.avatarBlob) {
-       newHistory.unshift(character.avatarBlob); // push old avatar to history
-    }
+    const newHistory = (character.avatarHistory || []).map(b => b === previewBlob ? finalFile : b);
 
     const updatedCharacter = {
       ...character,
       avatarBlob: finalFile,
       originalFile: finalFile,
-      avatarHistory: newHistory
+      avatarHistory: newHistory,
+      updatedAt: Date.now()
     };
+    
+    delete updatedCharacter.localFilePath;
 
     await saveCharacter(updatedCharacter);
     onUpdate(updatedCharacter);
@@ -215,22 +260,56 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     onUpdate(updatedCharacter);
   };
 
-  const handleExportAvatar = () => {
-    const blobToExport = previewBlob || character.avatarBlob;
-    if (!blobToExport) return;
+  const handleExportAvatar = async () => {
+    let blobToExport = previewBlob || character.avatarBlob;
+    let fallbackBuffer: ArrayBuffer | null = null;
+    let isLocalFile = false;
 
-    const url = URL.createObjectURL(blobToExport);
-    const a = document.createElement('a');
-    a.href = url;
-    
-    // Determine extension based on blob type
+    if (!blobToExport) {
+        if (character.localFilePath && !previewBlob) {
+            isLocalFile = true;
+            // dynamic import appBridge
+            const { readLocalFileBuffer } = await import('../lib/appBridge');
+            fallbackBuffer = await readLocalFileBuffer(character.localFilePath);
+            if (!fallbackBuffer) return;
+        } else {
+            return;
+        }
+    }
+
     let ext = 'png';
-    if (blobToExport.type === 'image/jpeg') ext = 'jpg';
-    else if (blobToExport.type === 'image/webp') ext = 'webp';
-    
-    a.download = `${character.name || 'avatar'}_image.${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (blobToExport && blobToExport.type === 'image/jpeg') ext = 'jpg';
+    else if (blobToExport && blobToExport.type === 'image/webp') ext = 'webp';
+    else if (isLocalFile && character.localFilePath?.endsWith('.jpg')) ext = 'jpg';
+    else if (isLocalFile && character.localFilePath?.endsWith('.jpeg')) ext = 'jpg';
+    else if (isLocalFile && character.localFilePath?.endsWith('.webp')) ext = 'webp';
+
+    const exportName = `${character.name || 'avatar'}_image.${ext}`;
+
+    if (isAndroid()) {
+        try {
+            const { shareFileOnAndroid } = await import('../lib/appBridge');
+            const buffer = blobToExport ? await blobToExport.arrayBuffer() : fallbackBuffer;
+            if (!buffer) return;
+            await shareFileOnAndroid(exportName, buffer, blobToExport ? blobToExport.type : 'image/png');
+        } catch(e) {
+            alert('导出图片失败');
+        }
+        return;
+    }
+
+    if (!blobToExport && fallbackBuffer) {
+        blobToExport = new Blob([fallbackBuffer], { type: `image/${ext==='jpg'?'jpeg':ext}` });
+    }
+
+    if (blobToExport) {
+      const url = URL.createObjectURL(blobToExport);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportName;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   return createPortal(
@@ -243,7 +322,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[60] bg-black flex flex-col"
         >
-      <div className="absolute top-0 left-0 right-0 p-4 pt-7 sm:pt-7 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
+      <div className="absolute top-0 left-0 right-0 p-4 pt-[max(1.75rem,env(safe-area-inset-top))] sm:pt-[max(1.75rem,env(safe-area-inset-top))] flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
         <button onClick={onClose} className="p-2 rounded-full bg-black/40 text-white hover:bg-black/60 transition">
           <X className="w-6 h-6" />
         </button>
@@ -292,6 +371,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
               alt="Current Avatar"
               draggable={false}
               className="w-full h-full object-contain cursor-grab active:cursor-grabbing"
+              
             />
           </TransformComponent>
         </TransformWrapper>
@@ -339,7 +419,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
             <div className="text-white/40 text-sm py-4">暂无历史头像</div>
           )}
           {historyUrls.map((item, index) => {
-            const isActualCurrent = item.blob === character.avatarBlob || (character.avatarBlob && item.blob.size === character.avatarBlob.size && item.blob.type === character.avatarBlob.type);
+            const isActualCurrent = item.blob === character.avatarBlob || (character.avatarBlob && item.blob && item.blob.size === character.avatarBlob.size && item.blob.type === character.avatarBlob.type) || (!item.blob && !character.avatarBlob && !!character.localFilePath);
             const isPreviewed = item.blob === previewBlob || (!previewBlob && isActualCurrent);
             
             return (

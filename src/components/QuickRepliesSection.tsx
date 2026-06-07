@@ -1,6 +1,7 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import React, { useRef, useState } from 'react';
 import { Upload, FileJson, QrCode, Trash2, Download, Library } from 'lucide-react';
-import { CharacterCard, saveCharacter, saveCharacters, getOrCreateNestedFolder } from '../lib/db';
+import { CharacterCard, saveCharacter, saveCharacters, getOrCreateNestedFolder, resolveFolderPath } from '../lib/db';
 import { SelectQRModal } from './SelectQRModal';
 import { ExportQRModal } from './ExportQRModal';
 
@@ -137,7 +138,7 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
         charsToSave.push({
           id: crypto.randomUUID(),
           name: charName,
-          avatarUrlFallback: `https://api.dicebear.com/7.x/bottts/svg?seed=${charName}`,
+          avatarUrlFallback: getFallbackAvatar(charName),
           data: json,
           createdAt: Date.now(),
           folderId: targetFolderId,
@@ -228,18 +229,25 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       }
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
       let filename = set.sourceName || `${character.name}_qr.json`;
       if (!filename.endsWith('.json')) {
         filename += '.json';
       }
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      if (typeof window !== 'undefined' && !!(window as any).Android) {
+          import('../lib/appBridge').then(async ({ shareFileOnAndroid }) => {
+              const buffer = blob.arrayBuffer ? await blob.arrayBuffer() : await new Response(blob).arrayBuffer();
+              await shareFileOnAndroid(filename, buffer, 'application/json');
+          });
+      } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+      }
     } else {
       const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
@@ -276,14 +284,22 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       });
       
       const content = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${character.name}_QRs.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const zipFileName = `${character.name}_QRs.zip`;
+      if (typeof window !== 'undefined' && !!(window as any).Android) {
+          import('../lib/appBridge').then(async ({ shareFileOnAndroid }) => {
+              const buffer = await content.arrayBuffer();
+              await shareFileOnAndroid(zipFileName, buffer, 'application/zip');
+          });
+      } else {
+          const url = URL.createObjectURL(content);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = zipFileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+      }
     }
   };
 

@@ -1,3 +1,4 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Tag, Play, CheckCircle2, Loader2, AlertCircle, Pause, Square, PlayCircle, RefreshCw, X, ArrowRightLeft, History, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,23 +23,44 @@ function RetagReviewCard({ item }: { item: RetagReviewItem }) {
   };
 
   const charName = item.char.data?.data?.name || item.char.data?.name || '未知角色';
-  
-  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(item.char.avatarUrlFallback);
+  const defaultFallback = getFallbackAvatar(charName || item.char.id);
+  const initialUrl = item.char.avatarUrlFallback && !item.char.avatarUrlFallback.includes('api.dicebear.com') ? item.char.avatarUrlFallback : defaultFallback;
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(initialUrl);
 
   useEffect(() => {
-    if (item.char.avatarBlob) {
-      const url = URL.createObjectURL(item.char.avatarBlob);
-      setAvatarUrl(url);
-      return () => URL.revokeObjectURL(url);
+    let url: string | undefined;
+    let isMounted = true;
+
+    if (item.char.localFilePath) {
+      import('../lib/appBridge').then(({ getLocalImageUrl }) => {
+        if(isMounted) setAvatarUrl(getLocalImageUrl(item.char.localFilePath!, item.char.updatedAt || item.char.createdAt));
+      });
+    } else if (item.char.avatarBlob) {
+      url = URL.createObjectURL(item.char.avatarBlob);
+      if(isMounted) setAvatarUrl(url);
+    } else if (item.char.hasBlobsSeparated) {
+      import('../lib/db').then(({ getCharacterBlob }) => {
+        getCharacterBlob(item.char.id).then(blobs => {
+          if (blobs?.avatarBlob && isMounted) {
+            url = URL.createObjectURL(blobs.avatarBlob);
+            setAvatarUrl(url);
+          }
+        });
+      });
     }
-  }, [item.char.avatarBlob]);
+    
+    return () => {
+      isMounted = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [item.char]);
 
   return (
     <div className="bg-slate-800/80 border border-white/10 rounded-3xl p-5 flex flex-col gap-5 shadow-xl transition-all">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
            <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-inner ring-1 ring-white/10">
-             <img src={avatarUrl || undefined} alt={charName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+             <img src={avatarUrl || undefined} alt={charName} className="w-full h-full object-cover" referrerPolicy="no-referrer"  />
            </div>
            <h4 className="font-bold text-lg text-white truncate">{charName}</h4>
         </div>
@@ -289,7 +311,7 @@ export function AutoTagger({ onClose, onOpenSettings }: { onClose: () => void, o
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
-      <header className="sticky top-0 px-4 pb-4 pt-7 sm:px-6 sm:pb-6 sm:pt-7 flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/[0.1] [.light-theme_&]:border-black/5 z-20">
+      <header className="sticky top-0 px-4 pb-4 pt-[max(1.75rem,env(safe-area-inset-top))] sm:px-6 sm:pb-6 sm:pt-[max(1.75rem,env(safe-area-inset-top))] flex flex-col gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/[0.1] [.light-theme_&]:border-black/5 z-20">
         <div className="flex items-center gap-4">
           <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />

@@ -1,3 +1,4 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search } from 'lucide-react';
@@ -12,15 +13,34 @@ interface Props {
 }
 
 function CharacterOption({ char, onClick }: { char: CharacterCard, onClick: () => void }) {
-  const [url, setUrl] = useState<string>(char.avatarUrlFallback || '');
+  const defaultFallback = getFallbackAvatar(char.name || char.id);
+  const [url, setUrl] = useState<string>((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
 
   useEffect(() => {
-    if (char.avatarBlob) {
-      const objectUrl = URL.createObjectURL(char.avatarBlob);
-      setUrl(objectUrl);
-      return () => URL.revokeObjectURL(objectUrl);
+    let objectUrl: string | null = null;
+    let isMounted = true;
+    if (char.localFilePath) {
+      import('../lib/appBridge').then(({ getLocalImageUrl }) => {
+        if(isMounted) setUrl(getLocalImageUrl(char.localFilePath!, char.updatedAt || char.createdAt));
+      });
+    } else if (char.avatarBlob) {
+      objectUrl = URL.createObjectURL(char.avatarBlob);
+      if(isMounted) setUrl(objectUrl);
+    } else if (char.hasBlobsSeparated) {
+      import('../lib/db').then(({ getCharacterBlob }) => {
+        getCharacterBlob(char.id).then(blobs => {
+          if (blobs?.avatarBlob && isMounted) {
+            objectUrl = URL.createObjectURL(blobs.avatarBlob);
+            setUrl(objectUrl);
+          }
+        });
+      });
     }
-  }, [char.avatarBlob]);
+    return () => {
+      isMounted = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [char]);
 
   return (
     <button
@@ -28,7 +48,7 @@ function CharacterOption({ char, onClick }: { char: CharacterCard, onClick: () =
       className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition text-left"
     >
       <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-black/40">
-        <img src={url || undefined} alt={char.name} className="w-full h-full object-cover" />
+        <img src={url || undefined} alt={char.name} className="w-full h-full object-cover"  />
       </div>
       <div className="flex-1 min-w-0">
         <h4 className="font-medium text-white text-sm truncate">{char.name}</h4>

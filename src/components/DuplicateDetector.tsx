@@ -1,7 +1,37 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Trash2, X, AlertTriangle, CheckCircle2, Merge, MessageSquarePlus, Link, FileText, CheckCircle } from 'lucide-react';
 import { CharacterCard, DuplicateGroup, findDuplicates, deleteCharacter, saveCharacter } from '../lib/db';
+import { getLocalImageUrl } from '../lib/appBridge';
+
+// helper for simple image url retrieval
+function CharAvatarImg({ char, className }: { char: CharacterCard, className: string }) {
+   const defaultFallback = getFallbackAvatar(char.name || char.id);
+   const [url, setUrl] = useState<string | undefined>((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
+   useEffect(() => {
+     let objectUrl: string | null = null;
+     let isMounted = true;
+     if (char.localFilePath) {
+         setUrl(getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt));
+     } else if (char.avatarBlob) {
+         objectUrl = URL.createObjectURL(char.avatarBlob);
+         setUrl(objectUrl);
+     } else if (char.hasBlobsSeparated) {
+         import('../lib/db').then(({ getCharacter }) => {
+             if (!isMounted) return;
+             getCharacter(char.id).then(fullChar => {
+                 if (fullChar && fullChar.avatarBlob && isMounted) {
+                     objectUrl = URL.createObjectURL(fullChar.avatarBlob);
+                     setUrl(objectUrl);
+                 }
+             });
+         });
+     }
+     return () => { isMounted = false; if (objectUrl) URL.revokeObjectURL(objectUrl); }
+   }, [char]);
+   return <img src={url || undefined} alt={char.name} className={className} referrerPolicy="no-referrer"  />;
+}
 
 interface Props {
   onClose: () => void;
@@ -151,9 +181,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
     const otherChars = group.characters.map(c => c.char).filter(c => c.id !== keptChar.id);
     await mergeAndSave(keptChar, otherChars);
 
-    for (const other of otherChars) {
-      await deleteCharacter(other.id);
-    }
+    await import('../lib/db').then(({ deleteCharactersBulk }) => deleteCharactersBulk(otherChars.map(c => c.id)));
 
     loadDuplicates();
   };
@@ -220,9 +248,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
           }
           
           // Delete all selected from this group
-          for (const c of charsToDelete) {
-            await deleteCharacter(c.id);
-          }
+          await import('../lib/db').then(({ deleteCharactersBulk }) => deleteCharactersBulk(charsToDelete.map(c => c.id)));
         }
       }
       
@@ -240,7 +266,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 pt-7 sm:p-4 sm:pt-7 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 pt-[max(1.75rem,env(safe-area-inset-top))] sm:p-4 sm:pt-[max(1.75rem,env(safe-area-inset-top))] bg-black/60 backdrop-blur-sm"
     >
       <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden ring-1 ring-white/10">
         <div className="p-5 sm:p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02] backdrop-blur-md">
@@ -445,20 +471,10 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
                             </div>
                           )}
                           <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-black/50 mt-1 shadow-inner ring-1 ring-white/5">
-                            <img 
-                              src={char.avatarBlob ? URL.createObjectURL(char.avatarBlob) : (char.avatarUrlFallback || undefined)} 
-                              alt={char.name} 
-                              className="w-full h-full object-cover" 
-                              referrerPolicy="no-referrer"
-                            />
+                            <CharAvatarImg char={char} className="w-full h-full object-cover" />
                           </div>
                           <div className="flex-1 min-w-0 pr-6 sm:pr-0">
                             <h4 className="font-bold text-white truncate text-base">{char.name}</h4>
-                            {char.originalFile?.name && (
-                              <div className="text-[10px] text-white/40 truncate select-all" title={char.originalFile.name}>
-                                {char.originalFile.name}
-                              </div>
-                            )}
                             <p className="text-[11px] text-white/50 [.light-theme_&]:text-white/80 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                               <span>修改: {modifiedDate.toLocaleDateString()}</span>
                               <span title="设定字数">描: {(targetData.description || '').length}字</span>

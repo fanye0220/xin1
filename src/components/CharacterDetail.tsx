@@ -1,8 +1,9 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload, Send, Loader2 } from 'lucide-react';
-import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders } from '../lib/db';
+import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders, resolveFolderPath } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
@@ -12,6 +13,7 @@ import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
 import { CharacterMemosSection } from './CharacterMemosSection';
 import JSZip from 'jszip';
+import { isAndroid, saveToGallery, shareFileOnAndroid, readLocalFileBuffer } from '../lib/appBridge';
 
 interface Props {
   id: string;
@@ -45,15 +47,19 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const savePromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
-    getCharacter(id).then(char => {
+    getCharacter(id).then(async (char) => {
       setCharacter(char);
       if (char) {
         setEditNameValue(char.name);
-        if (char.avatarBlob) {
+        if (char.localFilePath) {
+            const { getLocalImageUrl } = await import('../lib/appBridge');
+            setAvatarUrl(getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt));
+        } else if (char.avatarBlob) {
           const url = URL.createObjectURL(char.avatarBlob);
           setAvatarUrl(url);
         } else {
-          setAvatarUrl(char.avatarUrlFallback || '');
+          const defaultFallback = getFallbackAvatar(char.name || char.id);
+          setAvatarUrl((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
         }
         
         // If it's a standalone worldbook, default to the worldbook tab
@@ -67,12 +73,15 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const handleNameSave = async () => {
     if (!editNameValue.trim() || !character) return;
     
-    const updatedChar = { ...character, name: editNameValue.trim() };
-    if (updatedChar.data.data) {
-      updatedChar.data.data.name = editNameValue.trim();
+    // Deep clone data to avoid reference mutation bugs
+    const updatedData = JSON.parse(JSON.stringify(character.data));
+    if (updatedData.data) {
+      updatedData.data.name = editNameValue.trim();
     } else {
-      updatedChar.data.name = editNameValue.trim();
+      updatedData.name = editNameValue.trim();
     }
+
+    const updatedChar = { ...character, name: editNameValue.trim(), data: updatedData };
     
     const promise = saveCharacter(updatedChar);
     savePromiseRef.current = promise;
@@ -185,6 +194,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
   const isStandaloneWorldbook = rawData.entries !== undefined;
   const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
+  const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : rawData.quick_replies !== undefined || rawData.qrList !== undefined;
+  const isScript = rawData.run !== undefined || rawData.type === 'tool' || (rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined);
 
   const getSafeFilename = (name: string) => {
     return name.replace(/[\\/:*?"<>|]/g, '_') || 'character';
@@ -217,42 +228,59 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     return exportData;
   };
 
-  const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(getNormalizedExportData(), null, 2)], { type: 'application/json' });
+  const handleExportJson = async () => {
+    const jsonStr = JSON.stringify(getNormalizedExportData(), null, 2);
+    const safeName = getSafeFilename(character.name);
+    const exportFileName = `${safeName}.json`;
+
+    if (isAndroid()) {
+        const bytes = new TextEncoder().encode(jsonStr);
+        await shareFileOnAndroid(exportFileName, bytes.buffer, 'application/json');
+        return;
+    }
+
+    const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${getSafeFilename(character.name)}.json`;
+    a.download = exportFileName;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleExportPng = async () => {
-    if (isPreset || isStandaloneWorldbook || isTheme) {
+    if (isPreset || isStandaloneWorldbook || isTheme || isQR || isScript) {
       handleExportJson();
       return;
     }
 
     let baseBlob = character.avatarBlob;
-    if (!baseBlob && character.originalFile && (character.originalFile.type === 'image/png' || character.originalFile.name.endsWith('.png'))) {
+    let localBuffer: ArrayBuffer | null = null;
+    if (character.localFilePath) {
+      localBuffer = await readLocalFileBuffer(character.localFilePath);
+    } else if (!baseBlob && character.originalFile && (character.originalFile.type === 'image/png' || character.originalFile.name.endsWith('.png'))) {
       baseBlob = character.originalFile;
     }
 
-    if (baseBlob) {
+    if (baseBlob || localBuffer) {
       try {
-        const buffer = await baseBlob.arrayBuffer();
+        const buffer = localBuffer || await baseBlob!.arrayBuffer();
         const newBuffer = injectTavernData(buffer, getNormalizedExportData());
-        const blob = new Blob([newBuffer], { type: 'image/png' });
         
         const safeName = getSafeFilename(character.name);
         const exportFileName = `${safeName}.png`;
         
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = exportFileName;
-        a.click();
-        URL.revokeObjectURL(url);
+        if (isAndroid()) {
+            await shareFileOnAndroid(exportFileName, newBuffer, 'image/png');
+        } else {
+            const blob = new Blob([newBuffer], { type: 'image/png' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = exportFileName;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
       } catch (e) {
         console.error("Failed to export PNG", e);
         if (!isPreset && !isStandaloneWorldbook) setShowExportAlert(true);
@@ -265,12 +293,21 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   };
 
   const handleSendToST = async () => {
+    if (isPreset || isStandaloneWorldbook || isTheme || isQR || isScript) {
+      setStFeedback({ msg: '此类型数据无法通过API直接发送至酒馆', type: 'error' });
+      setTimeout(() => setStFeedback(null), 3000);
+      return;
+    }
+
     let baseBlob = character.avatarBlob;
-    if (!baseBlob && character.originalFile && (character.originalFile.type === 'image/png' || character.originalFile.name.endsWith('.png'))) {
+    let localBuffer: ArrayBuffer | null = null;
+    if (character.localFilePath) {
+      localBuffer = await readLocalFileBuffer(character.localFilePath);
+    } else if (!baseBlob && character.originalFile && (character.originalFile.type === 'image/png' || character.originalFile.name.endsWith('.png'))) {
       baseBlob = character.originalFile;
     }
 
-    if (!baseBlob) {
+    if (!baseBlob && !localBuffer) {
       setStFeedback({ msg: '缺少头像，无法发送', type: 'error' });
       setTimeout(() => setStFeedback(null), 3000);
       return;
@@ -289,7 +326,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     setIsSendingToST(true);
     setStFeedback(null);
     try {
-      const buffer = await baseBlob.arrayBuffer();
+      const buffer = localBuffer || await baseBlob!.arrayBuffer();
       const newBuffer = injectTavernData(buffer, getNormalizedExportData());
       const pngBlob = new Blob([newBuffer], { type: 'image/png' });
 
@@ -357,7 +394,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
       
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header */}
-        <header className="sticky top-0 p-4 pt-7 sm:pt-7 flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
+        <header className="sticky top-0 p-4 pt-[max(1.75rem,env(safe-area-inset-top))] sm:pt-[max(1.75rem,env(safe-area-inset-top))] flex items-center justify-between bg-black/20 backdrop-blur-xl border-b border-white/10 z-20">
           <button onClick={handleBack} className="p-2 rounded-full hover:bg-white/10 transition">
             <ArrowLeft className="w-6 h-6" />
           </button>
@@ -451,6 +488,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
             src={avatarUrl}
             alt={character.name}
             onClick={() => setShowAvatarViewer(true)}
+            
             className="w-32 h-32 rounded-full object-cover border-4 border-white/20 shadow-2xl cursor-pointer hover:scale-105 transition-transform"
           />
           {isEditingName ? (
@@ -1034,7 +1072,11 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
           onClose={() => setShowAvatarViewer(false)}
           onUpdate={(updatedCharacter) => {
             setCharacter(updatedCharacter);
-            if (updatedCharacter.avatarBlob) {
+            if (updatedCharacter.localFilePath) {
+              import('../lib/appBridge').then(({ getLocalImageUrl }) => {
+                setAvatarUrl(getLocalImageUrl(updatedCharacter.localFilePath!, updatedCharacter.updatedAt || updatedCharacter.createdAt));
+              });
+            } else if (updatedCharacter.avatarBlob) {
               const url = URL.createObjectURL(updatedCharacter.avatarBlob);
               setAvatarUrl(url);
             }
@@ -1572,13 +1614,26 @@ function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (n
                 });
               }
               
-              const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `${(book.name || (book.data && book.data.name) || 'worldbook').replace(/[\\/:*?"<>|]/g, '_')}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
+              const jsonStr = JSON.stringify(exportData, null, 2);
+              const safeName = (book.name || (book.data && book.data.name) || 'worldbook').replace(/[\\/:*?"<>|]/g, '_');
+              const exportFileName = `${safeName}.json`;
+
+              if (typeof window !== 'undefined' && !!(window as any).Android) {
+                  Promise.all([
+                      import('../lib/appBridge')
+                  ]).then(async ([{ shareFileOnAndroid }]) => {
+                      const bytes = new TextEncoder().encode(jsonStr);
+                      await shareFileOnAndroid(exportFileName, bytes.buffer, 'application/json');
+                  });
+              } else {
+                  const blob = new Blob([jsonStr], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = exportFileName;
+                  a.click();
+                  URL.revokeObjectURL(url);
+              }
             }}
             className="p-2 rounded-full bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 transition"
             title="导出世界书"

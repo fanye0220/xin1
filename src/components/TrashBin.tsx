@@ -1,3 +1,4 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Trash2, RotateCcw, X, AlertTriangle, CheckCircle2, CheckCircle } from 'lucide-react';
@@ -23,25 +24,37 @@ const TrashedCharacterCard = ({
   isSelected: boolean,
   onToggleSelect: (id: string) => void
 }) => {
-  const [avatarUrl, setAvatarUrl] = useState<string>(char.avatarUrlFallback);
+  const defaultFallback = getFallbackAvatar(char.name || char.id);
+  const [avatarUrl, setAvatarUrl] = useState<string>((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (char.avatarBlob) {
-      const url = URL.createObjectURL(char.avatarBlob);
+    let url: string | undefined;
+    let isMounted = true;
+    
+    if (char.localFilePath) {
+      import('../lib/appBridge').then(({ getLocalImageUrl }) => {
+         if (isMounted) setAvatarUrl(getLocalImageUrl(char.localFilePath!, char.updatedAt || char.createdAt));
+      });
+    } else if (char.avatarBlob) {
+      url = URL.createObjectURL(char.avatarBlob);
       setAvatarUrl(url);
-      return () => URL.revokeObjectURL(url);
     } else if (char.hasBlobsSeparated) {
       import('../lib/db').then(({ getCharacter }) => {
         getCharacter(char.id).then(fullChar => {
-          if (fullChar && fullChar.avatarBlob) {
-             const url = URL.createObjectURL(fullChar.avatarBlob);
-             setAvatarUrl(url);
+          if (fullChar && fullChar.avatarBlob && isMounted) {
+             const objectUrl = URL.createObjectURL(fullChar.avatarBlob);
+             setAvatarUrl(objectUrl);
           }
         });
       });
     }
-  }, [char.avatarBlob, char.id, char.hasBlobsSeparated]);
+    
+    return () => {
+      isMounted = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [char.avatarBlob, char.id, char.hasBlobsSeparated, char.localFilePath]);
 
   const daysLeft = Math.ceil((7 * 24 * 60 * 60 * 1000 - (Date.now() - (char.deletedAt || 0))) / (1000 * 60 * 60 * 24));
 
@@ -88,6 +101,7 @@ const TrashedCharacterCard = ({
           alt={char.name} 
           className="w-full h-full object-cover" 
           referrerPolicy="no-referrer"
+          
         />
       </div>
       <div className="flex-1 min-w-0">
@@ -193,9 +207,8 @@ export function TrashBin({ onClose }: Props) {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要将选中的 ${selectedIds.size} 个角色永久删除吗？此操作不可撤销！`)) {
       setLoading(true);
-      for (const id of selectedIds) {
-        await deleteCharacter(id);
-      }
+      const { deleteCharactersBulk } = await import('../lib/db');
+      await deleteCharactersBulk(Array.from(selectedIds));
       setSelectedIds(new Set());
       setSelectionMode(false);
       await loadTrash();
@@ -210,7 +223,7 @@ export function TrashBin({ onClose }: Props) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 pt-7 sm:p-4 sm:pt-7 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 pt-[max(1.75rem,env(safe-area-inset-top))] sm:p-4 sm:pt-[max(1.75rem,env(safe-area-inset-top))] bg-black/60 backdrop-blur-sm"
     >
       <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden ring-1 ring-white/10">
         <div className="p-5 sm:p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02] backdrop-blur-md">

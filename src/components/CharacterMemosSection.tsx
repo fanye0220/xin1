@@ -176,6 +176,16 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
 
   const handleDownloadFile = (memo: CharacterMemo) => {
       if (!memo.blob) return;
+      if (typeof window !== 'undefined' && !!(window as any).Android) {
+          Promise.all([
+              import('../lib/appBridge')
+          ]).then(async ([{ shareFileOnAndroid }]) => {
+              const buffer = await memo.blob!.arrayBuffer();
+              await shareFileOnAndroid(memo.content, buffer);
+          });
+          return;
+      }
+
       const url = URL.createObjectURL(memo.blob);
       const a = document.createElement('a');
       a.href = url;
@@ -318,7 +328,7 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                       
                       {memo.type === 'text' && (
                           <div className="p-5 cursor-pointer group/text relative" onClick={() => { setReadingMemo(memo); setEditMemoContent(memo.content); setIsEditingMemo(false); }}>
-                             <div className="prose prose-sm prose-invert max-w-none text-white/80 leading-relaxed markdown-body line-clamp-[8]">
+                             <div className="prose prose-sm prose-invert memo-prose-adapt max-w-none text-white/80 leading-relaxed markdown-body line-clamp-[8]">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                     {memo.content}
                                 </ReactMarkdown>
@@ -422,7 +432,7 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                        </div>
                     </div>
                   ) : (
-                    <div className="prose prose-invert prose-base sm:prose-lg max-w-none text-white/80 leading-relaxed markdown-body" onClick={e => e.stopPropagation()}>
+                    <div className="prose prose-invert memo-prose-adapt prose-base sm:prose-lg max-w-none text-white/80 leading-relaxed markdown-body" onClick={e => e.stopPropagation()}>
                        <ReactMarkdown 
                            remarkPlugins={[remarkGfm]}
                            components={{

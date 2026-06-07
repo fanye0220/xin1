@@ -1,3 +1,5 @@
+import { getFallbackAvatar } from '../lib/avatar';
+import { getLocalImageUrl } from '../lib/appBridge';
 import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Sparkles, Loader2, AlertCircle, Play, Terminal, Dices } from 'lucide-react';
 import { getCharacters, CharacterCard, getCharacter } from '../lib/db';
@@ -32,23 +34,44 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
     setApiKeyMissing(false);
     
     try {
-      const response = await getCharacters(1, 10000, 'all', '', [], 'newest_import', false);
-      let allChars = response.characters;
+      const { getCachedMeta, initDB } = await import('../lib/db');
+      const allMeta = (await getCachedMeta()).filter(c => !c.deletedAt);
       
-      // 过滤掉预设、美化卡和独立世界书
-      allChars = allChars.filter(c => {
-        const rawData = c.data;
+      if (allMeta.length === 0) {
+        addLog('没有找到角色卡。', 'error');
+        return;
+      }
+
+      // Randomly shuffle allMeta IDs
+      const shuffled = [...allMeta].sort(() => 0.5 - Math.random());
+      
+      const db = await initDB();
+      let randomChar: CharacterCard | null = null;
+      
+      for (const meta of shuffled) {
+        // Quick filter bounds
+        const hasBeautifyTag = meta.tags.some(t => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
+        if (hasBeautifyTag) continue;
+
+        const char = await db.get('characters', meta.id);
+        if (!char) continue;
+        
+        const rawData = char.data;
         const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
         const isStandaloneWorldbook = rawData.entries !== undefined;
         const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
-        const tags = c.data?.tags || c.data?.data?.tags || [];
+        const tags = char.data?.tags || char.data?.data?.tags || [];
         const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
         const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
         const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
-        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript;
-      });
+        
+        if (!isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript) {
+          randomChar = char;
+          break;
+        }
+      }
 
-      if (allChars.length === 0) {
+      if (!randomChar) {
         addLog('没有找到符合条件的角色卡。', 'error');
         return;
       }
@@ -56,7 +79,6 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
       // Add a small artificial delay for the "gacha" feel
       await new Promise(resolve => setTimeout(resolve, 800));
       
-      const randomChar = allChars[Math.floor(Math.random() * allChars.length)];
       let charWithBlob = randomChar;
       if (charWithBlob.hasBlobsSeparated && !charWithBlob.avatarBlob) {
         const fetched = await getCharacter(charWithBlob.id);
@@ -198,7 +220,7 @@ ${candidateInfo}
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
-      <header className="sticky top-0 px-4 pb-4 pt-7 sm:px-6 sm:pb-6 sm:pt-7 flex items-center gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
+      <header className="sticky top-0 px-4 pb-4 pt-[max(1.75rem,env(safe-area-inset-top))] sm:px-6 sm:pb-6 sm:pt-[max(1.75rem,env(safe-area-inset-top))] flex items-center gap-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 z-20">
         <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition">
           <ArrowLeft className="w-6 h-6" />
         </button>
@@ -319,7 +341,11 @@ ${candidateInfo}
                 {results.map((result, i) => {
                   const char = result.char;
                   const data = char.data?.data || char.data;
-                  const url = char.avatarBlob ? URL.createObjectURL(char.avatarBlob) : char.avatarUrlFallback;
+                  const fallbackObj = char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : getFallbackAvatar(char.name || char.id);
+                  let url = char.avatarBlob ? URL.createObjectURL(char.avatarBlob) : fallbackObj;
+                  if (!char.avatarBlob && char.localFilePath) {
+                      url = getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt);
+                  }
 
                   return (
                     <motion.div
@@ -330,7 +356,11 @@ ${candidateInfo}
                       className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 hover:bg-white/10 transition group"
                     >
                       <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 rounded-xl overflow-hidden bg-black/40">
-                        {url ? <img src={url} alt={data.name} className="w-full h-full object-cover" /> : null}
+                        {url ? <img src={url} alt={data.name} className="w-full h-full object-cover" onError={(e) => {
+                             import('../lib/db').then(m => m.getCharacterBlob(char.id).then(b => {
+                                if (b && b.avatarBlob) e.currentTarget.src = URL.createObjectURL(b.avatarBlob);
+                             }));
+                        }} /> : null}
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col">
                         <div className="flex items-start justify-between gap-4">

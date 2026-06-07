@@ -1,10 +1,12 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, UploadCloud, FileJson, Image as ImageIcon, AlertCircle, FileArchive } from 'lucide-react';
 import { extractTavernData } from '../lib/png';
-import { saveCharacter, saveCharacters, CharacterCard, getFolders, saveFolder, Folder as DBFolder, getUsedOriginalFileNames } from '../lib/db';
+import { saveCharacter, saveCharacters, CharacterCard, getFolders, saveFolder, Folder as DBFolder } from '../lib/db';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
 import { parseTavernCard } from '../types/tavern';
+import { isAndroid, saveToGallery } from '../lib/appBridge';
 import JSZip from 'jszip';
 
 interface Props {
@@ -85,7 +87,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           const isAIPreset = data.temperature !== undefined || data.prompts !== undefined || data.top_p !== undefined;
           const isWorldbook = data.entries !== undefined || (data.data && data.data.entries !== undefined);
           const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined || data.qrList !== undefined;
-          const isScript = data.type === 'script' && data.content !== undefined && data.name !== undefined;
+          const isScript = data.run !== undefined || data.type === 'tool' || (data.type === 'script' && data.content !== undefined && data.name !== undefined);
           const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !isScript && !!(data.name || data.data?.name);
           
           if (isTheme || isAIPreset || isWorldbook || isQR || isScript || isCharacter) {
@@ -185,10 +187,14 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
       errors.push({ file: alt.file.name, error: alt.errorMsg || '作为替换卡面导入失败：未找到所属角色卡' });
     }
     
-    const usedOriginalFileNames = await getUsedOriginalFileNames();
     const charsToSave: CharacterCard[] = [];
     let successCount = 0;
     
+    const { getCachedMeta } = await import('../lib/db');
+    const existingMeta = await getCachedMeta();
+    const existingImportNames = new Set(existingMeta.map(c => c.autoImportFilename).filter(Boolean));
+    const newPathsAssigned = new Set<string>();
+
     for (let i = 0; i < mainItems.length; i++) {
       const item = mainItems[i];
       try {
@@ -202,30 +208,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         
         const data = item.data;
         const file = item.file;
-        
-        let uniqueOriginalFile: File | undefined = undefined;
-        let finalAvatarBlob: File | undefined = undefined;
-        if (file.type === 'image/png' || file.name.endsWith('.png')) {
-           let safeName = file.name;
-           const match = safeName.match(/^(.*?)(\.[^.]+)$/);
-           const baseFileName = match ? match[1] : safeName;
-           const extFileName = match ? match[2] : "";
-           
-           let counter = 1;
-           while (usedOriginalFileNames.has(safeName)) {
-             safeName = `${baseFileName}_${counter}${extFileName}`;
-             counter++;
-           }
-           usedOriginalFileNames.add(safeName);
-           
-           if (safeName !== file.name) {
-             uniqueOriginalFile = new File([file], safeName, { type: file.type, lastModified: file.lastModified });
-             finalAvatarBlob = uniqueOriginalFile;
-           } else {
-             uniqueOriginalFile = file;
-             finalAvatarBlob = file;
-           }
-        }
         
         // Normalize worldbook entries
         if (data.entries) {
@@ -251,7 +233,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         const isAIPreset = data.temperature !== undefined || data.prompts !== undefined || data.top_p !== undefined;
         const isWorldbook = data.entries !== undefined || (data.data && data.data.entries !== undefined);
         const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : data.quick_replies !== undefined || data.qrList !== undefined;
-        const isScript = data.type === 'script' && data.content !== undefined && data.name !== undefined;
+        const isScript = data.run !== undefined || data.type === 'tool' || (data.type === 'script' && data.content !== undefined && data.name !== undefined);
         const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !isScript && !!(data.name || data.data?.name);
         
         let pathPrefix: string[] = [];
@@ -285,19 +267,60 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         
         const avatarUrlFallback = (file.type === 'image/png' || file.name.endsWith('.png')) 
           ? '' 
-          : `https://api.dicebear.com/7.x/bottts/svg?seed=${charName}`;
+          : getFallbackAvatar(charName);
+
+        let localFilePath: string | undefined;
+        let avatarBlob: Blob | undefined;
+        let originalFile: File | undefined;
+        
+        let pathParts = [...pathPrefix];
+        if (folderParts.length > 0) {
+           pathParts.push(...folderParts);
+        }
+        
+        let targetFilePath = file.name;
+        if (pathParts.length > 0) {
+          targetFilePath = pathParts.join('/') + '/' + file.name;
+        }
+
+        if (isAndroid()) {
+          const buffer = await file.arrayBuffer();
+          // We no longer call saveToGallery here because saveCharacter will do the proper
+          // deep directory sync logic based on the folder hierarchy. We just need to
+          // parse the file into the DB representation.
+          if (file.type === 'image/png' || file.name.endsWith('.png')) {
+            avatarBlob = file;
+          }
+          originalFile = file;
+        } else {
+          if (file.type === 'image/png' || file.name.endsWith('.png')) {
+            avatarBlob = file;
+          }
+          originalFile = file;
+        }
+
+        let baseF = file.name.replace(/\.[^/.]+$/, "");
+        let autoImportFilename = file.name;
+        let c = 0;
+        while (existingImportNames.has(autoImportFilename) || newPathsAssigned.has(autoImportFilename)) {
+          c++;
+          autoImportFilename = `${baseF}_${c}.png`;
+        }
+        newPathsAssigned.add(autoImportFilename);
           
-        const newChar: CharacterCard = {
+        const newChar: CharacterCard & { autoImportFilename?: string } = {
           id: crypto.randomUUID(),
           name: charName,
-          avatarBlob: finalAvatarBlob,
+          autoImportFilename,
+          avatarBlob,
+          localFilePath,
           avatarUrlFallback,
           data: data,
-          originalFile: uniqueOriginalFile,
+          originalFile,
           createdAt: Date.now(),
           folderId: targetFolderId,
           avatarHistory: altImagesByMain.get(item) || []
-        };
+        } as any;
         
         charsToSave.push(newChar);
         successCount++;

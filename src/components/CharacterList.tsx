@@ -1,7 +1,8 @@
+import { getFallbackAvatar } from '../lib/avatar';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
-import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, getCharacter, getCharacterBlob, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
+import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, saveCharacters, getCharacter, getCharacterBlob, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
 import { useInView } from '../lib/useInView';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
@@ -138,8 +139,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [pageSize, setPageSize] = useState(() => Number(localStorage.getItem('tavern_pageSize')) || 50);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'masonry'>(() => (localStorage.getItem('tavern_viewMode') as 'grid' | 'list' | 'masonry') || 'grid');
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   
   useEffect(() => {
     localStorage.setItem('tavern_viewMode', viewMode);
@@ -572,13 +571,15 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要删除选中的 ${selectedIds.size} 项吗？\n（选中的角色将被移至回收站，文件夹将被直接删除且其内子项将移动到上一级）`)) {
-      for (const id of selectedIds) {
-        if (folders.some(f => f.id === id)) {
-          await deleteFolder(id);
-        } else {
-          await deleteCharacter(id);
-        }
-      }
+      await Promise.all(
+        Array.from(selectedIds).map(async (id) => {
+          if (folders.some(f => f.id === id)) {
+            await deleteFolder(id);
+          } else {
+            await deleteCharacter(id);
+          }
+        })
+      );
       setSelectionMode(false);
       setSelectedIds(new Set());
       loadData();
@@ -657,18 +658,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     }
   };
 
-  const addCharacterToZip = async (char: CharacterCard, zipFolder: JSZip, folderPath: string[] = [], usedNamesTracker: Set<string> = new Set()) => {
-    const baseSafeName = getSafeFilename(char.name);
-    let safeName = baseSafeName;
-    
-    let counter = 1;
-    const currentFolderStr = folderPath.join('/');
-    while (usedNamesTracker.has(`${currentFolderStr}/${safeName}`)) {
-        safeName = `${baseSafeName}_${counter}`;
-        counter++;
-    }
-    usedNamesTracker.add(`${currentFolderStr}/${safeName}`);
-
+  const addCharacterToZip = async (char: CharacterCard, zipFolder: JSZip | null, nativeZipHelpers?: { zipName: string, prefix: string, addEntry: (zipName: string, entryName: string, buffer: ArrayBuffer | Blob | string) => Promise<boolean> }, uniqueNameOverride?: string) => {
+    const safeName = uniqueNameOverride || getSafeFilename(char.name);
     const exportFileName = `${safeName}.png`;
     
     const rawData = char.data;
@@ -676,17 +667,40 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     const isStandaloneWorldbook = rawData.entries !== undefined;
     const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
 
+    const addFileHelper = async (folderObj: JSZip | null, folderName: string, fileName: string, content: any) => {
+       if (nativeZipHelpers) {
+           let blobOrBuffer = content;
+           if (typeof content === 'string') {
+               blobOrBuffer = new TextEncoder().encode(content).buffer;
+           }
+           const fullPath = nativeZipHelpers.prefix + (folderName ? `${folderName}/` : '') + fileName;
+           await nativeZipHelpers.addEntry(nativeZipHelpers.zipName, fullPath, blobOrBuffer);
+       } else if (folderObj) {
+           folderObj.file(fileName, content);
+       }
+    };
+
     if (isPreset || isStandaloneWorldbook || isTheme) {
-      zipFolder.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));
+      await addFileHelper(zipFolder, '', `${safeName}.json`, JSON.stringify(char.data, null, 2));
       return;
     }
     
     let baseBlob = char.avatarBlob || char.originalFile;
+    let localBuffer: ArrayBuffer | null = null;
+    
+    if (char.localFilePath && typeof window !== 'undefined' && !!(window as any).Android) {
+      try {
+        const { readLocalFileBuffer } = await import('../lib/appBridge');
+        localBuffer = await readLocalFileBuffer(char.localFilePath);
+      } catch (e) {
+        console.error("Failed to read local file buffer", e);
+      }
+    }
 
-    if (baseBlob) {
+    if (baseBlob || localBuffer) {
       try {
         const { injectTavernData } = await import('../lib/png');
-        const buffer = await baseBlob.arrayBuffer();
+        const buffer = localBuffer || await baseBlob!.arrayBuffer();
         const newBuffer = injectTavernData(buffer, char.data);
         const finalBlob = new Blob([newBuffer], { type: 'image/png' });
         
@@ -694,155 +708,301 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         const hasQR = targetData.extensions?.quick_replies && targetData.extensions.quick_replies.length > 0;
         const hasAvatars = char.avatarHistory && char.avatarHistory.length > 0;
         
-        if (hasQR || hasAvatars) {
-          const charFolder = zipFolder.folder(safeName);
-          if (charFolder) {
-            charFolder.file(exportFileName, finalBlob);
-            if (hasQR) {
-              const qrFileName = targetData.extensions?.qr_filename || `${safeName}_qr.json`;
-              let qrContentToExport: any = targetData.extensions.quick_replies;
-              
-              if (targetData.extensions.tavern_qr_sets && targetData.extensions.tavern_qr_sets.length > 0) {
-                // Find the first metadata we can use
-                const metadata = targetData.extensions.tavern_qr_sets.find((s: any) => s.metadata)?.metadata;
-                if (metadata) {
-                  qrContentToExport = { ...metadata };
-                  if (qrContentToExport.qrList) qrContentToExport.qrList = targetData.extensions.quick_replies;
-                  else if (qrContentToExport.quick_replies) qrContentToExport.quick_replies = targetData.extensions.quick_replies;
-                } else {
-                  // Fallback wrapper
-                  qrContentToExport = {
-                    version: 2,
-                    name: char.name,
-                    qrList: targetData.extensions.quick_replies
-                  };
-                }
+        const { getChatsForCharacter } = await import('../lib/db');
+        const chats = await getChatsForCharacter(char.id);
+        const hasChats = chats.length > 0;
+        
+        if (hasQR || hasAvatars || hasChats) {
+          const charFolder = zipFolder ? zipFolder.folder(safeName) : null;
+          const folderPrefix = safeName;
+          
+          await addFileHelper(charFolder, folderPrefix, exportFileName, finalBlob);
+          
+          if (hasQR) {
+            const qrFileName = targetData.extensions?.qr_filename || `${safeName}_qr.json`;
+            let qrContentToExport: any = targetData.extensions.quick_replies;
+            
+            if (targetData.extensions.tavern_qr_sets && targetData.extensions.tavern_qr_sets.length > 0) {
+              const metadata = targetData.extensions.tavern_qr_sets.find((s: any) => s.metadata)?.metadata;
+              if (metadata) {
+                qrContentToExport = { ...metadata };
+                if (qrContentToExport.qrList) qrContentToExport.qrList = targetData.extensions.quick_replies;
+                else if (qrContentToExport.quick_replies) qrContentToExport.quick_replies = targetData.extensions.quick_replies;
               } else {
-                qrContentToExport = {
-                  version: 2,
-                  name: char.name,
-                  qrList: targetData.extensions.quick_replies
-                };
+                qrContentToExport = { version: 2, name: char.name, qrList: targetData.extensions.quick_replies };
               }
-              charFolder.file(qrFileName, JSON.stringify(qrContentToExport, null, 2));
+            } else {
+              qrContentToExport = { version: 2, name: char.name, qrList: targetData.extensions.quick_replies };
             }
-            if (hasAvatars) {
-              const avatarsFolder = charFolder.folder('替换卡面');
-              if (avatarsFolder) {
-                char.avatarHistory!.forEach((avatarBlob, index) => {
-                  let ext = 'png';
-                  let fileName = `替换卡面_${index + 1}.${ext}`;
-                  if (avatarBlob instanceof File) {
-                    fileName = avatarBlob.name;
-                  } else {
-                    if (avatarBlob.type === 'image/jpeg') ext = 'jpg';
-                    else if (avatarBlob.type === 'image/webp') ext = 'webp';
-                    fileName = `替换卡面_${index + 1}.${ext}`;
-                  }
-                  avatarsFolder.file(fileName, avatarBlob);
-                });
+            await addFileHelper(charFolder, folderPrefix, qrFileName, JSON.stringify(qrContentToExport, null, 2));
+          }
+          if (hasAvatars) {
+            const avatarsFolder = charFolder ? charFolder.folder('替换卡面') : null;
+            const avatarsPrefix = `${folderPrefix}/替换卡面`;
+            for (let index = 0; index < char.avatarHistory!.length; index++) {
+              const avatarBlob = char.avatarHistory![index];
+              let ext = 'png';
+              let fileName = `替换卡面_${index + 1}.${ext}`;
+              if (avatarBlob instanceof File) {
+                fileName = avatarBlob.name;
+              } else {
+                if (avatarBlob.type === 'image/jpeg') ext = 'jpg';
+                else if (avatarBlob.type === 'image/webp') ext = 'webp';
+                fileName = `替换卡面_${index + 1}.${ext}`;
               }
+              await addFileHelper(avatarsFolder, avatarsPrefix, fileName, avatarBlob);
             }
           }
+          if (hasChats) {
+            const chatsFolder = charFolder ? charFolder.folder('聊天记录') : null;
+            const chatsPrefix = `${folderPrefix}/聊天记录`;
+            for (let i = 0; i < chats.length; i++) {
+              const chat = chats[i];
+              const dateStr = new Date(chat.createdAt).toISOString().replace(/:/g, '-');
+              const chatSafeName = getSafeFilename(chat.name || 'Chat');
+              const chatFileName = `${chatSafeName}_${dateStr}.jsonl`;
+              const jsonlLines = chat.messages ? chat.messages.map(m => JSON.stringify(m)).join('\n') : '';
+              await addFileHelper(chatsFolder, chatsPrefix, chatFileName, jsonlLines);
+            }
+          }
+          
         } else {
-          zipFolder.file(exportFileName, finalBlob);
+          await addFileHelper(zipFolder, '', exportFileName, finalBlob);
         }
       } catch (err) {
         console.error("Failed to export injected PNG", err);
-        zipFolder.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));
+        await addFileHelper(zipFolder, '', `${safeName}.json`, JSON.stringify(char.data, null, 2));
       }
     } else {
-      zipFolder.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));
+      await addFileHelper(zipFolder, '', `${safeName}.json`, JSON.stringify(char.data, null, 2));
     }
   };
 
   const handleBatchExport = async () => {
     if (selectedIds.size === 0) return;
     
-    setIsExporting(true);
     try {
-      // Get all folders to resolve paths
       const allFolders = await getFolders();
-      const tasks: { charId: string, path: string[] }[] = [];
       
-      for (const id of selectedIds) {
+      const { isAndroid, saveToGallery, startAndroidZip, addAndroidZipEntry, finishAndroidZip } = await import('../lib/appBridge');
+      if (isAndroid()) {
+        const charIdsToExport = new Set<string>();
+        
+        for (const id of Array.from(selectedIds)) {
+          const folder = allFolders.find(f => f.id === id);
+          if (folder) {
+            const addFolderChars = async (fId: string) => {
+              const { characters: fc } = await getCharacters(1, 10000, fId);
+              fc.forEach(c => charIdsToExport.add(c.id));
+              const subs = allFolders.filter(f => f.parentId === fId);
+              for (const sub of subs) {
+                await addFolderChars(sub.id);
+              }
+            };
+            await addFolderChars(folder.id);
+          } else {
+            charIdsToExport.add(id);
+          }
+        }
+
+        const charsArray = Array.from(charIdsToExport);
+        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+        
+        // Native Android Streaming Zip
+        if ((window as any).Android && (window as any).Android.startZip) {
+           const zipName = `批量导出/Tavern_Export_${timestamp}.zip`;
+           const started = await startAndroidZip(zipName);
+           if (!started) {
+              alert("无法启动原生ZIP导出引擎");
+              return;
+           }
+
+           let successCount = 0;
+           const nameOccurrences = new Map<string, number>();
+           for (const cid of charsArray) {
+               const char = await getCharacter(cid);
+               if (!char) continue;
+               
+               const baseName = getSafeFilename(char.name);
+               const count = nameOccurrences.get(baseName) || 0;
+               nameOccurrences.set(baseName, count + 1);
+               const uniqueName = count === 0 ? baseName : `${baseName}_${count}`;
+               
+               const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
+               let prefix = '';
+               if (folderName === '未归类' || !folderName) {
+                 prefix = '未归类/';
+               } else {
+                 prefix = folderName.split('/').map(getSafeFilename).join('/') + '/';
+               }
+
+               await addCharacterToZip(char, null, {
+                   zipName,
+                   prefix,
+                   addEntry: addAndroidZipEntry
+               }, uniqueName);
+               successCount++;
+           }
+
+           const finalPath = await finishAndroidZip(zipName);
+           if (finalPath) {
+              alert(`批量导出成功！共导出 ${successCount} 个角色资料。\n文件已存至：Download/MIU/${zipName}`);
+           } else {
+              alert("导出结束时发生错误！");
+           }
+           
+           setSelectionMode(false);
+           setSelectedIds(new Set());
+           return;
+        }
+
+        // Fallback: JSZip Chunked approach
+        const CHUNK_SIZE = 999999; 
+        const totalParts = Math.ceil(charsArray.length / CHUNK_SIZE);
+        
+        let successCountChunks = 0;
+        let failedChunks: number[] = [];
+        const nameOccurrences = new Map<string, number>();
+
+        for (let i = 0; i < charsArray.length; i += CHUNK_SIZE) {
+            const chunk = charsArray.slice(i, i + CHUNK_SIZE);
+            const zip = new JSZip();
+            
+            for (const cid of chunk) {
+                 const char = await getCharacter(cid);
+                 if (!char) continue;
+                 
+                 const baseName = getSafeFilename(char.name);
+                 const count = nameOccurrences.get(baseName) || 0;
+                 nameOccurrences.set(baseName, count + 1);
+                 const uniqueName = count === 0 ? baseName : `${baseName}_${count}`;
+                 
+                 const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
+                 if (folderName === '未归类' || !folderName) {
+                   const uZip = zip.folder('未归类');
+                   await addCharacterToZip(char, uZip || zip, undefined, uniqueName);
+                 } else {
+                   let currentZip: JSZip = zip;
+                   const parts = folderName.split('/');
+                   for (const p of parts) {
+                     currentZip = currentZip.folder(getSafeFilename(p)) || currentZip;
+                   }
+                   await addCharacterToZip(char, currentZip, undefined, uniqueName);
+                 }
+            }
+            
+            const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+            const buffer = await zipBlob.arrayBuffer();
+            const chunkIndex = (i/CHUNK_SIZE) + 1;
+            const fileName = totalParts > 1 ? `批量导出/Tavern_Export_${timestamp}_卷${chunkIndex}.zip` : `批量导出/Tavern_Export_${timestamp}.zip`;
+            
+            const result = await saveToGallery(fileName, buffer);
+            if (result) {
+              successCountChunks++;
+            } else {
+              failedChunks.push(chunkIndex);
+            }
+            
+            // 添加延迟等待安卓端落盘，释放内存限制导致前序任务被抛弃。
+            if (i + CHUNK_SIZE < charsArray.length) {
+              await new Promise(resolve => setTimeout(resolve, 3500));
+            }
+        }
+        
+        if (failedChunks.length > 0) {
+          alert(`导出失败！由于文件过大，导致安卓内存过载。\n强烈建议：请下载最新源码重新打包安装您的安卓App（APK），升级后将开启底层原生 ZIP 引擎，支持上千张卡片无限制一次性导出且无内存报错！`);
+        } else {
+          alert(`批量导出成功！本次为传统JS导出引擎。保存在 Download/MIU/批量导出/ 目录下。\n如果遇到导出不全、闪退问题，请重新编译更新您的 Android App (APK) 获取最新原生无限制导出引擎！`);
+        }
+        
+        setSelectionMode(false);
+        setSelectedIds(new Set());
+        return;
+      }
+
+      const zip = new JSZip();
+      const nameOccurrences = new Map<string, number>();
+      
+      const getUniqueName = (charName: string) => {
+        const baseName = getSafeFilename(charName);
+        const count = nameOccurrences.get(baseName) || 0;
+        nameOccurrences.set(baseName, count + 1);
+        return count === 0 ? baseName : `${baseName}_${count}`;
+      };
+
+      await Promise.all(Array.from(selectedIds).map(async (id) => {
         const folder = allFolders.find(f => f.id === id);
         if (folder) {
           // Export all characters in this folder and its subfolders
-          const collectFolderRecursive = async (currentFolderId: string, currentPath: string[]) => {
+          const exportFolderRecursive = async (currentFolderId: string, currentZip: JSZip) => {
             const { characters: folderChars } = await getCharacters(1, 10000, currentFolderId);
-            for (const char of folderChars) {
-              tasks.push({ charId: char.id, path: currentPath });
-            }
+            await Promise.all(folderChars.map(char => {
+               const uniqueName = getUniqueName(char.name);
+               return addCharacterToZip(char, currentZip, undefined, uniqueName);
+            }));
             
             const subFolders = allFolders.filter(f => f.parentId === currentFolderId);
-            for (const subFolder of subFolders) {
-              await collectFolderRecursive(subFolder.id, [...currentPath, getSafeFilename(subFolder.name)]);
-            }
+            await Promise.all(subFolders.map(async subFolder => {
+              const subZip = currentZip.folder(getSafeFilename(subFolder.name));
+              if (subZip) {
+                await exportFolderRecursive(subFolder.id, subZip);
+              }
+            }));
           };
           
-          await collectFolderRecursive(folder.id, [getSafeFilename(folder.name)]);
-        } else {
-          tasks.push({ charId: id, path: [] });
-        }
-      }
-
-      // Remove duplicate by charId (in case of folder and character both selected)
-      const uniqueCharIds = new Set<string>();
-      const uniqueTasks: typeof tasks = [];
-      for (const task of tasks) {
-        if (!uniqueCharIds.has(task.charId)) {
-          uniqueCharIds.add(task.charId);
-          uniqueTasks.push(task);
-        }
-      }
-      
-      const CHUNK_SIZE = 100;
-      const totalTasks = uniqueTasks.length;
-      setExportProgress({ current: 0, total: totalTasks });
-      
-      let chunkIndex = 1;
-      let currentCount = 0;
-      const usedNamesTracker = new Set<string>();
-      
-      for (let i = 0; i < totalTasks; i += CHUNK_SIZE) {
-        const chunkTasks = uniqueTasks.slice(i, i + CHUNK_SIZE);
-        const zip = new JSZip();
-        
-        for (const task of chunkTasks) {
-          const char = await getCharacter(task.charId);
-          if (char) {
-            let currentZip = zip;
-            for (const p of task.path) {
-              currentZip = currentZip.folder(p) || currentZip;
-            }
-            await addCharacterToZip(char, currentZip, task.path, usedNamesTracker);
+          const folderZip = zip.folder(getSafeFilename(folder.name));
+          if (folderZip) {
+            await exportFolderRecursive(folder.id, folderZip);
           }
-          currentCount++;
-          setExportProgress(prev => ({ ...prev, current: currentCount }));
+        } else {
+          const char = await getCharacter(id);
+          if (char) {
+            const uniqueName = getUniqueName(char.name);
+            if (!char.folderId || char.folderId === 'all') {
+              const uncategorizedZip = zip.folder('未归类');
+              if (uncategorizedZip) {
+                await addCharacterToZip(char, uncategorizedZip, undefined, uniqueName);
+              } else {
+                await addCharacterToZip(char, zip, undefined, uniqueName);
+              }
+            } else {
+               // Technically if it's selected individually but inside a folder,
+               // we should ideally put it in its folder.
+               const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
+               if (folderName === '未归类' || !folderName) {
+                 const uZip = zip.folder('未归类');
+                 if (uZip) await addCharacterToZip(char, uZip, undefined, uniqueName);
+                 else await addCharacterToZip(char, zip, undefined, uniqueName);
+               } else {
+                 let currentZip: JSZip = zip;
+                 const parts = folderName.split('/');
+                 for (const p of parts) {
+                   currentZip = currentZip.folder(p) || currentZip;
+                 }
+                 await addCharacterToZip(char, currentZip, undefined, uniqueName);
+               }
+            }
+          }
         }
-        
-        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-        const url = URL.createObjectURL(zipBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        const suffix = totalTasks > CHUNK_SIZE ? `_Part${chunkIndex}` : '';
-        a.download = `Tavern_Export_${new Date().toISOString().slice(0, 10)}${suffix}.zip`;
-        a.click();
-        URL.revokeObjectURL(url);
-        
-        chunkIndex++;
-        // Allow memory cleanup and UI thread update before processing next chunk
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
+      }));
+      
+      // Use internal streaming/chunks to reduce memory overhead during generation, 
+      // though generateAsync still buffers entirely into a Blob.
+      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      const exportName = `Tavern_Export_${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}.zip`;
+      
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportName;
+      a.click();
+      URL.revokeObjectURL(url);
       
       setSelectionMode(false);
       setSelectedIds(new Set());
     } catch (e) {
       console.error("Batch export failed", e);
       alert("导出失败，请重试");
-    } finally {
-      setIsExporting(false);
     }
   };
 
@@ -861,6 +1021,8 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     };
 
     const allFolders = await getFolders();
+    const charsToSave: CharacterCard[] = [];
+    const foldersToSave: Folder[] = [];
 
     for (const id of selectedIds) {
       const folder = allFolders.find(f => f.id === id);
@@ -870,7 +1032,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           continue;
         }
         folder.parentId = targetFolderId;
-        await saveFolder(folder);
+        foldersToSave.push(folder);
       } else {
         const char = await getCharacter(id);
         if (char) {
@@ -879,10 +1041,16 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           } else {
             char.folderId = targetFolderId;
           }
-          await saveCharacter(char);
+          charsToSave.push(char);
         }
       }
     }
+
+    await Promise.all(foldersToSave.map(f => saveFolder(f)));
+    if (charsToSave.length > 0) {
+      await saveCharacters(charsToSave);
+    }
+    
     setIsMoveModalOpen(false);
     setSelectionMode(false);
     setSelectedIds(new Set());
@@ -891,41 +1059,12 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
   return (
     <div className="pb-32 min-h-full bg-gradient-to-br from-slate-900 to-slate-800 text-white">
-      <AnimatePresence>
-        {isExporting && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-          >
-            <div className="bg-slate-900 p-6 sm:p-8 rounded-2xl max-w-sm w-full border border-white/10 shadow-2xl text-center">
-              <Download className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-bounce" />
-              <h3 className="text-xl font-bold mb-2">正在打包导出</h3>
-              <p className="text-white/60 mb-6 text-sm">
-                为了防止崩溃，大量角色将被分块导出。<br/>
-                请勿关闭此页面。
-              </p>
-              
-              <div className="w-full bg-slate-800 rounded-full h-3 mb-2 overflow-hidden shadow-inner">
-                <div 
-                  className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.max(2, Math.min(100, (exportProgress.current / exportProgress.total) * 100))}%` }}
-                />
-              </div>
-              <div className="text-sm font-medium text-blue-400">
-                {exportProgress.current} / {exportProgress.total}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
       <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverUpload} />
       <motion.header 
         initial={{ y: 0 }}
         animate={{ y: isHeaderVisible ? 0 : '-100%' }}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-white/10 px-4 pt-8 pb-4 mb-6 cursor-pointer"
+        className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-white/10 px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-4 mb-6 cursor-pointer"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             scrollToTop();
@@ -1398,9 +1537,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
               }>
 
             {characters.map((char) => {
-              const folderName = (searchQuery || selectedTags.length > 0) && char.folderId 
-                ? folders.find(f => f.id === char.folderId)?.name 
-                : undefined;
                 
               return (
                 <SortableItemWrapper key={`char-${char.id}`} id={`char-${char.id}`} disabled={!!searchQuery || selectedTags.length > 0} className={viewMode === 'masonry' ? 'break-inside-avoid inline-block w-full mb-4' : ''}>
@@ -1409,7 +1545,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                     selectionMode={selectionMode}
                     isSelected={selectedIds.has(char.id)}
                     viewMode={viewMode}
-                    folderName={folderName}
                     onClick={() => {
                       if (selectionMode) toggleSelection(char.id);
                       else onSelect(char.id);
@@ -1775,8 +1910,7 @@ function CharacterCardItem({
   onLongPress,
   selectionMode,
   isSelected,
-  viewMode,
-  folderName
+  viewMode
 }: { 
   key?: React.Key, 
   char: CharacterCard, 
@@ -1784,10 +1918,11 @@ function CharacterCardItem({
   onLongPress: () => void,
   selectionMode: boolean,
   isSelected: boolean,
-  viewMode: 'grid' | 'list' | 'masonry',
-  folderName?: string
+  viewMode: 'grid' | 'list' | 'masonry'
 }) {
-  const [url, setUrl] = useState<string>(char.avatarUrlFallback || '');
+  const defaultFallback = getFallbackAvatar(char.name || char.id);
+  const initialUrl = char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback;
+  const [url, setUrl] = useState<string>(initialUrl);
   const timerRef = useRef<any>(null);
   const isLongPress = useRef(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -1799,7 +1934,11 @@ function CharacterCardItem({
     let objectUrl: string | null = null;
     let isMounted = true;
     
-    if (char.avatarBlob) {
+    if (char.localFilePath) {
+      import('../lib/appBridge').then(({ getLocalImageUrl }) => {
+        if (isMounted) setUrl(getLocalImageUrl(char.localFilePath!, char.updatedAt || char.createdAt));
+      });
+    } else if (char.avatarBlob) {
       objectUrl = URL.createObjectURL(char.avatarBlob);
       setUrl(objectUrl);
     } else if (char.hasBlobsSeparated) {
@@ -1815,7 +1954,7 @@ function CharacterCardItem({
       isMounted = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [char.avatarBlob, char.hasBlobsSeparated, char.id, isInView, char.updatedAt]);
+  }, [char.avatarBlob, char.localFilePath, char.hasBlobsSeparated, char.id, char.updatedAt, isInView]);
 
   const handleTouchStart = () => {
     isLongPress.current = false;
@@ -1858,7 +1997,17 @@ function CharacterCardItem({
         className={`relative flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all select-none ${isSelected ? 'bg-purple-500/20 border-purple-500/50' : 'bg-white/5 hover:bg-white/10 border-transparent'} border`}
       >
         <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0">
-          <img src={url || undefined} alt={char.name} className="w-full h-full object-cover pointer-events-none" />
+        <img 
+        src={url || undefined} 
+        alt={char.name} 
+        className="w-full h-full object-cover pointer-events-none"  
+        onError={() => {
+           if (char.avatarBlob) setUrl(URL.createObjectURL(char.avatarBlob));
+           else if (char.hasBlobsSeparated) {
+               getCharacterBlob(char.id).then(b => { if (b && b.avatarBlob) setUrl(URL.createObjectURL(b.avatarBlob)); });
+           } else setUrl(initialUrl);
+        }}
+      />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -1875,11 +2024,11 @@ function CharacterCardItem({
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             {char.data?.creator && <p className="text-xs text-slate-500 truncate">by {char.data.creator}</p>}
-            {folderName && (
-              <span className="text-[10px] bg-slate-500/20 text-slate-400 px-1.5 py-0.5 rounded-md border border-white/10 flex-shrink-0 whitespace-nowrap">
-                📁 {folderName}
+            {/* {char.autoImportFilename && (
+              <span className="text-[10px] text-slate-500 truncate flex-shrink-1">
+                {char.autoImportFilename}
               </span>
-            )}
+            )} */}
           </div>
         </div>
         
@@ -1925,6 +2074,12 @@ function CharacterCardItem({
         src={url || undefined}
         alt={char.name}
         className={`w-full ${viewMode === 'masonry' ? 'h-auto block' : 'h-full'} object-cover pointer-events-none`}
+        onError={() => {
+           if (char.avatarBlob) setUrl(URL.createObjectURL(char.avatarBlob));
+           else if (char.hasBlobsSeparated) {
+               getCharacterBlob(char.id).then(b => { if (b && b.avatarBlob) setUrl(URL.createObjectURL(b.avatarBlob)); });
+           } else setUrl(initialUrl);
+        }}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-[var(--overlay-bottom)] via-[var(--overlay-mid)] to-transparent flex flex-col justify-end p-3 pointer-events-none">
         <h3 className="font-semibold text-[#ffffff] text-sm sm:text-base leading-tight drop-shadow-md break-words truncate">
@@ -1939,11 +2094,13 @@ function CharacterCardItem({
             ))}
           </div>
         )}
-        {folderName && (
-          <span className="text-[10px] bg-[#000000]/50 backdrop-blur-md text-[#ffffff] px-1.5 py-0.5 rounded-md border border-white/20 truncate w-fit mt-1.5">
-            📁 {folderName}
-          </span>
-        )}
+        {/* <div className="flex items-center gap-1 mt-1.5">
+          {char.autoImportFilename && (
+            <span className="text-[9px] text-[#ffffff]/60 truncate shrink">
+              {char.autoImportFilename}
+            </span>
+          )}
+        </div> */}
       </div>
       
       <AnimatePresence>
