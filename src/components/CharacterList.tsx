@@ -857,7 +857,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         }
 
         // Fallback: JSZip Chunked approach
-        const CHUNK_SIZE = 999999; 
+        const CHUNK_SIZE = 100; 
         const totalParts = Math.ceil(charsArray.length / CHUNK_SIZE);
         
         let successCountChunks = 0;
