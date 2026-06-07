@@ -301,15 +301,13 @@ export async function saveFolder(folder: Folder): Promise<void> {
 
 export async function deleteFolder(id: string): Promise<void> {
   const db = await initDB();
-  const tx = db.transaction(['folders', 'characters'], 'readwrite');
-  
-  const folderStore = tx.objectStore('folders');
-  const charStore = tx.objectStore('characters');
-  
-  // Find all descendant folders
-  const allFolders = await folderStore.getAll();
+
+  // Step 1: Read-only transaction to collect all data
+  const tx1 = db.transaction(['folders', 'characters'], 'readonly');
+  const folderStore1 = tx1.objectStore('folders');
+  const allFolders = await folderStore1.getAll();
   const folderIdsToDelete = new Set<string>([id]);
-  
+
   let added = true;
   while (added) {
     added = false;
@@ -321,21 +319,36 @@ export async function deleteFolder(id: string): Promise<void> {
     }
   }
 
-  // Delete all identified folders and move their characters to trash
+  // Collect all characters in these folders
+  const charsToSoftDelete: CharacterCard[] = [];
+  const charStore1 = tx1.objectStore('characters');
+  const index1 = charStore1.index('by-folder');
   for (const folderId of folderIdsToDelete) {
-    await folderStore.delete(folderId);
-    
-    const index = charStore.index('by-folder');
-    let cursor = await index.openCursor(folderId);
+    let cursor = await index1.openCursor(folderId);
     while (cursor) {
-      const char = cursor.value;
-      char.deletedAt = Date.now();
-      await cursor.update(char);
+      charsToSoftDelete.push(cursor.value);
       cursor = await cursor.continue();
     }
   }
-  
-  await tx.done;
+  await tx1.done;
+
+  // Mark characters as deleted
+  for (const char of charsToSoftDelete) {
+    char.deletedAt = Date.now();
+  }
+
+  // Step 2: Write transaction to apply changes
+  const tx2 = db.transaction(['folders', 'characters'], 'readwrite');
+  const folderStore2 = tx2.objectStore('folders');
+  const charStore2 = tx2.objectStore('characters');
+
+  for (const folderId of folderIdsToDelete) {
+    await folderStore2.delete(folderId);
+  }
+  for (const char of charsToSoftDelete) {
+    await charStore2.put(char);
+  }
+  await tx2.done;
 }
 
 export type SortOption = 'newest_import' | 'oldest_import' | 'recently_modified' | 'a_z' | 'z_a' | 'custom';

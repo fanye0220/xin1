@@ -380,9 +380,10 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
       id="character-detail-scroll-container"
       className="fixed inset-0 bg-black text-white overflow-y-auto z-50"
     >
@@ -483,12 +484,10 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
         {/* Avatar & Name */}
         <div className="flex flex-col items-center pt-8 pb-6 px-4">
-          <motion.img
-            layoutId={`avatar-${id}`}
+          <img
             src={avatarUrl}
             alt={character.name}
             onClick={() => setShowAvatarViewer(true)}
-            
             className="w-32 h-32 rounded-full object-cover border-4 border-white/20 shadow-2xl cursor-pointer hover:scale-105 transition-transform"
           />
           {isEditingName ? (
