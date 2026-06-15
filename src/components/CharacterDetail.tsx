@@ -10,6 +10,7 @@ import { normalizeWorldbookEntries } from '../lib/worldbook';
 import { getAISettings } from '../lib/ai';
 import { AvatarViewer } from './AvatarViewer';
 import { QuickRepliesSection } from './QuickRepliesSection';
+import { CharacterRegexSection } from './CharacterRegexSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
 import { CharacterMemosSection } from './CharacterMemosSection';
 import JSZip from 'jszip';
@@ -23,7 +24,7 @@ interface Props {
 
 export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const [character, setCharacter] = useState<CharacterCard | null>(null);
-  const [activeTab, setActiveTab] = useState<'profile' | 'greetings' | 'worldbook' | 'chats' | 'memos'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'greetings' | 'worldbook' | 'regex' | 'chats' | 'memos'>('profile');
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showExportAlert, setShowExportAlert] = useState(false);
@@ -380,10 +381,9 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
       id="character-detail-scroll-container"
       className="fixed inset-0 bg-black text-white overflow-y-auto z-50"
     >
@@ -777,6 +777,9 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
               { id: 'worldbook', icon: Book, label: '世界书' },
             ] : []),
             ...(!isPreset && !isStandaloneWorldbook ? [
+              { id: 'regex', icon: Edit2, label: '正则替换' },
+            ] : []),
+            ...(!isPreset && !isStandaloneWorldbook ? [
               { id: 'chats', icon: MessageSquare, label: '聊天记录' },
             ] : []),
             ...(!isPreset && !isStandaloneWorldbook ? [
@@ -1043,6 +1046,16 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                       </div>
                     </div>
                   )}
+                </motion.div>
+              )}
+
+              {activeTab === 'regex' && character && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <CharacterRegexSection character={character} onUpdate={setCharacter} />
                 </motion.div>
               )}
 

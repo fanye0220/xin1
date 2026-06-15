@@ -1,8 +1,9 @@
 {
-  "apiKey": "MISSING_API_KEY",
-  "authDomain": "MISSING_AUTH_DOMAIN",
-  "projectId": "MISSING_PROJECT_ID",
-  "storageBucket": "MISSING_STORAGE_BUCKET",
-  "messagingSenderId": "MISSING_SENDER_ID",
-  "appId": "MISSING_APP_ID"
+  "projectId": "gen-lang-client-0258210879",
+  "appId": "1:521475275435:web:927a1e0ec47cc1eec615ee",
+  "apiKey": "AIzaSyDBxsqge2M7rpYiCGPy7LobBXRWJsJiHBA",
+  "authDomain": "gen-lang-client-0258210879.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0258210879.firebasestorage.app",
+  "messagingSenderId": "521475275435",
+  "measurementId": ""
 }

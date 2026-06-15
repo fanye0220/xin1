@@ -172,6 +172,15 @@ export async function deleteLocalGalleryFile(path: string): Promise<boolean> {
   }
 }
 
+export async function renameLocalGalleryFile(oldPath: string, newPath: string): Promise<boolean> {
+  if (!isAndroid() || !(window as any).Android.renameFile) return false;
+  try {
+    return await (window as any).Android.renameFile(oldPath, newPath);
+  } catch (e) {
+    return false;
+  }
+}
+
 export async function pickAndroidFiles(): Promise<string[]> {
   if (!isAndroid()) return [];
   try {
@@ -179,6 +188,56 @@ export async function pickAndroidFiles(): Promise<string[]> {
     return JSON.parse(jsonStr || "[]") as string[];
   } catch (e) {
     console.error("Android bridge pick files failed:", e);
+    return [];
+  }
+}
+
+export async function startAndroidTempFile(filename: string): Promise<boolean> {
+  if (!isAndroid() || !(window as any).Android.startTempFile) return false;
+  return await (window as any).Android.startTempFile(filename);
+}
+
+export async function appendAndroidTempFile(filename: string, buffer: ArrayBuffer): Promise<boolean> {
+  if (!isAndroid() || !(window as any).Android.appendTempFile) return false;
+  try {
+     const blob = new Blob([buffer]);
+     const b64 = await new Promise<string>((resolve, reject) => {
+         const reader = new FileReader();
+         reader.onload = () => resolve((reader.result as string).split(',')[1]);
+         reader.onerror = () => reject(reader.error);
+         reader.readAsDataURL(blob);
+     });
+     return await (window as any).Android.appendTempFile(filename, b64);
+  } catch (e) {
+     return false;
+  }
+}
+
+export async function unzipAndroidTempFile(filename: string, targetFolderName: string = "MIU_Import"): Promise<string[]> {
+  if (!isAndroid() || !(window as any).Android.unzipTempFile) return [];
+  try {
+    const jsonStr = await (window as any).Android.unzipTempFile(filename, targetFolderName);
+    return JSON.parse(jsonStr || "[]") as string[];
+  } catch (e) {
+    console.error("Android bridge unzipTempFile failed:", e);
+    return [];
+  }
+}
+
+/**
+ * 委托 Android 原生解压 ZIP 文件。
+ * 相比于 JS 层的 JSZip，原生解压不会占用 V8 内存、不卡主线程，且直接落盘文件结构。
+ * @param zipFilePath 需要解压的本地 ZIP 绝对路径
+ * @param targetFolderName 解压至 Download/MIU/<targetFolderName> 文件夹。不填则为根目录
+ * @returns 解压出的所有文件绝对路径列表
+ */
+export async function unzipOnAndroid(zipFilePath: string, targetFolderName: string = "Extracted"): Promise<string[]> {
+  if (!isAndroid() || !(window as any).Android.unzipFile) return [];
+  try {
+    const jsonStr = await (window as any).Android.unzipFile(zipFilePath, targetFolderName);
+    return JSON.parse(jsonStr || "[]") as string[];
+  } catch (e) {
+    console.error("Android bridge unzip failed:", e);
     return [];
   }
 }

@@ -116,6 +116,16 @@ export default function App() {
   const [migrationProgress, setMigrationProgress] = useState({ current: 0, total: 0 });
 
   useEffect(() => {
+    import('./lib/appBridge').then(({ isAndroid, saveToGallery }) => {
+      if (isAndroid()) {
+        try {
+          saveToGallery('.nomedia', new ArrayBuffer(0));
+        } catch (e) {
+          // ignore
+        }
+      }
+    });
+
     migrateDatabase((current, total) => {
       setMigrationProgress({ current, total });
     }).then(() => {

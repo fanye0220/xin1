@@ -58,9 +58,12 @@ const AutoResizingIframe: React.FC<AutoResizingIframeProps> = ({ htmlContent }) 
       window.addEventListener('resize', reportHeight);
       const observer = new MutationObserver(reportHeight);
       if (document.body) {
-         observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+         observer.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+         if (window.ResizeObserver) {
+           const resizeObserver = new ResizeObserver(reportHeight);
+           resizeObserver.observe(document.body);
+         }
       }
-      setInterval(reportHeight, 500);
       document.body.addEventListener('toggle', reportHeight, true);
       reportHeight();
     </script>

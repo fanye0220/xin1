@@ -207,8 +207,9 @@ export function TrashBin({ onClose }: Props) {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要将选中的 ${selectedIds.size} 个角色永久删除吗？此操作不可撤销！`)) {
       setLoading(true);
-      const { deleteCharactersBulk } = await import('../lib/db');
-      await deleteCharactersBulk(Array.from(selectedIds));
+      for (const id of selectedIds) {
+        await deleteCharacter(id);
+      }
       setSelectedIds(new Set());
       setSelectionMode(false);
       await loadTrash();

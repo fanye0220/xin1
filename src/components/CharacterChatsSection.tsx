@@ -7,6 +7,7 @@ import {
   saveChatsBulk,
   ChatLog,
 } from "../lib/db";
+import { isAndroid } from "../lib/appBridge";
 import {
   MessageSquare,
   Trash2,
@@ -203,6 +204,99 @@ export function CharacterChatsSection({
       const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith(".zip")) {
+          if (isAndroid() && (window as any).Android?.startTempFile) {
+            const { startAndroidTempFile, appendAndroidTempFile, unzipAndroidTempFile, readLocalFileBuffer, deleteLocalGalleryFile } = await import('../lib/appBridge');
+            const tempFilename = `upload_chats_${Date.now()}.zip`;
+            await startAndroidTempFile(tempFilename);
+
+            const chunkSize = 1 * 1024 * 1024;
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            for (let c = 0; c < totalChunks; c++) {
+               const chunk = file.slice(c * chunkSize, (c + 1) * chunkSize);
+               const buffer = await chunk.arrayBuffer();
+               await appendAndroidTempFile(tempFilename, buffer);
+               setImportProgress({ show: true, current: c + 1, total: totalChunks, message: `上传 ZIP 进度: ${Math.round(((c + 1)/totalChunks)*100)}%` });
+            }
+
+            setImportProgress({ show: true, current: 0, total: 100, message: '原生引擎解压聊天记录中...' });
+            const extractedRoot = `Imported_Chats_${Date.now()}`;
+            const extractedPaths = await unzipAndroidTempFile(tempFilename, extractedRoot);
+            
+            const filesToProcess = extractedPaths.filter(p => p.toLowerCase().endsWith('.json') || p.toLowerCase().endsWith('.jsonl'));
+
+            for (let j = 0; j < filesToProcess.length; j++) {
+              const absPath = filesToProcess[j];
+              const fileName = absPath.split('/').pop() || '';
+              const lowerName = fileName.toLowerCase();
+
+              if (j % 10 === 0) {
+                setImportProgress({
+                  show: true,
+                  current: j + 1,
+                  total: filesToProcess.length,
+                  message: `正在解析原生文件: ${fileName}`,
+                });
+                await new Promise((r) => setTimeout(r, 0));
+              }
+
+              try {
+                const buf = await readLocalFileBuffer(absPath);
+                if (!buf) continue;
+                const text = new TextDecoder().decode(buf);
+                deleteLocalGalleryFile(absPath).catch(console.error);
+
+                let parsedMessages = [];
+
+                if (lowerName.endsWith(".jsonl")) {
+                  const lines = text.trim().split("\n");
+                  for (let k = 0; k < lines.length; k++) {
+                    try {
+                      const parsed = JSON.parse(lines[k]);
+                      if (parsed) parsedMessages.push(parsed);
+                    } catch (e) {}
+                    if (k % 500 === 0) await new Promise((r) => setTimeout(r, 0));
+                  }
+                } else {
+                  try {
+                    const data = JSON.parse(text);
+                    if (Array.isArray(data)) parsedMessages = data;
+                    else if (data.chat && Array.isArray(data.chat))
+                      parsedMessages = data.chat;
+                    else parsedMessages = [data];
+                  } catch (err) {
+                    if (text.trim().split("\n").length > 1) {
+                      const lines = text.trim().split("\n");
+                      for (let k = 0; k < lines.length; k++) {
+                        try {
+                          const parsed = JSON.parse(lines[k]);
+                          if (parsed) parsedMessages.push(parsed);
+                        } catch (e) {}
+                        if (k % 500 === 0)
+                          await new Promise((r) => setTimeout(r, 0));
+                      }
+                    }
+                  }
+                }
+
+                if (parsedMessages.length === 0) continue;
+
+                pendingChats.push({
+                  id: crypto.randomUUID(),
+                  characterId,
+                  name: fileName,
+                  messages: parsedMessages as any,
+                  createdAt: Date.now(),
+                });
+                imported++;
+              } catch (e) {
+                console.error(`Failed to parse native file: ${absPath}`, e);
+              }
+            }
+            if (isAndroid()) {
+              const { deleteLocalGalleryFile } = await import('../lib/appBridge');
+              await deleteLocalGalleryFile(extractedRoot);
+            }
+          } else {
           const { default: JSZip } = await import("jszip");
           const zip = new JSZip();
           const loadedZip = await zip.loadAsync(file);
@@ -290,6 +384,7 @@ export function CharacterChatsSection({
                 e,
               );
             }
+          }
           }
         } else {
           setImportProgress({

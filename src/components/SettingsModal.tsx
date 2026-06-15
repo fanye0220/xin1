@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Key, ExternalLink, Save, Globe, CheckCircle2, AlertCircle, Loader2, RefreshCw, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { AISettings, CustomEndpoint, getAISettings, saveAISettings, testConnection, fetchCustomModels } from '../lib/ai';
+import { CloudSyncTab } from './CloudSyncTab';
 
 export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<AISettings>(getAISettings());
-  const [activeTab, setActiveTab] = useState<'api' | 'st'>('api');
+  const [activeTab, setActiveTab] = useState<'api' | 'st' | 'cloud'>('api');
   const [isStSetupOpen, setIsStSetupOpen] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -144,6 +145,12 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'st' ? 'border-blue-500 text-blue-400' : 'border-transparent text-white/50 hover:text-white/80'}`}
             >
               酒馆联动
+            </button>
+            <button 
+              onClick={() => setActiveTab('cloud')}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'cloud' ? 'border-blue-500 text-blue-400' : 'border-transparent text-white/50 hover:text-white/80'}`}
+            >
+              云端同步
             </button>
           </div>
           
@@ -368,6 +375,12 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 {testStatus === 'error' && <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
                 <span className="flex-1 break-all">{testMsg || '正在测试连接...'}</span>
               </div>
+            )}
+
+            {activeTab === 'cloud' && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <CloudSyncTab />
+              </motion.div>
             )}
           </div>
 

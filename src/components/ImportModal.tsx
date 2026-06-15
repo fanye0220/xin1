@@ -58,7 +58,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     return currentParentId || undefined;
   };
 
-  const parseChunk = async (files: File[], startIndex: number, chunkSize: number, parsedItems: ParsedItem[], errors: {file: string, error: string}[]) => {
+  const parseChunk = async (files: File[], startIndex: number, chunkSize: number, parsedItems: ParsedItem[], errors: {file: string, error: string}[], extractedRoots: string[]) => {
     const endIndex = Math.min(startIndex + chunkSize, files.length);
     
     for (let i = startIndex; i < endIndex; i++) {
@@ -116,13 +116,13 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     }
     
     if (endIndex < files.length) {
-      setTimeout(() => parseChunk(files, endIndex, chunkSize, parsedItems, errors), 0);
+      setTimeout(() => parseChunk(files, endIndex, chunkSize, parsedItems, errors, extractedRoots), 0);
     } else {
-      assembleAndSave(parsedItems, errors);
+      assembleAndSave(parsedItems, errors, extractedRoots);
     }
   };
 
-  const assembleAndSave = async (parsedItems: ParsedItem[], errors: {file: string, error: string}[]) => {
+  const assembleAndSave = async (parsedItems: ParsedItem[], errors: {file: string, error: string}[], extractedRoots: string[]) => {
     let mainItems = parsedItems.filter(item => item.isMain);
     let altImages = parsedItems.filter(item => !item.isMain && item.isImage);
     const otherItems = parsedItems.filter(item => !item.isMain && !item.isImage);
@@ -284,14 +284,21 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         }
 
         if (isAndroid()) {
-          const buffer = await file.arrayBuffer();
-          // We no longer call saveToGallery here because saveCharacter will do the proper
-          // deep directory sync logic based on the folder hierarchy. We just need to
-          // parse the file into the DB representation.
-          if (file.type === 'image/png' || file.name.endsWith('.png')) {
-            avatarBlob = file;
+          if ((file as any).androidAbsPath) {
+            // Already unzipped natively! 
+            localFilePath = (file as any).androidAbsPath;
+            const buffer = await file.arrayBuffer(); // read it locally just strictly if needed, but wait!
+            // Actually, we don't need to read it if we skip setting avatarBlob, but we already read it during `parseChunk` to get metadata.
+            // By NOT setting avatarBlob, we prevent it from being loaded into IDB blobs table!
+            avatarBlob = undefined;
+            originalFile = undefined;
+          } else {
+            const buffer = await file.arrayBuffer();
+            if (file.type === 'image/png' || file.name.endsWith('.png')) {
+              avatarBlob = file;
+            }
+            originalFile = file;
           }
-          originalFile = file;
         } else {
           if (file.type === 'image/png' || file.name.endsWith('.png')) {
             avatarBlob = file;
@@ -332,7 +339,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     }
     
     if (charsToSave.length > 0) {
-      await saveCharacters(charsToSave);
+      await saveCharacters(charsToSave, extractedRoots);
     }
     
     setProgress(null);
@@ -354,12 +361,77 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     setImportErrors([]);
     
     let fileArray: File[] = [];
+    let extractedRoots: string[] = [];
     
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       if (f.name.endsWith('.zip')) {
-        try {
-          const zip = await JSZip.loadAsync(f);
+        if (isAndroid() && (window as any).Android?.startTempFile) {
+          try {
+            setProgress({ current: 0, total: 100, message: `正在上传 ${f.name} 至原生解压引擎...` });
+            const { startAndroidTempFile, appendAndroidTempFile, unzipAndroidTempFile, readLocalFileBuffer } = await import('../lib/appBridge');
+            const tempFilename = `upload_${Date.now()}.zip`;
+            await startAndroidTempFile(tempFilename);
+
+            const chunkSize = 1 * 1024 * 1024; // 1MB chunks
+            const totalChunks = Math.ceil(f.size / chunkSize);
+            for (let c = 0; c < totalChunks; c++) {
+               const chunk = f.slice(c * chunkSize, (c + 1) * chunkSize);
+               const buffer = await chunk.arrayBuffer();
+               await appendAndroidTempFile(tempFilename, buffer);
+               setProgress({ current: c + 1, total: totalChunks, message: `上传 ZIP 进度: ${Math.round(((c + 1)/totalChunks)*100)}%` });
+            }
+
+            setProgress({ current: 0, total: 100, message: '原生引擎解压并重组文件架构中...' });
+            const extractedRoot = `Imported_${Date.now()}`;
+            extractedRoots.push(extractedRoot);
+            const extractedPaths = await unzipAndroidTempFile(tempFilename, extractedRoot);
+            
+            setProgress({ current: 0, total: extractedPaths.length, message: '解析解压文件列表...' });
+
+            const tempFiles: File[] = [];
+            for (const absPath of extractedPaths) {
+               if (absPath.match(/\.(png|jpe?g|webp|gif|json)$/i)) {
+                  let relativePath = absPath.substring(absPath.indexOf(extractedRoot) + extractedRoot.length + 1);
+                  let type = 'application/octet-stream';
+                  if (absPath.endsWith('.png')) type = 'image/png';
+                  else if (absPath.match(/\.jpe?g$/i)) type = 'image/jpeg';
+                  else if (absPath.endsWith('.webp')) type = 'image/webp';
+                  else if (absPath.endsWith('.gif')) type = 'image/gif';
+                  else if (absPath.endsWith('.json')) type = 'application/json';
+                  
+                  const extractedFile = new File([], absPath.split('/').pop() || 'file', { type });
+                  Object.defineProperty(extractedFile, 'webkitRelativePath', {
+                    value: relativePath,
+                    writable: false
+                  });
+                  Object.defineProperty(extractedFile, 'androidAbsPath', {
+                    value: absPath,
+                    writable: false
+                  });
+                  
+                  // Lazy load contents to save memory!
+                  extractedFile.arrayBuffer = async () => {
+                     const buf = await readLocalFileBuffer(absPath);
+                     return buf || new ArrayBuffer(0);
+                  };
+                  extractedFile.text = async () => {
+                     const buf = await readLocalFileBuffer(absPath);
+                     return buf ? new TextDecoder().decode(buf) : "";
+                  };
+                  
+                  tempFiles.push(extractedFile);
+               }
+            }
+            fileArray.push(...tempFiles);
+          } catch (e) {
+            console.error("Native zip extraction failed", e);
+            setError(`原生ZIP解压失败: ${f.name}`);
+            return;
+          }
+        } else {
+          try {
+            const zip = await JSZip.loadAsync(f);
           for (const relativePath in zip.files) {
             const zipEntry = zip.files[relativePath];
             if (!zipEntry.dir && (relativePath.match(/\.(png|jpe?g|webp|gif|json)$/i))) {
@@ -386,6 +458,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           setError(`ZIP 文件读取失败: ${f.name}`);
           return;
         }
+      }
       } else if (f.type.startsWith('image/') || f.name.match(/\.(png|jpe?g|webp|gif)$/i) || f.type === 'application/json' || f.name.endsWith('.json')) {
         fileArray.push(f);
       }
@@ -399,7 +472,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     setProgress({ current: 0, total: fileArray.length, message: '准备导入...' });
     
     // Process in chunks of 50 to avoid blocking UI
-    parseChunk(fileArray, 0, 50, [], []);
+    parseChunk(fileArray, 0, 50, [], [], extractedRoots);
   };
 
   const handleDrop = async (e: React.DragEvent) => {
