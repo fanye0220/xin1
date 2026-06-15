@@ -1,6 +1,14 @@
-import { Capacitor } from '@capacitor/core';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
+// Capacitor is only available in Android APK builds, not on Web/Vercel.
+// All imports are done dynamically so Vite/Rollup won't try to resolve them at build time.
+const getCapacitor = async () => {
+  try { return (await import('@capacitor/core')).Capacitor; } catch { return null; }
+};
+const getFilesystem = async () => {
+  try { return await import('@capacitor/filesystem'); } catch { return null; }
+};
+const getShare = async () => {
+  try { return (await import('@capacitor/share')).Share; } catch { return null; }
+};
 
 export const isAndroid = () => typeof window !== 'undefined' && !!(window as any).Android;
 
@@ -8,10 +16,13 @@ export const isAndroid = () => typeof window !== 'undefined' && !!(window as any
 export function getLocalImageUrl(filePath: string, cacheBuster?: number | string): string {
   if (isAndroid()) {
     try {
-      if (Capacitor && Capacitor.isNativePlatform()) {
-         let url = Capacitor.convertFileSrc(filePath);
-         if (cacheBuster) url += (url.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
-         return url;
+      // On native Android APK, @capacitor/core is available at runtime even though
+      // we don't statically import it here (to avoid Vite/Rollup errors on Web/Vercel).
+      const cap = (window as any)?.Capacitor;
+      if (cap && cap.isNativePlatform && cap.isNativePlatform()) {
+        let url = cap.convertFileSrc(filePath);
+        if (cacheBuster) url += (url.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
+        return url;
       }
     } catch(e) {}
     // Standard Android WebViewAssetLoader format used by the user's APK
@@ -27,6 +38,12 @@ export function getLocalImageUrl(filePath: string, cacheBuster?: number | string
 export async function shareFileOnAndroid(filename: string, buffer: ArrayBuffer, mimeType?: string): Promise<boolean> {
   if (!isAndroid()) return false;
   try {
+     const fsModule = await getFilesystem();
+     if (!fsModule) return false;
+     const { Filesystem, Directory } = fsModule;
+     const Share = await getShare();
+     if (!Share) return false;
+
      const chunkSize = 2 * 1024 * 1024; // 2MB chunks
      const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
      let fileUri = '';
