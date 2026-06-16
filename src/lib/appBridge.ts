@@ -125,9 +125,7 @@ export async function saveToGallery(filename: string, buffer: ArrayBuffer): Prom
           reader.onerror = () => reject(reader.error);
           reader.readAsDataURL(blob);
       });
-      const res = await (window as any).Android.saveTavernFile(filename, b64);
-      await new Promise(r => setTimeout(r, 20)); // prevent JSI bridge congestion
-      return res;
+      return await (window as any).Android.saveTavernFile(filename, b64);
    } catch (e) {
       console.error("Android bridge save failed:", e);
       return null;
@@ -149,9 +147,7 @@ export async function addAndroidZipEntry(zipFilename: string, entryName: string,
          reader.onerror = () => reject(reader.error);
          reader.readAsDataURL(blob);
      });
-     const res = await (window as any).Android.addZipEntry(zipFilename, entryName, b64);
-     await new Promise(r => setTimeout(r, 20)); // prevent JSI bridge congestion
-     return res;
+     return await (window as any).Android.addZipEntry(zipFilename, entryName, b64);
   } catch (e) {
      return false;
   }

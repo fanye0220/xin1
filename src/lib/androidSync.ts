@@ -89,12 +89,7 @@ export async function tryCleanupOldAndroidFiles(char: CharacterCard) {
   }
 }
 
-export async function syncCharacterToAndroid(
-  char: CharacterCard,
-  blobStoreValue: { avatarBlob?: Blob, originalFile?: File, avatarHistory?: Blob[] } | null,
-  _allCharsCache?: CharacterCard[],
-  _allChatsCache?: Map<string, any[]>
-): Promise<string[]> {
+export async function syncCharacterToAndroid(char: CharacterCard, blobStoreValue: { avatarBlob?: Blob, originalFile?: File, avatarHistory?: Blob[] } | null): Promise<string[]> {
   if (!isAndroid()) return [];
 
   // Determine prefix and folder

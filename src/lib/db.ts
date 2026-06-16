@@ -322,28 +322,8 @@ export async function resolveFolderPath(folderId?: string | null): Promise<strin
 
 export async function saveFolder(folder: Folder): Promise<void> {
   const db = await initDB();
-
-  let oldFolderPath: string | null = null;
-  if (isAndroid()) {
-    const existing = await db.get('folders', folder.id);
-    if (existing && existing.name !== folder.name) {
-      const allFoldersBefore = await db.getAll('folders');
-      const getSafeFilenameLocal = (n: string) => n.replace(/[\\/:\*\?"<>|]/g, '_') || 'folder';
-      const parts: string[] = [];
-      let currentId: string | undefined | null = folder.id;
-      while (currentId) {
-        const f = allFoldersBefore.find(x => x.id === currentId);
-        if (!f) break;
-        parts.unshift(getSafeFilenameLocal(f.name));
-        currentId = f.parentId;
-        if (parts.length > 50) break;
-      }
-      if (parts.length > 0) oldFolderPath = parts.join('/');
-    }
-  }
-
   await db.put('folders', folder);
-
+  
   if (isAndroid()) {
     import('./androidSync').then(async ({ syncCharacterToAndroid }) => {
       try {
@@ -359,28 +339,18 @@ export async function saveFolder(folder: Folder): Promise<void> {
             }
           }
         }
-
+        
         const allChars = await db.getAll('characters');
         const charsToSync = allChars.filter(c => c.folderId && descendantIds.has(c.folderId) && !c.deletedAt);
-
+        
         for (const char of charsToSync) {
           const blobs = await db.get('blobs', char.id);
           const newPaths = await syncCharacterToAndroid(char, blobs || null);
           if (newPaths && newPaths.length > 0) {
-            if (newPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)) { char.localFilePath = newPaths[0]; } else { delete char.localFilePath; (char as any)._androidSyncPath = newPaths[0]; }
-            await db.put('characters', char);
+             if(newPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath = newPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=newPaths[0];}
+             await db.put('characters', char);
           }
           await new Promise(r => setTimeout(r, 20));
-        }
-
-        if (oldFolderPath) {
-          const { deleteLocalGalleryFile } = await import('./appBridge');
-          const freshChars = await db.getAll('characters');
-          const stillUsed = freshChars.some(c => {
-            const p = c.localFilePath || (c as any)._androidSyncPath;
-            return p && (p.includes('/' + oldFolderPath + '/') || p.includes('/' + oldFolderPath + '.'));
-          });
-          if (!stillUsed) await deleteLocalGalleryFile(oldFolderPath);
         }
       } catch(e) { console.error('Android folder sync failed', e); }
     });
@@ -761,21 +731,9 @@ export async function saveCharacters(characters: CharacterCard[], cleanupAndroid
      import('./androidSync').then(async ({ syncCharacterToAndroid }) => {
        try {
          const dbRef = await initDB();
-
-         // Pre-fetch ONCE to avoid per-card DB scans during bulk sync
-         const allCharsCache: CharacterCard[] = await dbRef.getAll('characters');
-         const allChatsRaw = await dbRef.getAll('chats');
-         const allChatsCache = new Map<string, any[]>();
-         for (const chat of allChatsRaw) {
-           if (chat.characterId) {
-             if (!allChatsCache.has(chat.characterId)) allChatsCache.set(chat.characterId, []);
-             allChatsCache.get(chat.characterId)!.push(chat);
-           }
-         }
-
          for (const character of characters) {
            const finalBlobs = allFinalBlobs.get(character.id);
-           const syncPaths = await syncCharacterToAndroid(character, finalBlobs, allCharsCache, allChatsCache);
+           const syncPaths = await syncCharacterToAndroid(character, finalBlobs);
            if (syncPaths && syncPaths.length > 0) {
               const freshChar = await dbRef.get('characters', character.id);
               if (freshChar) {
