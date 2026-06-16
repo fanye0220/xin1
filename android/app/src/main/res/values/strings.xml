@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">MIU</string>
-    <string name="title_activity_main">MIU</string>
-    <string name="package_name">com.miu.app</string>
-    <string name="custom_url_scheme">com.miu.app</string>
+    <string name="app_name">TavernCards</string>
+    <string name="title_activity_main">TavernCards</string>
+    <string name="package_name">com.silicon.tavern</string>
+    <string name="custom_url_scheme">com.silicon.tavern</string>
 </resources>

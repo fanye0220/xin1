@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Cloud, Download, Upload, Trash2, Github, Loader2 } from 'lucide-react';
-import { initAuth, googleSignIn, logout, getAccessToken, listBackupsFromDrive, uploadBackupToDrive, downloadBackupFromDrive, deleteBackupFromDrive } from '../lib/drive';
+import { initAuth, googleSignIn, logout, getAccessToken, listBackupsFromDrive, deleteBackupFromDrive, triggerManualBackup, triggerRestore, onSyncStateChange, SyncState } from '../lib/drive';
 
 export function CloudSyncTab() {
   const [needsAuth, setNeedsAuth] = useState(true);
@@ -10,13 +10,12 @@ export function CloudSyncTab() {
   
   const [backups, setBackups] = useState<any[]>([]);
   const [isLoadingBackups, setIsLoadingBackups] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState('');
   
   const [actionFileId, setActionFileId] = useState<string | null>(null);
+  const [syncInfo, setSyncInfo] = useState<SyncState>({ isActive: false, taskName: '', message: '', isError: false, completed: false });
 
   useEffect(() => {
-    const unsubscribe = initAuth(
+    const unsubDrive = initAuth(
       (u, t) => {
         setUser(u);
         setToken(t);
@@ -30,8 +29,19 @@ export function CloudSyncTab() {
         setBackups([]);
       }
     );
-    return () => unsubscribe();
+    const unsubSync = onSyncStateChange(setSyncInfo);
+    return () => {
+      unsubDrive();
+      unsubSync();
+    };
   }, []);
+
+  useEffect(() => {
+    // Refresh backups list when manual backup completes successfully
+    if (syncInfo.completed && syncInfo.taskName === '手动备份') {
+      if (token) loadBackups(token);
+    }
+  }, [syncInfo.completed, syncInfo.taskName, token]);
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
@@ -67,41 +77,25 @@ export function CloudSyncTab() {
     }
   };
 
-  const handleUploadBackup = async () => {
+  const handleUploadBackup = () => {
     if (!token) return;
-    setIsUploading(true);
-    setUploadProgress('准备备份...');
     try {
-      await uploadBackupToDrive(token, (msg) => setUploadProgress(msg));
-      await loadBackups(token);
-      alert('备份成功！');
+      triggerManualBackup(token);
     } catch (err: any) {
       alert(err.message);
-    } finally {
-      setIsUploading(false);
-      setUploadProgress('');
     }
   };
 
-  const handleDownloadBackup = async (fileId: string) => {
+  const handleDownloadBackup = (fileId: string) => {
     if (!token) return;
-    const confirm = window.confirm("确定要下载该备份吗？\n\n请注意：本工具目前为整体压缩包下载，下载后你需要手动在主页使用左侧的【导入】按钮引入压缩包中的数据。");
+    const confirm = window.confirm("确定要恢复该备份吗？\n\n注意：云端备份下载后会直接合并到你当前的数据中，重名卡片会被自动覆盖更新。");
     if (!confirm) return;
 
     setActionFileId(fileId);
     try {
-      const blob = await downloadBackupFromDrive(token, fileId);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `GoogleDrive_Backup_${Date.now()}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      triggerRestore(token, fileId);
     } catch (err: any) {
-      alert("下载失败: " + err.message);
-    } finally {
+      alert("恢复失败: " + err.message);
       setActionFileId(null);
     }
   };
@@ -185,15 +179,37 @@ export function CloudSyncTab() {
 
       {/* Action Area */}
       <div className="flex flex-col gap-3">
+        <label className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-xl cursor-pointer hover:bg-white/10 transition">
+          <div>
+            <div className="text-sm font-medium text-white">挂机自动同步</div>
+            <div className="text-xs text-white/50 mt-1">
+              开启后，网页打开期间每隔30分钟自动静默覆盖备份到云端。
+            </div>
+          </div>
+          <div className="relative inline-flex items-center cursor-pointer">
+            <input 
+              type="checkbox" 
+              className="sr-only peer" 
+              checked={localStorage.getItem('auto_backup_enabled') === 'true'}
+              onChange={(e) => {
+                localStorage.setItem('auto_backup_enabled', e.target.checked ? 'true' : 'false');
+                // Force re-render to update the checkbox
+                setActionFileId(actionFileId === 'refresh' ? null : 'refresh');
+              }}
+            />
+            <div className="w-11 h-6 toggle-track toggle-knob peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+          </div>
+        </label>
+
         <button
           onClick={handleUploadBackup}
-          disabled={isUploading}
+          disabled={syncInfo.isActive}
           className="w-full py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-medium flex justify-center items-center gap-2 transition disabled:opacity-50"
         >
-          {isUploading ? (
+          {syncInfo.isActive && syncInfo.taskName === '手动备份' ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>{uploadProgress || '处理中...'}</span>
+              <span>请求已发送...</span>
             </>
           ) : (
             <>
@@ -234,16 +250,16 @@ export function CloudSyncTab() {
                 </div>
                 <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
                   <button 
-                    title="下载到本地"
-                    disabled={actionFileId === b.id}
+                    title="下载并恢复到本应用"
+                    disabled={syncInfo.isActive || actionFileId === b.id}
                     onClick={() => handleDownloadBackup(b.id)}
                     className="p-2 rounded-lg bg-white/5 hover:bg-blue-500/20 hover:text-blue-400 text-white/60 transition disabled:opacity-50"
                   >
-                    {actionFileId === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    {syncInfo.isActive && syncInfo.taskName === '恢复数据' && actionFileId === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                   </button>
                   <button 
                     title="删除"
-                    disabled={actionFileId === b.id}
+                    disabled={syncInfo.isActive || actionFileId === b.id}
                     onClick={() => handleDeleteBackup(b.id)}
                     className="p-2 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-400 text-white/60 transition disabled:opacity-50"
                   >

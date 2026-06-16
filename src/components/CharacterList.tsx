@@ -920,89 +920,84 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         return;
       }
 
-      // Collect all tasks with folder paths
-      const tasks: { charId: string, path: string[] }[] = [];
-      const usedNamesTracker = new Set<string>();
+      const zip = new JSZip();
+      const nameOccurrences = new Map<string, number>();
+      
+      const getUniqueName = (charName: string) => {
+        const baseName = getSafeFilename(charName);
+        const count = nameOccurrences.get(baseName) || 0;
+        nameOccurrences.set(baseName, count + 1);
+        return count === 0 ? baseName : `${baseName}_${count}`;
+      };
 
-      for (const id of Array.from(selectedIds)) {
+      await Promise.all(Array.from(selectedIds).map(async (id) => {
         const folder = allFolders.find(f => f.id === id);
         if (folder) {
-          const collectFolderRecursive = async (currentFolderId: string, currentPath: string[]) => {
+          // Export all characters in this folder and its subfolders
+          const exportFolderRecursive = async (currentFolderId: string, currentZip: JSZip) => {
             const { characters: folderChars } = await getCharacters(1, 10000, currentFolderId);
-            for (const char of folderChars) {
-              tasks.push({ charId: char.id, path: currentPath });
-            }
+            await Promise.all(folderChars.map(char => {
+               const uniqueName = getUniqueName(char.name);
+               return addCharacterToZip(char, currentZip, undefined, uniqueName);
+            }));
+            
             const subFolders = allFolders.filter(f => f.parentId === currentFolderId);
-            for (const subFolder of subFolders) {
-              await collectFolderRecursive(subFolder.id, [...currentPath, getSafeFilename(subFolder.name)]);
-            }
-          };
-          await collectFolderRecursive(folder.id, [getSafeFilename(folder.name)]);
-        } else {
-          tasks.push({ charId: id, path: [] });
-        }
-      }
-
-      // Deduplicate
-      const uniqueCharIds = new Set<string>();
-      const uniqueTasks: typeof tasks = [];
-      for (const task of tasks) {
-        if (!uniqueCharIds.has(task.charId)) {
-          uniqueCharIds.add(task.charId);
-          uniqueTasks.push(task);
-        }
-      }
-
-      const CHUNK_SIZE = 100;
-      const totalTasks = uniqueTasks.length;
-      const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-      let chunkIndex = 1;
-      let currentCount = 0;
-
-      for (let i = 0; i < totalTasks; i += CHUNK_SIZE) {
-        const chunkTasks = uniqueTasks.slice(i, i + CHUNK_SIZE);
-        const zip = new JSZip();
-
-        for (const task of chunkTasks) {
-          const char = await getCharacter(task.charId);
-          if (char) {
-            let currentZip: JSZip = zip;
-            // Use provided path, or resolve from folderId if no path
-            let pathParts = task.path;
-            if (pathParts.length === 0 && char.folderId && char.folderId !== 'all') {
-              const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
-              if (folderName && folderName !== '未归类') {
-                pathParts = folderName.split('/').map(getSafeFilename);
-              } else {
-                pathParts = ['未归类'];
+            await Promise.all(subFolders.map(async subFolder => {
+              const subZip = currentZip.folder(getSafeFilename(subFolder.name));
+              if (subZip) {
+                await exportFolderRecursive(subFolder.id, subZip);
               }
-            } else if (pathParts.length === 0) {
-              pathParts = ['未归类'];
-            }
-            for (const p of pathParts) {
-              currentZip = currentZip.folder(p) || currentZip;
-            }
-            await addCharacterToZip(char, currentZip, task.path, usedNamesTracker);
+            }));
+          };
+          
+          const folderZip = zip.folder(getSafeFilename(folder.name));
+          if (folderZip) {
+            await exportFolderRecursive(folder.id, folderZip);
           }
-          currentCount++;
+        } else {
+          const char = await getCharacter(id);
+          if (char) {
+            const uniqueName = getUniqueName(char.name);
+            if (!char.folderId || char.folderId === 'all') {
+              const uncategorizedZip = zip.folder('未归类');
+              if (uncategorizedZip) {
+                await addCharacterToZip(char, uncategorizedZip, undefined, uniqueName);
+              } else {
+                await addCharacterToZip(char, zip, undefined, uniqueName);
+              }
+            } else {
+               // Technically if it's selected individually but inside a folder,
+               // we should ideally put it in its folder.
+               const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
+               if (folderName === '未归类' || !folderName) {
+                 const uZip = zip.folder('未归类');
+                 if (uZip) await addCharacterToZip(char, uZip, undefined, uniqueName);
+                 else await addCharacterToZip(char, zip, undefined, uniqueName);
+               } else {
+                 let currentZip: JSZip = zip;
+                 const parts = folderName.split('/');
+                 for (const p of parts) {
+                   currentZip = currentZip.folder(p) || currentZip;
+                 }
+                 await addCharacterToZip(char, currentZip, undefined, uniqueName);
+               }
+            }
+          }
         }
-
-        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-        const url = URL.createObjectURL(zipBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        const suffix = totalTasks > CHUNK_SIZE ? `_Part${chunkIndex}` : '';
-        a.download = `Tavern_Export_${timestamp}${suffix}.zip`;
-        a.click();
-        URL.revokeObjectURL(url);
-        chunkIndex++;
-
-        // Small delay between chunks to let browser breathe
-        if (i + CHUNK_SIZE < totalTasks) {
-          await new Promise(r => setTimeout(r, 800));
-        }
-      }
-
+      }));
+      
+      // Use internal streaming/chunks to reduce memory overhead during generation, 
+      // though generateAsync still buffers entirely into a Blob.
+      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      const exportName = `Tavern_Export_${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}.zip`;
+      
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportName;
+      a.click();
+      URL.revokeObjectURL(url);
+      
       setSelectionMode(false);
       setSelectedIds(new Set());
     } catch (e) {
