@@ -157,8 +157,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -783,7 +781,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const handleBatchExport = async () => {
     if (selectedIds.size === 0) return;
     
-    setIsExporting(true);
     try {
       const allFolders = await getFolders();
       
@@ -923,10 +920,11 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         return;
       }
 
-      // Collect all tasks (charId + folder path) first
+      // Collect all tasks with folder paths
       const tasks: { charId: string, path: string[] }[] = [];
+      const usedNamesTracker = new Set<string>();
 
-      for (const id of selectedIds) {
+      for (const id of Array.from(selectedIds)) {
         const folder = allFolders.find(f => f.id === id);
         if (folder) {
           const collectFolderRecursive = async (currentFolderId: string, currentPath: string[]) => {
@@ -941,19 +939,11 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           };
           await collectFolderRecursive(folder.id, [getSafeFilename(folder.name)]);
         } else {
-          // Single character: resolve its folder path
-          const char = await getCharacter(id);
-          if (char) {
-            const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
-            const path = (!folderName || folderName === '未归类')
-              ? ['未归类']
-              : folderName.split('/').map(getSafeFilename);
-            tasks.push({ charId: char.id, path });
-          }
+          tasks.push({ charId: id, path: [] });
         }
       }
 
-      // Deduplicate by charId
+      // Deduplicate
       const uniqueCharIds = new Set<string>();
       const uniqueTasks: typeof tasks = [];
       for (const task of tasks) {
@@ -965,11 +955,9 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
       const CHUNK_SIZE = 100;
       const totalTasks = uniqueTasks.length;
-      setExportProgress({ current: 0, total: totalTasks });
-
+      const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
       let chunkIndex = 1;
       let currentCount = 0;
-      const nameOccurrences = new Map<string, number>();
 
       for (let i = 0; i < totalTasks; i += CHUNK_SIZE) {
         const chunkTasks = uniqueTasks.slice(i, i + CHUNK_SIZE);
@@ -978,19 +966,25 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         for (const task of chunkTasks) {
           const char = await getCharacter(task.charId);
           if (char) {
-            const baseName = getSafeFilename(char.name);
-            const count = nameOccurrences.get(baseName) || 0;
-            nameOccurrences.set(baseName, count + 1);
-            const uniqueName = count === 0 ? baseName : `${baseName}_${count}`;
-
             let currentZip: JSZip = zip;
-            for (const p of task.path) {
+            // Use provided path, or resolve from folderId if no path
+            let pathParts = task.path;
+            if (pathParts.length === 0 && char.folderId && char.folderId !== 'all') {
+              const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
+              if (folderName && folderName !== '未归类') {
+                pathParts = folderName.split('/').map(getSafeFilename);
+              } else {
+                pathParts = ['未归类'];
+              }
+            } else if (pathParts.length === 0) {
+              pathParts = ['未归类'];
+            }
+            for (const p of pathParts) {
               currentZip = currentZip.folder(p) || currentZip;
             }
-            await addCharacterToZip(char, currentZip, undefined, uniqueName);
+            await addCharacterToZip(char, currentZip, task.path, usedNamesTracker);
           }
           currentCount++;
-          setExportProgress(prev => ({ ...prev, current: currentCount }));
         }
 
         const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -998,13 +992,14 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
         const a = document.createElement('a');
         a.href = url;
         const suffix = totalTasks > CHUNK_SIZE ? `_Part${chunkIndex}` : '';
-        a.download = `Tavern_Export_${new Date().toISOString().slice(0, 10)}${suffix}.zip`;
+        a.download = `Tavern_Export_${timestamp}${suffix}.zip`;
         a.click();
         URL.revokeObjectURL(url);
-
         chunkIndex++;
+
+        // Small delay between chunks to let browser breathe
         if (i + CHUNK_SIZE < totalTasks) {
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await new Promise(r => setTimeout(r, 800));
         }
       }
 
@@ -1013,8 +1008,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     } catch (e) {
       console.error("Batch export failed", e);
       alert("导出失败，请重试");
-    } finally {
-      setIsExporting(false);
     }
   };
 
@@ -1072,34 +1065,6 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   return (
     <div className="pb-32 min-h-full bg-gradient-to-br from-slate-900 to-slate-800 text-white">
       <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverUpload} />
-      <AnimatePresence>
-        {isExporting && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-          >
-            <div className="bg-slate-900 p-6 sm:p-8 rounded-2xl max-w-sm w-full border border-white/10 shadow-2xl text-center">
-              <Download className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-bounce" />
-              <h3 className="text-xl font-bold mb-2">正在打包导出</h3>
-              <p className="text-white/60 mb-6 text-sm">
-                为了防止崩溃，大量角色将被分卷导出。<br/>
-                请勿关闭此页面。
-              </p>
-              <div className="w-full bg-slate-800 rounded-full h-3 mb-2 overflow-hidden shadow-inner">
-                <div
-                  className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.max(2, Math.min(100, exportProgress.total > 0 ? (exportProgress.current / exportProgress.total) * 100 : 0))}%` }}
-                />
-              </div>
-              <div className="text-sm font-medium text-blue-400">
-                {exportProgress.current} / {exportProgress.total}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
       <motion.header 
         initial={{ y: 0 }}
         animate={{ y: isHeaderVisible ? 0 : '-100%' }}

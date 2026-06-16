@@ -1,7 +1,7 @@
 {
-  "name": "react-example",
+  "name": "miu",
   "private": true,
-  "version": "0.0.0",
+  "version": "3.02.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -11,6 +11,12 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.2",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -21,6 +27,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "firebase": "^12.14.0",
     "framer-motion": "^12.38.0",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
@@ -35,12 +42,10 @@
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
-    "vite": "^6.2.0",
-    "@dicebear/collection": "^9.4.2",
-    "@dicebear/core": "^9.4.2",
-    "firebase": "^12.14.0"
+    "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.3.4",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
