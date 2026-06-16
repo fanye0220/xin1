@@ -1,14 +1,6 @@
-// Capacitor is only available in Android APK builds, not on Web/Vercel.
-// All imports are done dynamically so Vite/Rollup won't try to resolve them at build time.
-const getCapacitor = async () => {
-  try { return (await import('@capacitor/core')).Capacitor; } catch { return null; }
-};
-const getFilesystem = async () => {
-  try { return await import('@capacitor/filesystem'); } catch { return null; }
-};
-const getShare = async () => {
-  try { return (await import('@capacitor/share')).Share; } catch { return null; }
-};
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 export const isAndroid = () => typeof window !== 'undefined' && !!(window as any).Android;
 
@@ -16,13 +8,10 @@ export const isAndroid = () => typeof window !== 'undefined' && !!(window as any
 export function getLocalImageUrl(filePath: string, cacheBuster?: number | string): string {
   if (isAndroid()) {
     try {
-      // On native Android APK, @capacitor/core is available at runtime even though
-      // we don't statically import it here (to avoid Vite/Rollup errors on Web/Vercel).
-      const cap = (window as any)?.Capacitor;
-      if (cap && cap.isNativePlatform && cap.isNativePlatform()) {
-        let url = cap.convertFileSrc(filePath);
-        if (cacheBuster) url += (url.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
-        return url;
+      if (Capacitor && Capacitor.isNativePlatform()) {
+         let url = Capacitor.convertFileSrc(filePath);
+         if (cacheBuster) url += (url.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
+         return url;
       }
     } catch(e) {}
     // Standard Android WebViewAssetLoader format used by the user's APK
@@ -38,12 +27,6 @@ export function getLocalImageUrl(filePath: string, cacheBuster?: number | string
 export async function shareFileOnAndroid(filename: string, buffer: ArrayBuffer, mimeType?: string): Promise<boolean> {
   if (!isAndroid()) return false;
   try {
-     const fsModule = await getFilesystem();
-     if (!fsModule) return false;
-     const { Filesystem, Directory } = fsModule;
-     const Share = await getShare();
-     if (!Share) return false;
-
      const chunkSize = 2 * 1024 * 1024; // 2MB chunks
      const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
      let fileUri = '';
@@ -142,7 +125,9 @@ export async function saveToGallery(filename: string, buffer: ArrayBuffer): Prom
           reader.onerror = () => reject(reader.error);
           reader.readAsDataURL(blob);
       });
-      return await (window as any).Android.saveTavernFile(filename, b64);
+      const res = await (window as any).Android.saveTavernFile(filename, b64);
+      await new Promise(r => setTimeout(r, 20)); // prevent JSI bridge congestion
+      return res;
    } catch (e) {
       console.error("Android bridge save failed:", e);
       return null;
@@ -164,7 +149,9 @@ export async function addAndroidZipEntry(zipFilename: string, entryName: string,
          reader.onerror = () => reject(reader.error);
          reader.readAsDataURL(blob);
      });
-     return await (window as any).Android.addZipEntry(zipFilename, entryName, b64);
+     const res = await (window as any).Android.addZipEntry(zipFilename, entryName, b64);
+     await new Promise(r => setTimeout(r, 20)); // prevent JSI bridge congestion
+     return res;
   } catch (e) {
      return false;
   }
