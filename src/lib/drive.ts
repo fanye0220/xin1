@@ -439,19 +439,33 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       const checkTx = db.transaction('blobs', 'readonly');
       const checkOs = checkTx.objectStore('blobs');
       for (const char of dbAllChars) {
+          const b = (await checkOs.get(char.id)) as any;
+          
+          let isMissing = false;
           if (char.hasBlobsSeparated) {
-              const b = (await checkOs.get(char.id)) as any;
-              if (!b || (!b.avatarBlob && !b.originalFile)) {
-                  missingBlobsIds.add(char.id);
+              if (!b || (!b.avatarBlob && !b.originalFile)) isMissing = true;
+          } else {
+              // Not separated. Check if the inline blob is a corrupted empty object from JSON serialization
+              if (char.avatarBlob && !char.avatarBlob.size && !char.avatarBlob.type) {
+                  isMissing = true;
+              } else if (!char.avatarBlob && char.originalFile && !char.originalFile.size) {
+                  isMissing = true; 
+              } else if (!char.avatarBlob && !char.originalFile) {
+                  isMissing = true; // Lost completely
               }
+          }
+          
+          if (isMissing) {
+              missingBlobsIds.add(char.id);
           }
       }
       await checkTx.done;
       
       if (missingBlobsIds.size > 0) {
          onProgress(`正在尝试从兼容结构恢复 ${missingBlobsIds.size} 个丢失的图片...`);
-         const fixTx = db.transaction('blobs', 'readwrite');
+         const fixTx = db.transaction(['blobs', 'characters'], 'readwrite');
          const fixOs = fixTx.objectStore('blobs');
+         const charFixOs = fixTx.objectStore('characters');
          
          const charFiles = Object.values(loadedZip.files).filter(f => !f.dir && f.name.startsWith('Characters/'));
          
@@ -486,6 +500,16 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
              
              if (hasFoundAny) {
                  await fixOs.put(existingBlobData, id);
+                 
+                 // Clean up the character record to use the separated blobs
+                 const c = await charFixOs.get(id);
+                 if (c) {
+                     c.hasBlobsSeparated = true;
+                     delete c.avatarBlob;
+                     delete c.originalFile;
+                     delete c.avatarHistory;
+                     await charFixOs.put(c);
+                 }
              }
          }
          await fixTx.done;
