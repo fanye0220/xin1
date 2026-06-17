@@ -24,7 +24,7 @@ export function SyncWidget() {
         initial={{ opacity: 0, y: -20, x: '-50%', scale: 0.95 }}
         animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
         exit={{ opacity: 0, y: -20, x: '-50%', scale: 0.95 }}
-        className="fixed top-16 left-1/2 z-[60] flex items-center gap-3 bg-gray-900/90 backdrop-blur-md border border-white/10 shadow-xl px-5 py-2.5 rounded-full max-w-[90vw] whitespace-nowrap"
+        className="fixed top-16 left-1/2 z-[60] flex items-center gap-3 bg-slate-800/90 backdrop-blur-md border border-white/10 shadow-xl px-5 py-2.5 rounded-full max-w-[90vw] whitespace-nowrap"
       >
         {syncState.isActive ? (
           <Loader2 className="w-5 h-5 text-blue-400 animate-spin shrink-0" />

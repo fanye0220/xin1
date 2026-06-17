@@ -12,8 +12,15 @@ provider.addScope('https://www.googleapis.com/auth/drive.file');
 
 // Flag to indicate if we are in the middle of a sign-in flow.
 let isSigningIn = false;
-// Cache the access token in memory.
-let cachedAccessToken: string | null = null;
+// Cache the access token in memory with persistence.
+let cachedAccessToken: string | null = localStorage.getItem('google_drive_access_token');
+let tokenExpiration: number | null = Number(localStorage.getItem('google_drive_token_expiration')) || null;
+
+if (tokenExpiration && Date.now() > tokenExpiration) {
+  cachedAccessToken = null;
+  localStorage.removeItem('google_drive_access_token');
+  localStorage.removeItem('google_drive_token_expiration');
+}
 
 export type SyncState = {
   isActive: boolean;
@@ -62,12 +69,16 @@ export const initAuth = (
       } else if (!isSigningIn) {
         cachedAccessToken = null;
         currentAccessToken = null;
+        localStorage.removeItem('google_drive_access_token');
+        localStorage.removeItem('google_drive_token_expiration');
         stopAutoSyncRunner();
         if (onAuthFailure) onAuthFailure();
       }
     } else {
       cachedAccessToken = null;
       currentAccessToken = null;
+      localStorage.removeItem('google_drive_access_token');
+      localStorage.removeItem('google_drive_token_expiration');
       stopAutoSyncRunner();
       if (onAuthFailure) onAuthFailure();
     }
@@ -112,6 +123,9 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    const expiresAt = Date.now() + 3500 * 1000;
+    localStorage.setItem('google_drive_access_token', cachedAccessToken);
+    localStorage.setItem('google_drive_token_expiration', expiresAt.toString());
     currentAccessToken = cachedAccessToken;
     startAutoSyncRunner();
     return { user: result.user, accessToken: cachedAccessToken };
@@ -130,6 +144,8 @@ export const getAccessToken = async (): Promise<string | null> => {
 export const logout = async () => {
   await auth.signOut();
   cachedAccessToken = null;
+  localStorage.removeItem('google_drive_access_token');
+  localStorage.removeItem('google_drive_token_expiration');
 };
 
 // Google Drive API Functions
@@ -177,9 +193,20 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
   for (let i = 0; i < chars.length; i++) {
     const char = await getCharacter(chars[i].id);
     if (!char) continue;
-    // We can save char.data as json, and avatarBlob as png
+    
+    // Save full character data as meta.json, and data string as card.json for backwards compat
     const charFolder = zip.folder(`Characters/${char.name.replace(/[/\\?%*:|"<>]/g, '_')}_${char.id}`)!;
-    charFolder.file("card.json", JSON.stringify(char.data));
+    
+    // Save backwards compatible card.json
+    charFolder.file("card.json", JSON.stringify(char.data || {}));
+    
+    // Save full metadata in character.json
+    const metaClone = { ...char } as Partial<typeof char>;
+    delete metaClone.avatarBlob;
+    delete metaClone.avatarHistory;
+    delete metaClone.originalFile;
+    charFolder.file("character.json", JSON.stringify(metaClone));
+
     if (char.avatarBlob) {
       charFolder.file("avatar.png", char.avatarBlob);
     }
@@ -200,9 +227,20 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     const formattedDate = new Date(chat.createdAt).toISOString().replace(/[:.]/g, "-");
     const filename = `${safeChatName}_${formattedDate}.jsonl`;
     
-    const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\\n');
+    const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\n');
     zip.file(`Chats/${safeCharName}/${filename}`, jsonlString);
   }
+
+  // Backup App Settings
+  onProgress("正在导出系统配置...");
+  const appSettings: any = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('tavern_') || key === 'ai_settings' || key === 'auto_backup_enabled')) {
+      appSettings[key] = localStorage.getItem(key);
+    }
+  }
+  zip.file("settings.json", JSON.stringify(appSettings));
 
   onProgress("打包压缩中，请勿关闭...");
   return await zip.generateAsync({ type: "blob" });
@@ -300,25 +338,54 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
     }
   }
 
+  // 1.5 Restore Settings
+  const settingsEntry = loadedZip.file("settings.json");
+  if (settingsEntry) {
+    onProgress("正在恢复系统配置...");
+    try {
+      const settingsContent = await settingsEntry.async("string");
+      const savedSettings = JSON.parse(settingsContent);
+      for (const [key, val] of Object.entries(savedSettings)) {
+         if (val !== null && val !== undefined) {
+            localStorage.setItem(key, String(val));
+         }
+      }
+    } catch (e) {
+      console.error("Failed to restore settings", e);
+    }
+  }
+
   // 2. Restore Characters
   const filesToProcess = Object.values(loadedZip.files);
-  const characterFolders = new Map<string, { card?: any, avatar?: Blob }>();
+  const characterFolders = new Map<string, { meta?: any, card?: any, avatar?: Blob }>();
 
   for (const file of filesToProcess) {
     if (file.dir) continue;
-    if (file.name.startsWith("Characters/")) {
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.startsWith("characters/")) {
       const parts = file.name.split("/");
-      if (parts.length === 3) {
+      // Path could be Characters/FolderName/card.json
+      if (parts.length >= 3) {
         const folderName = parts[1];
-        const fileName = parts[2];
+        const fileName = parts[parts.length - 1];
         if (!characterFolders.has(folderName)) characterFolders.set(folderName, {});
         
-        if (fileName === "card.json") {
+        if (fileName === "character.json") {
           const content = await file.async("string");
           try {
-            characterFolders.get(folderName)!.card = JSON.parse(content);
+            characterFolders.get(folderName)!.meta = JSON.parse(content);
           } catch(e) {}
-        } else if (fileName === "avatar.png") {
+        } else if (fileName === "card.json" || fileName.endsWith(".json")) {
+           // fallback for varying JSON names
+          const content = await file.async("string");
+          try {
+             if (fileName === "card.json") {
+                characterFolders.get(folderName)!.card = JSON.parse(content);
+             } else if (!characterFolders.get(folderName)!.meta) {
+                characterFolders.get(folderName)!.meta = JSON.parse(content);
+             }
+          } catch(e) {}
+        } else if (fileName === "avatar.png" || fileName.endsWith(".png") || fileName.endsWith(".webp") || fileName.endsWith(".jpg")) {
           const content = await file.async("blob");
           characterFolders.get(folderName)!.avatar = content;
         }
@@ -328,20 +395,45 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
 
   let charCount = 0;
   for (const [folderName, data] of characterFolders.entries()) {
-    if (data.card) {
+    if (data.meta || data.card) {
       charCount++;
       if (charCount % 5 === 0) onProgress(`正在恢复角色卡片 (${charCount}/${characterFolders.size})...`);
-      const charToSave = { ...data.card };
+      
+      const charToSave: any = {};
+      
+      if (data.meta) {
+        // Complete metadata from new backup format
+        Object.assign(charToSave, data.meta);
+      } else if (data.card) {
+        // Fallback for old backups that only saved char.data
+        const lastUnderscore = folderName.lastIndexOf('_');
+        let fallbackId = folderName;
+        let fallbackName = folderName;
+        if (lastUnderscore > 0) {
+          fallbackName = folderName.substring(0, lastUnderscore);
+          fallbackId = folderName.substring(lastUnderscore + 1);
+        }
+        charToSave.id = fallbackId;
+        charToSave.name = data.card.name || fallbackName;
+        charToSave.data = data.card;
+        charToSave.createdAt = Date.now();
+      }
+
       if (data.avatar) {
         charToSave.avatarBlob = data.avatar;
       }
-      await saveCharacter(charToSave);
+      
+      try {
+        await saveCharacter(charToSave);
+      } catch (err) {
+        console.error("Failed to restore character:", charToSave.id, err);
+      }
     }
   }
   onProgress("角色卡片恢复完成。");
 
   // 3. Restore Chats
-  const chatFiles = filesToProcess.filter(f => !f.dir && f.name.startsWith("Chats/") && f.name.endsWith(".jsonl"));
+  const chatFiles = filesToProcess.filter(f => !f.dir && f.name.toLowerCase().startsWith("chats/") && f.name.endsWith(".jsonl"));
   onProgress(`正在解析聊天记录 (总数: ${chatFiles.length})...`);
   
   const chatsToSave = [];
@@ -381,8 +473,18 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       // We need to find the characterId! We look into characterFolders
       let targetCharId = "";
       for (const [folderName, data] of characterFolders.entries()) {
-         if (data.card && folderName.startsWith(safeCharFolderFromPath)) {
-            targetCharId = data.card.id;
+         if ((data.meta || data.card) && folderName.startsWith(safeCharFolderFromPath)) {
+            // Use metadata ID if present, otherwise extract it from folderName just like the fallback logic
+            if (data.meta && data.meta.id) {
+               targetCharId = data.meta.id;
+            } else {
+               const lastUnderscore = folderName.lastIndexOf('_');
+               if (lastUnderscore > 0) {
+                 targetCharId = folderName.substring(lastUnderscore + 1);
+               } else {
+                 targetCharId = folderName;
+               }
+            }
             break;
          }
       }

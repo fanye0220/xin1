@@ -1,7 +1,7 @@
 {
-  "name": "tavern-cards",
+  "name": "react-example",
   "private": true,
-  "version": "3.03.0",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
