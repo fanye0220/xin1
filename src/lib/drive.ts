@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { getFolders, getCachedMeta, getCharacter, getAllChatsMetadata, getChatById, saveFolder, saveCharacter, saveChatsBulk, invalidateCache } from './db';
+import { getFolders, getCachedMeta, getCharacter, getAllChatsMetadata, getChatById, saveFolder, saveCharacter, saveChatsBulk, invalidateCache, initDB } from './db';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -183,55 +183,30 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
   const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
 
-  onProgress("正在获取角色与分类数据...");
-  // Save folders
-  const folders = await getFolders();
-  zip.file("folders.json", JSON.stringify(folders));
+  const db = await initDB();
 
-  const chars = await getCachedMeta();
-  onProgress(`正在导出角色卡片 (总数: ${chars.length})...`);
-  for (let i = 0; i < chars.length; i++) {
-    const char = await getCharacter(chars[i].id);
-    if (!char) continue;
-    
-    // Save full character data as meta.json, and data string as card.json for backwards compat
-    const charFolder = zip.folder(`Characters/${char.name.replace(/[/\\?%*:|"<>]/g, '_')}_${char.id}`)!;
-    
-    // Save backwards compatible card.json
-    charFolder.file("card.json", JSON.stringify(char.data || {}));
-    
-    // Save full metadata in character.json
-    const metaClone = { ...char } as Partial<typeof char>;
-    delete metaClone.avatarBlob;
-    delete metaClone.avatarHistory;
-    delete metaClone.originalFile;
-    charFolder.file("character.json", JSON.stringify(metaClone));
+  // 1. Lossless App Database Dump (100% accurate restore for this app)
+  onProgress("正在生成完整的数据库快照...");
+  const rawExport = {
+    folders: await db.getAll('folders'),
+    characters: await db.getAll('characters'),
+    chats: await db.getAll('chats'),
+    memos: await db.getAll('memos')
+  };
+  zip.file("aitavern_sys_db.json", JSON.stringify(rawExport));
 
-    if (char.avatarBlob) {
-      charFolder.file("avatar.png", char.avatarBlob);
+  // 2. Blob dumps (Avatars and original files)
+  const allBlobsKeys = await db.getAllKeys('blobs');
+  onProgress(`正在导出图片及源文件数据 (${allBlobsKeys.length})...`);
+  for (const key of allBlobsKeys) {
+    const blobData = await db.get('blobs', key);
+    if (blobData) {
+      if (blobData.avatarBlob) zip.file(`sys_blobs/${key}_avatar`, blobData.avatarBlob);
+      if (blobData.originalFile) zip.file(`sys_blobs/${key}_original`, blobData.originalFile);
     }
   }
 
-  const allChats = await getAllChatsMetadata();
-  onProgress(`正在导出聊天记录 (总数: ${allChats.length})...`);
-  for (let i = 0; i < allChats.length; i++) {
-    const chat = await getChatById(allChats[i].id);
-    if (!chat) continue;
-    
-    // Group by character
-    const charMeta = chars.find(c => c.id === chat.characterId);
-    const charName = charMeta ? charMeta.name : "Unknown";
-    const safeCharName = charName.replace(/[/\\?%*:|"<>]/g, '_');
-    const safeChatName = chat.name.replace(/[/\\?%*:|"<>]/g, '_');
-    
-    const formattedDate = new Date(chat.createdAt).toISOString().replace(/[:.]/g, "-");
-    const filename = `${safeChatName}_${formattedDate}.jsonl`;
-    
-    const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\n');
-    zip.file(`Chats/${safeCharName}/${filename}`, jsonlString);
-  }
-
-  // Backup App Settings
+  // 3. Settings Backup
   onProgress("正在导出系统配置...");
   const appSettings: any = {};
   for (let i = 0; i < localStorage.length; i++) {
@@ -241,6 +216,50 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     }
   }
   zip.file("settings.json", JSON.stringify(appSettings));
+
+  // 4. SillyTavern Compatible Manual Export (For users wanting to extract manually)
+  const chars = await getCachedMeta();
+  onProgress(`正在生成兼容版角色文件 (总数: ${chars.length})...`);
+  
+  for (let i = 0; i < chars.length; i++) {
+    const char = await getCharacter(chars[i].id);
+    if (!char) continue;
+    
+    const safeCharName = char.name.replace(/[/\\?%*:|"<>]/g, '_');
+    const folderPath = `Characters/${safeCharName}_${char.id}`;
+    
+    // Save original file if exists, otherwise save a fallback card.json
+    if (char.originalFile) {
+       // Save as original png/webp so user can easily drag into SillyTavern
+       const extension = char.originalFile.name ? char.originalFile.name.split('.').pop() || 'png' : 'png';
+       zip.file(`${folderPath}/${safeCharName}.${extension}`, char.originalFile);
+    }
+    
+    // Always include a raw JSON for guaranteed regex/worldbook extraction in ST
+    zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
+    
+    if (char.avatarBlob && !char.originalFile) {
+       zip.file(`${folderPath}/avatar.png`, char.avatarBlob);
+    }
+  }
+
+  const allChats = await getAllChatsMetadata();
+  onProgress(`正在生成兼容版聊天记录 (总数: ${allChats.length})...`);
+  for (let i = 0; i < allChats.length; i++) {
+    const chat = await getChatById(allChats[i].id);
+    if (!chat) continue;
+    
+    const charMeta = chars.find(c => c.id === chat.characterId);
+    const charName = charMeta ? charMeta.name : "Unknown";
+    const safeCharName = charName.replace(/[/\\?%*:|"<>]/g, '_');
+    const safeChatName = chat.name ? chat.name.replace(/[/\\?%*:|"<>]/g, '_') : 'Unnamed';
+    
+    const formattedDate = new Date(chat.createdAt).toISOString().replace(/[:.]/g, "-");
+    const filename = `${safeChatName}_${formattedDate}.jsonl`;
+    
+    const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\n');
+    zip.file(`Chats/${safeCharName}/${filename}`, jsonlString);
+  }
 
   onProgress("打包压缩中，请勿关闭...");
   return await zip.generateAsync({ type: "blob" });
@@ -323,10 +342,90 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
   onProgress("正在解压备份文件...");
   const loadedZip = await zip.loadAsync(blob);
 
-  // 1. Restore folders
+  // Check if it's the NEW lossless backup format
+  const sysDbEntry = loadedZip.file("aitavern_sys_db.json");
+  if (sysDbEntry) {
+    onProgress("检测到无损完整备份，正在恢复...");
+    try {
+      const db = await initDB();
+      const content = await sysDbEntry.async("string");
+      const dbDump = JSON.parse(content);
+      
+      // Clear and Restore stores
+      const storesToRestore = ['folders', 'characters', 'chats', 'memos'] as const;
+      for (const store of storesToRestore) {
+        if (dbDump[store] && Array.isArray(dbDump[store])) {
+           onProgress(`正在恢复 ${store} (${dbDump[store].length}条数据)...`);
+           const tx = db.transaction(store as any, 'readwrite');
+           const os = tx.objectStore(store as any);
+           await os.clear();
+           for (const item of dbDump[store]) {
+              await os.put(item);
+           }
+           await tx.done;
+        }
+      }
+
+      // Restore blobs
+      const sysBlobs = Object.values(loadedZip.files).filter(f => !f.dir && f.name.startsWith('sys_blobs/'));
+      if (sysBlobs.length > 0) {
+        onProgress(`正在恢复图片与源二进制数据 (${sysBlobs.length}个文件)...`);
+        const tx = db.transaction('blobs', 'readwrite');
+        const os = tx.objectStore('blobs');
+        await os.clear();
+        
+        // Group by ID
+        const blobsToSave = new Map<string, any>();
+        
+        for (const file of sysBlobs) {
+          const parts = file.name.split('/');
+          const filename = parts[1]; // {id}_avatar or {id}_original
+          const lastUnderscore = filename.lastIndexOf('_');
+          if (lastUnderscore > 0) {
+            const id = filename.substring(0, lastUnderscore);
+            const type = filename.substring(lastUnderscore + 1); // "avatar" or "original"
+            if (!blobsToSave.has(id)) blobsToSave.set(id, {});
+            
+            const b = await file.async("blob");
+            if (type === 'avatar') blobsToSave.get(id)!.avatarBlob = b;
+            if (type === 'original') {
+                blobsToSave.get(id)!.originalFile = new File([b], 'original.png', { type: b.type });
+            }
+          }
+        }
+        
+        for (const [id, val] of blobsToSave.entries()) {
+           await os.put(val, id);
+        }
+        await tx.done;
+      }
+      
+      // Restore settings
+      const settingsEntry = loadedZip.file("settings.json");
+      if (settingsEntry) {
+         onProgress("正在恢复系统配置...");
+         const settingsContent = await settingsEntry.async("string");
+         const savedSettings = JSON.parse(settingsContent);
+         for (const [key, val] of Object.entries(savedSettings)) {
+            if (val !== null && val !== undefined) {
+               localStorage.setItem(key, String(val));
+            }
+         }
+      }
+
+      invalidateCache();
+      onProgress("无损完整备份恢复成功！");
+      return;
+    } catch (err: any) {
+       console.error("Failed to restore lossless backup", err);
+       onProgress("无损恢复报错，将尝试以兼容模式解析...");
+    }
+  }
+
+  // --- OLD LOGIC FALLBACK (for strictly compatible zip or older backups) ---
   const foldersEntry = loadedZip.file("folders.json");
   if (foldersEntry) {
-    onProgress("正在恢复分类数据...");
+    onProgress("正在以兼容模式恢复分类数据...");
     const foldersJson = await foldersEntry.async("string");
     try {
       const folders = JSON.parse(foldersJson);
@@ -338,12 +437,11 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
     }
   }
 
-  // 1.5 Restore Settings
-  const settingsEntry = loadedZip.file("settings.json");
-  if (settingsEntry) {
+  const settingsEntryCompat = loadedZip.file("settings.json");
+  if (settingsEntryCompat) {
     onProgress("正在恢复系统配置...");
     try {
-      const settingsContent = await settingsEntry.async("string");
+      const settingsContent = await settingsEntryCompat.async("string");
       const savedSettings = JSON.parse(settingsContent);
       for (const [key, val] of Object.entries(savedSettings)) {
          if (val !== null && val !== undefined) {
@@ -351,11 +449,10 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
          }
       }
     } catch (e) {
-      console.error("Failed to restore settings", e);
+      console.error("Failed to restore settings compat", e);
     }
   }
 
-  // 2. Restore Characters
   const filesToProcess = Object.values(loadedZip.files);
   const characterFolders = new Map<string, { meta?: any, card?: any, avatar?: Blob }>();
 
@@ -364,7 +461,6 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
     const lowerName = file.name.toLowerCase();
     if (lowerName.startsWith("characters/")) {
       const parts = file.name.split("/");
-      // Path could be Characters/FolderName/card.json
       if (parts.length >= 3) {
         const folderName = parts[1];
         const fileName = parts[parts.length - 1];
@@ -376,7 +472,6 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
             characterFolders.get(folderName)!.meta = JSON.parse(content);
           } catch(e) {}
         } else if (fileName === "card.json" || fileName.endsWith(".json")) {
-           // fallback for varying JSON names
           const content = await file.async("string");
           try {
              if (fileName === "card.json") {
@@ -397,15 +492,13 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
   for (const [folderName, data] of characterFolders.entries()) {
     if (data.meta || data.card) {
       charCount++;
-      if (charCount % 5 === 0) onProgress(`正在恢复角色卡片 (${charCount}/${characterFolders.size})...`);
+      if (charCount % 5 === 0) onProgress(`正在以兼容模式恢复角色卡片 (${charCount}/${characterFolders.size})...`);
       
       const charToSave: any = {};
       
       if (data.meta) {
-        // Complete metadata from new backup format
         Object.assign(charToSave, data.meta);
       } else if (data.card) {
-        // Fallback for old backups that only saved char.data
         const lastUnderscore = folderName.lastIndexOf('_');
         let fallbackId = folderName;
         let fallbackName = folderName;
@@ -426,21 +519,19 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       try {
         await saveCharacter(charToSave);
       } catch (err) {
-        console.error("Failed to restore character:", charToSave.id, err);
+        console.error("Failed to restore character compat:", charToSave.id, err);
       }
     }
   }
-  onProgress("角色卡片恢复完成。");
 
-  // 3. Restore Chats
   const chatFiles = filesToProcess.filter(f => !f.dir && f.name.toLowerCase().startsWith("chats/") && f.name.endsWith(".jsonl"));
-  onProgress(`正在解析聊天记录 (总数: ${chatFiles.length})...`);
+  onProgress(`正在解析兼容版聊天记录 (${chatFiles.length})...`);
   
   const chatsToSave = [];
   let chatParseCount = 0;
   for (const file of chatFiles) {
     chatParseCount++;
-    if (chatParseCount % 10 === 0) onProgress(`正在解析聊天记录 (${chatParseCount}/${chatFiles.length})...`);
+    if (chatParseCount % 10 === 0) onProgress(`正在解析兼容版聊天记录 (${chatParseCount}/${chatFiles.length})...`);
     
     const content = await file.async("string");
     const lines = content.split('\n').filter(l => l.trim() !== '');
@@ -452,9 +543,8 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
     }
     
     if (messages.length > 0) {
-      // 提取文件名信息：Chats/SafeCharName/SafeChatName_Date.jsonl
       const parts = file.name.split("/");
-      const fileName = parts[2]; // safeChatName_date.jsonl
+      const fileName = parts[2];
       
       const fileNameWithoutExt = fileName.replace(".jsonl", "");
       const dateMatch = fileNameWithoutExt.match(/_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/);
@@ -463,18 +553,15 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       
       if (dateMatch) {
          safeChatName = fileNameWithoutExt.substring(0, fileNameWithoutExt.length - dateMatch[0].length);
-         createdAtStr = dateMatch[1].replace(/-/g, ':').replace(/T(\d{2}):(\d{2}):(\d{2}):(\d{3})Z/, 'T$1:$2:$3.$4Z'); // Best effort to fix ISO string
+         createdAtStr = dateMatch[1].replace(/-/g, ':').replace(/T(\d{2}):(\d{2}):(\d{2}):(\d{3})Z/, 'T$1:$2:$3.$4Z');
       } else {
          createdAtStr = new Date().toISOString();
       }
 
-      // 找对应的角色
-      const safeCharFolderFromPath = parts[1]; // Parts[1] is the folder name in zip
-      // We need to find the characterId! We look into characterFolders
+      const safeCharFolderFromPath = parts[1];
       let targetCharId = "";
       for (const [folderName, data] of characterFolders.entries()) {
          if ((data.meta || data.card) && folderName.startsWith(safeCharFolderFromPath)) {
-            // Use metadata ID if present, otherwise extract it from folderName just like the fallback logic
             if (data.meta && data.meta.id) {
                targetCharId = data.meta.id;
             } else {
@@ -503,9 +590,9 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
   }
 
   if (chatsToSave.length > 0) {
-    onProgress("正在保存聊天记录...");
+    onProgress("正在保存兼容版聊天记录...");
     await saveChatsBulk(chatsToSave, (c, t) => {
-      onProgress(`正在保存聊天记录到数据库 (${c}/${t})...`);
+      onProgress(`正在保存兼容版聊天记录到数据库 (${c}/${t})...`);
     });
   }
 

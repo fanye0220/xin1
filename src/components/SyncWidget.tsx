@@ -7,13 +7,14 @@ export function SyncWidget() {
   const [syncState, setSyncState] = useState<SyncState | null>(null);
 
   useEffect(() => {
-    return onSyncStateChange((s) => {
+    const unsub = onSyncStateChange((s) => {
       if (s.isActive || s.completed || s.isError) {
         setSyncState(s);
       } else {
         setSyncState(null);
       }
     });
+    return () => { unsub(); };
   }, []);
 
   if (!syncState) return null;
