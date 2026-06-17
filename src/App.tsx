@@ -16,10 +16,9 @@ import { AIRecommender } from './components/AIRecommender';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatViewer } from './components/ChatViewer';
 import { migrateDatabase } from './lib/db';
+import { useTaggerState } from './lib/taggerState';
 import { initAuth } from './lib/drive';
 import { SyncWidget } from './components/SyncWidget';
-import { useTaggerState } from './lib/taggerState';
-
 import { Tag, Loader2, AlertCircle, Pause, X } from 'lucide-react';
 
 function TaggerWidget({ onClick }: { onClick: () => void }) {
@@ -137,7 +136,7 @@ export default function App() {
     }).then(() => {
       setIsMigrating(false);
     });
-
+    
     return () => {
       if (unsubscribeDrive) unsubscribeDrive();
     };

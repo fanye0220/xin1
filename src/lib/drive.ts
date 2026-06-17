@@ -431,6 +431,66 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
         await tx.done;
       }
       
+      // Fallback: Restore missing blobs from Characters/ folders if sys_blobs was incomplete
+      onProgress("正在校验图片数据...");
+      const dbAllChars = await db.getAll('characters');
+      const missingBlobsIds = new Set<string>();
+      
+      const checkTx = db.transaction('blobs', 'readonly');
+      const checkOs = checkTx.objectStore('blobs');
+      for (const char of dbAllChars) {
+          if (char.hasBlobsSeparated) {
+              const b = (await checkOs.get(char.id)) as any;
+              if (!b || (!b.avatarBlob && !b.originalFile)) {
+                  missingBlobsIds.add(char.id);
+              }
+          }
+      }
+      await checkTx.done;
+      
+      if (missingBlobsIds.size > 0) {
+         onProgress(`正在尝试从兼容结构恢复 ${missingBlobsIds.size} 个丢失的图片...`);
+         const fixTx = db.transaction('blobs', 'readwrite');
+         const fixOs = fixTx.objectStore('blobs');
+         
+         const charFiles = Object.values(loadedZip.files).filter(f => !f.dir && f.name.startsWith('Characters/'));
+         
+         for (const id of missingBlobsIds) {
+             const existingBlobData = (await fixOs.get(id)) || {};
+             let hasFoundAny = false;
+             
+             // Look for Characters/..._id/avatar.png or name.png
+             // Note: using endWith underscore and id because folder was named `${safeCharName}_${char.id}`
+             const folderPrefixRegex = new RegExp(`^Characters/[^/]+_${id}/`);
+             const potentialFiles = charFiles.filter(f => folderPrefixRegex.test(f.name));
+             
+             for (const file of potentialFiles) {
+                const fileName = file.name.split('/').pop() || '';
+                if (fileName === "avatar.png" || fileName.endsWith(".png") || fileName.endsWith(".webp") || fileName.endsWith(".jpg")) {
+                   const content = await file.async("blob");
+                   let mimeT = "image/png";
+                   if (fileName.endsWith(".webp")) mimeT = "image/webp";
+                   if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) mimeT = "image/jpeg";
+                   
+                   const fileBlob = new Blob([content], { type: content.type || mimeT });
+                   
+                   if (fileName === "avatar.png") {
+                      existingBlobData.avatarBlob = fileBlob;
+                      hasFoundAny = true;
+                   } else {
+                      existingBlobData.originalFile = new File([content], fileName, { type: content.type || mimeT });
+                      hasFoundAny = true;
+                   }
+                }
+             }
+             
+             if (hasFoundAny) {
+                 await fixOs.put(existingBlobData, id);
+             }
+         }
+         await fixTx.done;
+      }
+
       // Restore settings
       const settingsEntry = loadedZip.file("settings.json");
       if (settingsEntry) {
