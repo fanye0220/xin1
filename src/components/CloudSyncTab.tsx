@@ -221,10 +221,10 @@ export function CloudSyncTab() {
       </div>
 
       {/* Backup List */}
-      <div className="space-y-3 pt-4 border-t border-white/10">
+      <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-4">
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-medium text-white/80">历史备份档案</h4>
-          <button onClick={() => {if(token) loadBackups(token)}} className="text-xs text-blue-400 hover:text-blue-300">
+          <button onClick={() => {if(token) loadBackups(token)}} className="text-xs text-blue-400 hover:text-blue-300 transition px-2 py-1 bg-blue-500/10 rounded-md">
             刷新
           </button>
         </div>
@@ -234,36 +234,40 @@ export function CloudSyncTab() {
             <Loader2 className="w-6 h-6 animate-spin text-white/30" />
           </div>
         ) : backups.length === 0 ? (
-          <div className="text-center py-6 text-sm text-white/40">
+          <div className="text-center py-8 text-sm text-white/40 bg-black/20 rounded-lg">
             暂无备份记录
           </div>
         ) : (
           <div className="space-y-2">
             {backups.map(b => (
-              <div key={b.id} className="flex items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl group hover:border-white/10 transition">
-                <div>
-                  <div className="text-sm text-white font-medium truncate max-w-[180px]" title={b.name}>{b.name}</div>
-                  <div className="text-xs text-white/40 flex gap-2">
-                    <span>{new Date(b.createdTime).toLocaleString()}</span>
-                    <span>{formatSize(b.size)}</span>
+              <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl group hover:border-white/10 transition gap-3 sm:gap-4 w-full">
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-2">
+                     <div className="text-sm text-white font-medium truncate min-w-0 flex-shrink" title={b.name}>{b.name}</div>
+                     <span className="text-xs text-white/40 flex-shrink-0">{formatSize(b.size)}</span>
+                  </div>
+                  <div className="text-xs text-white/50 w-full">
+                    {new Date(b.createdTime).toLocaleString()}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                <div className="flex items-center gap-2 justify-end sm:opacity-0 sm:group-hover:opacity-100 transition shrink-0 border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
                   <button 
                     title="下载并恢复到本应用"
                     disabled={syncInfo.isActive || actionFileId === b.id}
                     onClick={() => handleDownloadBackup(b.id)}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-blue-500/20 hover:text-blue-400 text-white/60 transition disabled:opacity-50"
+                    className="flex-1 sm:flex-none flex items-center justify-center py-1.5 px-3 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 hover:text-blue-400 text-blue-400/80 transition disabled:opacity-50"
                   >
                     {syncInfo.isActive && syncInfo.taskName === '恢复数据' && actionFileId === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    <span className="text-xs ml-1 sm:hidden">恢复</span>
                   </button>
                   <button 
                     title="删除"
                     disabled={syncInfo.isActive || actionFileId === b.id}
                     onClick={() => handleDeleteBackup(b.id)}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-400 text-white/60 transition disabled:opacity-50"
+                    className="flex-1 sm:flex-none flex items-center justify-center py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 hover:text-red-400 text-red-400/80 transition disabled:opacity-50"
                   >
                     <Trash2 className="w-4 h-4" />
+                    <span className="text-xs ml-1 sm:hidden">删除</span>
                   </button>
                 </div>
               </div>
