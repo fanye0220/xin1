@@ -240,34 +240,34 @@ export function CloudSyncTab() {
         ) : (
           <div className="space-y-2">
             {backups.map(b => (
-              <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl group hover:border-white/10 transition gap-3 sm:gap-4 w-full">
-                <div className="flex-1 min-w-0 flex flex-col gap-1">
-                  <div className="flex items-center justify-between gap-2">
-                     <div className="text-sm text-white font-medium truncate min-w-0 flex-shrink" title={b.name}>{b.name}</div>
-                     <span className="text-xs text-white/40 flex-shrink-0">{formatSize(b.size)}</span>
+              <div key={b.id} className="flex flex-col p-3.5 bg-black/40 hover:bg-black/60 border border-white/5 rounded-2xl gap-3 transition">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-semibold text-white/60 mb-0.5">{new Date(b.createdTime).toLocaleString()}</span>
+                    <span className="text-sm text-white/90 truncate min-w-0" title={b.name}>{b.name}</span>
                   </div>
-                  <div className="text-xs text-white/50 w-full">
-                    {new Date(b.createdTime).toLocaleString()}
-                  </div>
+                  <span className="text-xs text-white/50 whitespace-nowrap bg-white/10 px-2 py-1 rounded-lg shrink-0 mt-0.5">
+                    {formatSize(b.size)}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 justify-end sm:opacity-0 sm:group-hover:opacity-100 transition shrink-0 border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
+                <div className="flex items-center gap-2 pt-1">
                   <button 
-                    title="下载并恢复到本应用"
+                    title="下载并恢复"
                     disabled={syncInfo.isActive || actionFileId === b.id}
                     onClick={() => handleDownloadBackup(b.id)}
-                    className="flex-1 sm:flex-none flex items-center justify-center py-1.5 px-3 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 hover:text-blue-400 text-blue-400/80 transition disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center py-2 px-3 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 active:bg-blue-500/30 text-blue-400/90 transition disabled:opacity-50"
                   >
-                    {syncInfo.isActive && syncInfo.taskName === '恢复数据' && actionFileId === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    <span className="text-xs ml-1 sm:hidden">恢复</span>
+                    {syncInfo.isActive && syncInfo.taskName === '恢复数据' && actionFileId === b.id ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Download className="w-4 h-4 mr-1.5" />}
+                    <span className="text-xs font-medium">恢复</span>
                   </button>
                   <button 
                     title="删除"
                     disabled={syncInfo.isActive || actionFileId === b.id}
                     onClick={() => handleDeleteBackup(b.id)}
-                    className="flex-1 sm:flex-none flex items-center justify-center py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 hover:text-red-400 text-red-400/80 transition disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center py-2 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 active:bg-red-500/30 text-red-400/90 transition disabled:opacity-50"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    <span className="text-xs ml-1 sm:hidden">删除</span>
+                    <Trash2 className="w-4 h-4 mr-1.5" />
+                    <span className="text-xs font-medium">删除</span>
                   </button>
                 </div>
               </div>
