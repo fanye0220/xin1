@@ -201,8 +201,12 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
   for (const key of allBlobsKeys) {
     const blobData = await db.get('blobs', key);
     if (blobData) {
-      if (blobData.avatarBlob) zip.file(`sys_blobs/${key}_avatar`, blobData.avatarBlob);
-      if (blobData.originalFile) zip.file(`sys_blobs/${key}_original`, blobData.originalFile);
+      if (blobData.avatarBlob) {
+        zip.file(`sys_blobs/${key}_avatar`, new Blob([blobData.avatarBlob], { type: blobData.avatarBlob.type || 'image/png' }));
+      }
+      if (blobData.originalFile) {
+        zip.file(`sys_blobs/${key}_original`, new Blob([blobData.originalFile], { type: blobData.originalFile.type || 'image/png' }));
+      }
     }
   }
 
@@ -232,14 +236,14 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     if (char.originalFile) {
        // Save as original png/webp so user can easily drag into SillyTavern
        const extension = char.originalFile.name ? char.originalFile.name.split('.').pop() || 'png' : 'png';
-       zip.file(`${folderPath}/${safeCharName}.${extension}`, char.originalFile);
+       zip.file(`${folderPath}/${safeCharName}.${extension}`, new Blob([char.originalFile], { type: char.originalFile.type || 'image/png' }));
     }
     
     // Always include a raw JSON for guaranteed regex/worldbook extraction in ST
     zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
     
     if (char.avatarBlob && !char.originalFile) {
-       zip.file(`${folderPath}/avatar.png`, char.avatarBlob);
+       zip.file(`${folderPath}/avatar.png`, new Blob([char.avatarBlob], { type: char.avatarBlob.type || 'image/png' }));
     }
   }
 
