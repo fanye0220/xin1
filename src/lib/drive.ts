@@ -185,6 +185,15 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 
   const db = await initDB();
 
+  const getBuf = async (d: any) => {
+    if (!d) return null;
+    if (d instanceof ArrayBuffer || d instanceof Uint8Array) return d;
+    if (typeof d.arrayBuffer === 'function') {
+       try { return await d.arrayBuffer(); } catch(e) { return null; }
+    }
+    return null;
+  };
+
   // 1. Lossless App Database Dump (100% accurate restore for this app)
   onProgress("正在生成完整的数据库快照...");
   const rawExport = {
@@ -202,14 +211,17 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     const blobData = await db.get('blobs', key);
     if (blobData) {
       if (blobData.avatarBlob) {
-        zip.file(`sys_blobs/${key}_avatar`, blobData.avatarBlob);
+        const ab = await getBuf(blobData.avatarBlob);
+        if (ab) zip.file(`sys_blobs/${key}_avatar`, ab);
       }
       if (blobData.originalFile) {
-        zip.file(`sys_blobs/${key}_original`, blobData.originalFile);
+        const ab = await getBuf(blobData.originalFile);
+        if (ab) zip.file(`sys_blobs/${key}_original`, ab);
       }
       if (blobData.avatarHistory && Array.isArray(blobData.avatarHistory)) {
         for (let j = 0; j < blobData.avatarHistory.length; j++) {
-           zip.file(`sys_blobs/${key}_history_${j}`, blobData.avatarHistory[j]);
+           const ab = await getBuf(blobData.avatarHistory[j]);
+           if (ab) zip.file(`sys_blobs/${key}_history_${j}`, ab);
         }
       }
     }
@@ -241,14 +253,16 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     if (char.originalFile) {
        // Save as original png/webp so user can easily drag into SillyTavern
        const extension = char.originalFile.name ? char.originalFile.name.split('.').pop() || 'png' : 'png';
-       zip.file(`${folderPath}/${safeCharName}.${extension}`, char.originalFile);
+       const ab = await getBuf(char.originalFile);
+       if (ab) zip.file(`${folderPath}/${safeCharName}.${extension}`, ab);
     }
     
     // Always include a raw JSON for guaranteed regex/worldbook extraction in ST
     zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
     
     if (char.avatarBlob && !char.originalFile) {
-       zip.file(`${folderPath}/avatar.png`, char.avatarBlob);
+       const ab = await getBuf(char.avatarBlob);
+       if (ab) zip.file(`${folderPath}/avatar.png`, ab);
     }
   }
 
