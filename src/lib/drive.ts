@@ -202,10 +202,15 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     const blobData = await db.get('blobs', key);
     if (blobData) {
       if (blobData.avatarBlob) {
-        zip.file(`sys_blobs/${key}_avatar`, new Blob([blobData.avatarBlob], { type: blobData.avatarBlob.type || 'image/png' }));
+        zip.file(`sys_blobs/${key}_avatar`, blobData.avatarBlob);
       }
       if (blobData.originalFile) {
-        zip.file(`sys_blobs/${key}_original`, new Blob([blobData.originalFile], { type: blobData.originalFile.type || 'image/png' }));
+        zip.file(`sys_blobs/${key}_original`, blobData.originalFile);
+      }
+      if (blobData.avatarHistory && Array.isArray(blobData.avatarHistory)) {
+        for (let j = 0; j < blobData.avatarHistory.length; j++) {
+           zip.file(`sys_blobs/${key}_history_${j}`, blobData.avatarHistory[j]);
+        }
       }
     }
   }
@@ -236,14 +241,14 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     if (char.originalFile) {
        // Save as original png/webp so user can easily drag into SillyTavern
        const extension = char.originalFile.name ? char.originalFile.name.split('.').pop() || 'png' : 'png';
-       zip.file(`${folderPath}/${safeCharName}.${extension}`, new Blob([char.originalFile], { type: char.originalFile.type || 'image/png' }));
+       zip.file(`${folderPath}/${safeCharName}.${extension}`, char.originalFile);
     }
     
     // Always include a raw JSON for guaranteed regex/worldbook extraction in ST
     zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
     
     if (char.avatarBlob && !char.originalFile) {
-       zip.file(`${folderPath}/avatar.png`, new Blob([char.avatarBlob], { type: char.avatarBlob.type || 'image/png' }));
+       zip.file(`${folderPath}/avatar.png`, char.avatarBlob);
     }
   }
 
@@ -383,17 +388,25 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
         
         for (const file of sysBlobs) {
           const parts = file.name.split('/');
-          const filename = parts[1]; // {id}_avatar or {id}_original
-          const lastUnderscore = filename.lastIndexOf('_');
-          if (lastUnderscore > 0) {
-            const id = filename.substring(0, lastUnderscore);
-            const type = filename.substring(lastUnderscore + 1); // "avatar" or "original"
+          const filename = parts[1]; // {id}_avatar or {id}_original or {id}_history_{index}
+          const idMatch = filename.match(/^([^_]+)_(.*)$/);
+          if (idMatch) {
+            const id = idMatch[1];
+            const type = idMatch[2]; // "avatar", "original", or "history_0"
             if (!blobsToSave.has(id)) blobsToSave.set(id, {});
             
             const b = await file.async("blob");
-            if (type === 'avatar') blobsToSave.get(id)!.avatarBlob = b;
-            if (type === 'original') {
-                blobsToSave.get(id)!.originalFile = new File([b], 'original.png', { type: b.type });
+            const mimeType = b.type || 'image/png';
+            
+            if (type === 'avatar') {
+               blobsToSave.get(id)!.avatarBlob = new Blob([b], { type: mimeType });
+            } else if (type === 'original') {
+               blobsToSave.get(id)!.originalFile = new File([b], 'original.png', { type: mimeType });
+            } else if (type.startsWith('history_')) {
+               const idx = parseInt(type.split('_')[1], 10);
+               const bStore = blobsToSave.get(id)!;
+               if (!bStore.avatarHistory) bStore.avatarHistory = [];
+               bStore.avatarHistory[idx] = new Blob([b], { type: mimeType });
             }
           }
         }
@@ -486,7 +499,10 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
           } catch(e) {}
         } else if (fileName === "avatar.png" || fileName.endsWith(".png") || fileName.endsWith(".webp") || fileName.endsWith(".jpg")) {
           const content = await file.async("blob");
-          characterFolders.get(folderName)!.avatar = content;
+          let mimeT = "image/png";
+          if (fileName.endsWith(".webp")) mimeT = "image/webp";
+          if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) mimeT = "image/jpeg";
+          characterFolders.get(folderName)!.avatar = new Blob([content], { type: content.type || mimeT });
         }
       }
     }
