@@ -133,7 +133,6 @@ export default function App() {
       setIsMigrating(false);
     });
   }, []);
-  }, []);
 
   if (isMigrating && migrationProgress.total > 0) {
     return (
