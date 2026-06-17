@@ -16,6 +16,8 @@ import { AIRecommender } from './components/AIRecommender';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatViewer } from './components/ChatViewer';
 import { migrateDatabase } from './lib/db';
+import { initAuth } from './lib/drive';
+import { SyncWidget } from './components/SyncWidget';
 import { useTaggerState } from './lib/taggerState';
 
 import { Tag, Loader2, AlertCircle, Pause, X } from 'lucide-react';
@@ -127,11 +129,18 @@ export default function App() {
       }
     });
 
+    // Initialize global drive auth listener for auto-sync
+    const unsubscribeDrive = initAuth();
+
     migrateDatabase((current, total) => {
       setMigrationProgress({ current, total });
     }).then(() => {
       setIsMigrating(false);
     });
+
+    return () => {
+      if (unsubscribeDrive) unsubscribeDrive();
+    };
   }, []);
 
   if (isMigrating && migrationProgress.total > 0) {
@@ -276,6 +285,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <SyncWidget />
     </div>
   );
 }
