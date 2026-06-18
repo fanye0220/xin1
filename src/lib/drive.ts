@@ -196,15 +196,45 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 
   // 1. Lossless App Database Dump (100% accurate restore for this app)
   onProgress("正在生成完整的数据库快照...");
+  const characters = await db.getAll('characters');
+  
   const rawExport = {
     folders: await db.getAll('folders'),
-    characters: await db.getAll('characters'),
+    characters: characters,
     chats: await db.getAll('chats'),
     memos: await db.getAll('memos')
   };
+
+  // Strip blobs before stringifying to prevent corruption (JSON.stringify ruins Blobs)
+  for (const char of rawExport.characters) {
+    if (char.avatarBlob) delete char.avatarBlob;
+    if (char.originalFile) delete char.originalFile;
+    if (char.avatarHistory) delete char.avatarHistory;
+  }
+  
+  for (const folder of rawExport.folders) {
+    if (folder.avatarBlob) {
+      zip.file(`sys_blobs_folders/${folder.id}_avatar`, new Blob([folder.avatarBlob], { type: folder.avatarBlob.type || 'image/png' }));
+      delete folder.avatarBlob;
+    }
+  }
+
+  for (const memo of rawExport.memos) {
+    if (memo.blob) {
+      // It's possible that memo.blob is an empty object due to previous bad syncs. Ignore if size is falsy unless it's a real blob.
+      if (memo.blob instanceof Blob || (memo.blob && typeof (memo.blob as any).size === 'number')) {
+         const bType = memo.blob.type || 'application/octet-stream';
+         zip.file(`sys_blobs_memos/${memo.id}`, new Blob([memo.blob as Blob], { type: bType }));
+         (memo as any)._blob_type = bType;
+      }
+      delete memo.blob;
+    }
+  }
+
   zip.file("aitavern_sys_db.json", JSON.stringify(rawExport));
 
   // 2. Blob dumps (Avatars and original files)
+  const characterMap = new Map(characters.map(c => [c.id, (c.name || 'Unnamed').replace(/[/\\?%*:|"<>]/g, '_')]));
   const allBlobsKeys = await db.getAllKeys('blobs');
   onProgress(`正在导出图片及源文件数据 (${allBlobsKeys.length})...`);
   for (const key of allBlobsKeys) {
@@ -334,7 +364,34 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
       throw new Error(`Upload failed: ${res.statusText}`);
     }
 
-    onProgress('上传成功!');
+    onProgress('上传成功, 正在清理过期备份...');
+    
+    // Auto-cleanup: Keep only top 5 manual backups
+    if (!isAutoBackup) {
+       try {
+          const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}' in parents and trashed=false and name contains 'aitavern_backup_'&orderBy=createdTime desc&fields=files(id, name)`, {
+             headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          if (listRes.ok) {
+             const listData = await listRes.json();
+             const manualBackups = listData.files || [];
+             if (manualBackups.length > 5) {
+                const toDelete = manualBackups.slice(5);
+                onProgress(`正在清理 ${toDelete.length} 个过期备份...`);
+                for (const oldFile of toDelete) {
+                   await fetch(`https://www.googleapis.com/drive/v3/files/${oldFile.id}`, {
+                      method: 'DELETE',
+                      headers: { Authorization: `Bearer ${accessToken}` }
+                   });
+                }
+             }
+          }
+       } catch (err) {
+          console.warn("Failed to cleanup old backups", err);
+       }
+    }
+
+    onProgress('备份全部完成!');
   } catch (err: any) {
     console.error("Backup to drive failed", err);
     throw new Error(`备份失败: ${err.message || '未知错误'}`);
@@ -374,6 +431,30 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       const content = await sysDbEntry.async("string");
       const dbDump = JSON.parse(content);
       
+      // Restore blobs for folders and memos BEFORE restoring them to db
+      const folderBlobsFiles = Object.values(loadedZip.files).filter(f => !f.dir && f.name.startsWith('sys_blobs_folders/'));
+      const folderBlobs = new Map<string, Blob>();
+      if (folderBlobsFiles.length > 0) {
+         onProgress(`正在恢复文件夹图片...`);
+         for (const file of folderBlobsFiles) {
+            const filename = file.name.split('/')[1]; // {id}_avatar
+            const id = filename.replace('_avatar', '');
+            const b = await file.async("blob");
+            folderBlobs.set(id, new Blob([b], { type: 'image/png' }));
+         }
+      }
+
+      const memoBlobsFiles = Object.values(loadedZip.files).filter(f => !f.dir && f.name.startsWith('sys_blobs_memos/'));
+      const memoBlobs = new Map<string, Blob>();
+      if (memoBlobsFiles.length > 0) {
+         onProgress(`正在恢复备忘录附件...`);
+         for (const file of memoBlobsFiles) {
+            const id = file.name.split('/')[1];
+            const b = await file.async("blob");
+            memoBlobs.set(id, b);
+         }
+      }
+
       // Clear and Restore stores
       const storesToRestore = ['folders', 'characters', 'chats', 'memos'] as const;
       for (const store of storesToRestore) {
@@ -383,6 +464,21 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
            const os = tx.objectStore(store as any);
            await os.clear();
            for (const item of dbDump[store]) {
+              if (store === 'folders') {
+                 if (folderBlobs.has(item.id)) {
+                    item.avatarBlob = folderBlobs.get(item.id);
+                 }
+              }
+              if (store === 'memos') {
+                 if (memoBlobs.has(item.id)) {
+                    const savedType = item._blob_type || 'application/octet-stream';
+                    item.blob = new Blob([memoBlobs.get(item.id)!], { type: savedType });
+                    delete item._blob_type;
+                 } else if (item.blob && typeof item.blob === 'object' && Object.keys(item.blob).length === 0) {
+                    // For old corrupted backups where memo.blob was turned into {}
+                    delete item.blob;
+                 }
+              }
               await os.put(item);
            }
            await tx.done;
@@ -400,27 +496,63 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
         // Group by ID
         const blobsToSave = new Map<string, any>();
         
+        // Extract known IDs to robustly match sys_blobs filenames
+        const knownIds = new Set<string>();
+        if (dbDump.characters && Array.isArray(dbDump.characters)) {
+           dbDump.characters.forEach((c: any) => c.id && knownIds.add(String(c.id)));
+        }
+
         for (const file of sysBlobs) {
           const parts = file.name.split('/');
-          const filename = parts[1]; // {id}_avatar or {id}_original or {id}_history_{index}
-          const idMatch = filename.match(/^([^_]+)_(.*)$/);
-          if (idMatch) {
-            const id = idMatch[1];
-            const type = idMatch[2]; // "avatar", "original", or "history_0"
+          const filename = parts[1]; // e.g. charName_id_avatar, {id}_avatar, or {id}_history_{index}
+          
+          let type: string | null = null;
+          let nameAndId: string | null = null;
+          
+          const historyMatch = filename.match(/^(.*)_history_(\d+)$/);
+          if (historyMatch) {
+            nameAndId = historyMatch[1];
+            type = `history_${historyMatch[2]}`;
+          } else {
+            const lastUnderscore = filename.lastIndexOf('_');
+            if (lastUnderscore > 0) {
+              type = filename.substring(lastUnderscore + 1); // "avatar" or "original"
+              nameAndId = filename.substring(0, lastUnderscore);
+            }
+          }
+          
+          if (type && nameAndId) {
+            let id = nameAndId;
+            
+            // Try to find if any known ID is at the end of the string
+            const matchedId = Array.from(knownIds).find(knownId => nameAndId === knownId || nameAndId!.endsWith(`_${knownId}`));
+            if (matchedId) {
+               id = matchedId;
+            } else {
+               // Fallback ID extraction logic
+               const secondLastUnderscore = nameAndId.lastIndexOf('_');
+               if (secondLastUnderscore > 0) {
+                 const potentialId = nameAndId.substring(secondLastUnderscore + 1);
+                 if (potentialId.length >= 13) { 
+                   id = potentialId;
+                 }
+               }
+            }
+
             if (!blobsToSave.has(id)) blobsToSave.set(id, {});
             
             const b = await file.async("blob");
-            const mimeType = b.type || 'image/png';
             
+            // Apply dummy MIME types so URL.createObjectURL functions correctly directly out of IndexedDB parsing
             if (type === 'avatar') {
-               blobsToSave.get(id)!.avatarBlob = new Blob([b], { type: mimeType });
+               blobsToSave.get(id)!.avatarBlob = new Blob([b], { type: 'image/png' });
             } else if (type === 'original') {
-               blobsToSave.get(id)!.originalFile = new File([b], 'original.png', { type: mimeType });
+               blobsToSave.get(id)!.originalFile = new File([b], 'original.png', { type: 'image/png' });
             } else if (type.startsWith('history_')) {
                const idx = parseInt(type.split('_')[1], 10);
                const bStore = blobsToSave.get(id)!;
                if (!bStore.avatarHistory) bStore.avatarHistory = [];
-               bStore.avatarHistory[idx] = new Blob([b], { type: mimeType });
+               bStore.avatarHistory[idx] = new Blob([b], { type: 'image/png' });
             }
           }
         }
@@ -432,6 +564,7 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       }
       
       // Fallback: Restore missing blobs from Characters/ folders if sys_blobs was incomplete
+      // (helps recover older/corrupted backups where blobs were lost during JSON serialization)
       onProgress("正在校验图片数据...");
       const dbAllChars = await db.getAll('characters');
       const missingBlobsIds = new Set<string>();
@@ -514,7 +647,7 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
          }
          await fixTx.done;
       }
-
+      
       // Restore settings
       const settingsEntry = loadedZip.file("settings.json");
       if (settingsEntry) {
@@ -597,10 +730,7 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
           } catch(e) {}
         } else if (fileName === "avatar.png" || fileName.endsWith(".png") || fileName.endsWith(".webp") || fileName.endsWith(".jpg")) {
           const content = await file.async("blob");
-          let mimeT = "image/png";
-          if (fileName.endsWith(".webp")) mimeT = "image/webp";
-          if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) mimeT = "image/jpeg";
-          characterFolders.get(folderName)!.avatar = new Blob([content], { type: content.type || mimeT });
+          characterFolders.get(folderName)!.avatar = content;
         }
       }
     }

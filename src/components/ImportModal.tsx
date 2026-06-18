@@ -158,8 +158,11 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     
     for (const alt of altImages) {
       const possibleMains = mainItems.filter(main => {
-        // ONLY match if the alt image is inside the '替换头像' folder of the main card
         const mainPrefix = main.folder ? main.folder + '/' : '';
+        if (alt.folder === main.folder) {
+           return true; // Match if in the EXACT same folder
+        }
+        
         if (alt.folder.startsWith(mainPrefix)) {
           const relative = alt.folder.substring(mainPrefix.length);
           const firstFolder = relative.split('/')[0];
@@ -170,7 +173,11 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         return false;
       });
       
-      possibleMains.sort((a, b) => b.folder.length - a.folder.length);
+      possibleMains.sort((a, b) => {
+         if (a.folder === alt.folder) return -1;
+         if (b.folder === alt.folder) return 1;
+         return b.folder.length - a.folder.length;
+      });
       
       if (possibleMains.length > 0) {
         const closestMain = possibleMains[0];
@@ -283,27 +290,42 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           targetFilePath = pathParts.join('/') + '/' + file.name;
         }
 
-        if (isAndroid()) {
-          if ((file as any).androidAbsPath) {
-            // Already unzipped natively! 
-            localFilePath = (file as any).androidAbsPath;
-            const buffer = await file.arrayBuffer(); // read it locally just strictly if needed, but wait!
-            // Actually, we don't need to read it if we skip setting avatarBlob, but we already read it during `parseChunk` to get metadata.
-            // By NOT setting avatarBlob, we prevent it from being loaded into IDB blobs table!
-            avatarBlob = undefined;
-            originalFile = undefined;
+        if (!item.isImage) {
+          avatarBlob = undefined;
+          originalFile = undefined;
+          if (altImagesByMain.has(item)) {
+             const matchedImages = altImagesByMain.get(item)!;
+             if (matchedImages.length > 0) {
+                const firstImg = matchedImages[0];
+                originalFile = firstImg;
+                if (firstImg.type === 'image/png' || firstImg.name.endsWith('.png') || firstImg.type.startsWith('image/')) {
+                   avatarBlob = firstImg;
+                }
+                if ((firstImg as any).androidAbsPath) {
+                   localFilePath = (firstImg as any).androidAbsPath;
+                   avatarBlob = undefined;
+                   originalFile = undefined;
+                }
+             }
+          }
+        } else {
+          if (isAndroid()) {
+            if ((file as any).androidAbsPath) {
+              localFilePath = (file as any).androidAbsPath;
+              avatarBlob = undefined;
+              originalFile = undefined;
+            } else {
+              if (file.type === 'image/png' || file.name.endsWith('.png') || file.type.startsWith('image/')) {
+                avatarBlob = file;
+              }
+              originalFile = file;
+            }
           } else {
-            const buffer = await file.arrayBuffer();
-            if (file.type === 'image/png' || file.name.endsWith('.png')) {
+            if (file.type === 'image/png' || file.name.endsWith('.png') || file.type.startsWith('image/')) {
               avatarBlob = file;
             }
             originalFile = file;
           }
-        } else {
-          if (file.type === 'image/png' || file.name.endsWith('.png')) {
-            avatarBlob = file;
-          }
-          originalFile = file;
         }
 
         let baseF = file.name.replace(/\.[^/.]+$/, "");
