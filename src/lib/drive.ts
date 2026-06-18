@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { getFolders, getCachedMeta, getCharacter, getAllChatsMetadata, getChatById, saveFolder, saveCharacter, saveChatsBulk, invalidateCache, initDB } from './db';
+import { getFolders, saveFolder, saveCharacter, saveChatsBulk, invalidateCache, initDB } from './db';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -221,50 +221,6 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     }
   }
   zip.file("settings.json", JSON.stringify(appSettings));
-
-  // 4. SillyTavern Compatible Manual Export (For users wanting to extract manually)
-  const chars = await getCachedMeta();
-  onProgress(`正在生成兼容版角色文件 (总数: ${chars.length})...`);
-  
-  for (let i = 0; i < chars.length; i++) {
-    const char = await getCharacter(chars[i].id);
-    if (!char) continue;
-    
-    const safeCharName = char.name.replace(/[/\\?%*:|"<>]/g, '_');
-    const folderPath = `Characters/${safeCharName}_${char.id}`;
-    
-    // Save original file if exists, otherwise save a fallback card.json
-    if (char.originalFile) {
-       // Save as original png/webp so user can easily drag into SillyTavern
-       const extension = char.originalFile.name ? char.originalFile.name.split('.').pop() || 'png' : 'png';
-       zip.file(`${folderPath}/${safeCharName}.${extension}`, new Blob([char.originalFile], { type: char.originalFile.type || 'image/png' }));
-    }
-    
-    // Always include a raw JSON for guaranteed regex/worldbook extraction in ST
-    zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
-    
-    if (char.avatarBlob && !char.originalFile) {
-       zip.file(`${folderPath}/avatar.png`, new Blob([char.avatarBlob], { type: char.avatarBlob.type || 'image/png' }));
-    }
-  }
-
-  const allChats = await getAllChatsMetadata();
-  onProgress(`正在生成兼容版聊天记录 (总数: ${allChats.length})...`);
-  for (let i = 0; i < allChats.length; i++) {
-    const chat = await getChatById(allChats[i].id);
-    if (!chat) continue;
-    
-    const charMeta = chars.find(c => c.id === chat.characterId);
-    const charName = charMeta ? charMeta.name : "Unknown";
-    const safeCharName = charName.replace(/[/\\?%*:|"<>]/g, '_');
-    const safeChatName = chat.name ? chat.name.replace(/[/\\?%*:|"<>]/g, '_') : 'Unnamed';
-    
-    const formattedDate = new Date(chat.createdAt).toISOString().replace(/[:.]/g, "-");
-    const filename = `${safeChatName}_${formattedDate}.jsonl`;
-    
-    const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\n');
-    zip.file(`Chats/${safeCharName}/${filename}`, jsonlString);
-  }
 
   onProgress("打包压缩中，请勿关闭...");
   return await zip.generateAsync({ type: "blob" });
