@@ -1,19 +1,8 @@
-import { Capacitor } from '@capacitor/core';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
-
 export const isAndroid = () => typeof window !== 'undefined' && !!(window as any).Android;
 
-// Get image URL for <img> tags. Capacitor handles this magically if used, otherwise custom bridge
+// Get image URL for <img> tags via the custom Android WebView bridge.
 export function getLocalImageUrl(filePath: string, cacheBuster?: number | string): string {
   if (isAndroid()) {
-    try {
-      if (Capacitor && Capacitor.isNativePlatform()) {
-         let url = Capacitor.convertFileSrc(filePath);
-         if (cacheBuster) url += (url.includes('?') ? '&' : '?') + `t=${cacheBuster}`;
-         return url;
-      }
-    } catch(e) {}
     // Standard Android WebViewAssetLoader format used by the user's APK
     if (filePath) {
         let url = `https://appassets.androidplatform.net/localfile?path=${encodeURIComponent(filePath)}`;
@@ -27,57 +16,19 @@ export function getLocalImageUrl(filePath: string, cacheBuster?: number | string
 export async function shareFileOnAndroid(filename: string, buffer: ArrayBuffer, mimeType?: string): Promise<boolean> {
   if (!isAndroid()) return false;
   try {
-     const chunkSize = 2 * 1024 * 1024; // 2MB chunks
-     const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
-     let fileUri = '';
-
-     for (let i = 0; i < totalChunks; i++) {
-        const chunkBlob = new Blob([buffer.slice(i * chunkSize, (i + 1) * chunkSize)]);
-        const b64Chunk = await new Promise<string>((resolve, reject) => {
+     // Delegate to the native Android bridge's own share method, if exposed.
+     const androidBridge = (window as any).Android;
+     if (androidBridge && typeof androidBridge.shareFile === 'function') {
+        const blob = new Blob([buffer], { type: mimeType || 'application/octet-stream' });
+        const b64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = () => {
-                const dataUrl = reader.result as string;
-                resolve(dataUrl.split(',')[1]);
-            };
+            reader.onload = () => resolve((reader.result as string).split(',')[1]);
             reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(chunkBlob);
+            reader.readAsDataURL(blob);
         });
-
-        if (i === 0) {
-            const result = await Filesystem.writeFile({
-                path: filename,
-                data: b64Chunk,
-                directory: Directory.Cache
-            });
-            fileUri = result.uri;
-        } else {
-            await Filesystem.appendFile({
-                path: filename,
-                data: b64Chunk,
-                directory: Directory.Cache
-            });
-        }
+        return await androidBridge.shareFile(filename, b64, mimeType || 'application/octet-stream');
      }
-
-     if (totalChunks === 0) {
-         const result = await Filesystem.writeFile({
-             path: filename,
-             data: "",
-             directory: Directory.Cache
-         });
-         fileUri = result.uri;
-     }
-
-     try {
-       await Share.share({
-         title: '分享文件',
-         url: fileUri,
-         dialogTitle: '分享文件',
-       });
-     } catch (shareErr) {
-       console.log('Share canceled or failed', shareErr);
-     }
-     return true;
+     return false;
   } catch (e) {
      console.error("Share failed", e);
      return false;
