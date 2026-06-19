@@ -188,25 +188,32 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 
   // 1. Lossless App Database Dump (100% accurate restore for this app)
   onProgress("正在生成完整的数据库快照...");
+  const rawCharacters = (await db.getAll('characters')).filter(c => !c.deletedAt);
   const rawExport = {
     folders: await db.getAll('folders'),
-    characters: await db.getAll('characters'),
+    characters: rawCharacters,
     chats: await db.getAll('chats'),
     memos: await db.getAll('memos')
   };
   zip.file("aitavern_sys_db.json", JSON.stringify(rawExport));
 
   // 2. Blob dumps (Avatars and original files)
+  const activeCharIds = new Set(rawCharacters.map(c => c.id));
   const allBlobsKeys = await db.getAllKeys('blobs');
   onProgress(`正在导出图片及源文件数据 (${allBlobsKeys.length})...`);
   for (const key of allBlobsKeys) {
+    if (!activeCharIds.has(key)) continue; // skip blobs for deleted characters
     const blobData = await db.get('blobs', key);
     if (blobData) {
       if (blobData.avatarBlob) {
-        zip.file(`sys_blobs/${key}_avatar`, new Blob([blobData.avatarBlob], { type: blobData.avatarBlob.type || 'image/png' }));
+        let type = blobData.avatarBlob.type || 'image/png';
+        let ext = type === 'image/webp' ? 'webp' : (type === 'image/jpeg' ? 'jpg' : 'png');
+        zip.file(`sys_blobs/${key}_avatar.${ext}`, new Blob([blobData.avatarBlob], { type }));
       }
       if (blobData.originalFile) {
-        zip.file(`sys_blobs/${key}_original`, new Blob([blobData.originalFile], { type: blobData.originalFile.type || 'image/png' }));
+        let name = blobData.originalFile.name || 'original.png';
+        let ext = name.split('.').pop() || 'png';
+        zip.file(`sys_blobs/${key}_original.${ext}`, new Blob([blobData.originalFile], { type: blobData.originalFile.type || 'image/png' }));
       }
     }
   }
@@ -224,14 +231,16 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 
   // 4. SillyTavern Compatible Manual Export (For users wanting to extract manually)
   const chars = await getCachedMeta();
-  onProgress(`正在生成兼容版角色文件 (总数: ${chars.length})...`);
+  onProgress(`正在按日期生成角色文件 (总数: ${chars.length})...`);
   
   for (let i = 0; i < chars.length; i++) {
     const char = await getCharacter(chars[i].id);
-    if (!char) continue;
+    if (!char || char.deletedAt) continue;
     
     const safeCharName = char.name.replace(/[/\\?%*:|"<>]/g, '_');
-    const folderPath = `Characters/${safeCharName}_${char.id}`;
+    const updatedAt = char.updatedAt || char.createdAt || Date.now();
+    const dateStr = new Date(updatedAt).toISOString().split('T')[0];
+    const folderPath = `Characters/${dateStr}/${safeCharName}_${char.id}`;
     
     // Save original file if exists, otherwise save a fallback card.json
     if (char.originalFile) {
@@ -249,9 +258,11 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
   }
 
   const allChats = await getAllChatsMetadata();
-  onProgress(`正在生成兼容版聊天记录 (总数: ${allChats.length})...`);
+  onProgress(`正在生成聊天记录 (总数: ${allChats.length})...`);
   for (let i = 0; i < allChats.length; i++) {
-    const chat = await getChatById(allChats[i].id);
+    const chatInfo = allChats[i];
+
+    const chat = await getChatById(chatInfo.id);
     if (!chat) continue;
     
     const charMeta = chars.find(c => c.id === chat.characterId);
@@ -262,8 +273,10 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     const formattedDate = new Date(chat.createdAt).toISOString().replace(/[:.]/g, "-");
     const filename = `${safeChatName}_${formattedDate}.jsonl`;
     
+    const chatDateStr = new Date(chat.createdAt).toISOString().split('T')[0];
+
     const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\n');
-    zip.file(`Chats/${safeCharName}/${filename}`, jsonlString);
+    zip.file(`Chats/${chatDateStr}/${safeCharName}/${filename}`, jsonlString);
   }
 
   onProgress("打包压缩中，请勿关闭...");
@@ -298,38 +311,29 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
       }
     }
 
-    let fileIdToUpload = existingFileId;
+    const metadata = existingFileId ? {} : {
+      name: fileName,
+      parents: [folderId],
+    };
 
-    if (!fileIdToUpload) {
-      // Step 1: Create file metadata
-      const resMeta = await fetch('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: fileName,
-          parents: [folderId],
-        }),
-      });
-      if (!resMeta.ok) throw new Error(`创建文件失败: ${resMeta.statusText}`);
-      const metaData = await resMeta.json();
-      fileIdToUpload = metaData.id;
-    }
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', backupBlob);
 
-    // Step 2: Upload contents
-    const resUpload = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileIdToUpload}?uploadType=media`, {
-      method: 'PATCH',
+    const url = existingFileId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
+      : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+
+    const res = await fetch(url, {
+      method: existingFileId ? 'PATCH' : 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/zip',
       },
-      body: backupBlob,
+      body: form,
     });
 
-    if (!resUpload.ok) {
-      throw new Error(`Upload failed: ${resUpload.statusText}`);
+    if (!res.ok) {
+      throw new Error(`Upload failed: ${res.statusText}`);
     }
 
     onProgress('上传成功!');
@@ -402,17 +406,27 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
         
         for (const file of sysBlobs) {
           const parts = file.name.split('/');
-          const filename = parts[1]; // {id}_avatar or {id}_original
+          const filename = parts[1]; // {id}_avatar.png or {id}_original.jpg
           const lastUnderscore = filename.lastIndexOf('_');
           if (lastUnderscore > 0) {
             const id = filename.substring(0, lastUnderscore);
-            const type = filename.substring(lastUnderscore + 1); // "avatar" or "original"
+            let typeWithExt = filename.substring(lastUnderscore + 1); // "avatar.webp" or "original.jpg"
+            let ext = 'png';
+            let type = typeWithExt;
+
+            const dotIndex = typeWithExt.lastIndexOf('.');
+            if (dotIndex > 0) {
+               ext = typeWithExt.substring(dotIndex + 1);
+               type = typeWithExt.substring(0, dotIndex);
+            }
+
             if (!blobsToSave.has(id)) blobsToSave.set(id, {});
             
             const b = await file.async("blob");
-            if (type === 'avatar') blobsToSave.get(id)!.avatarBlob = b;
+            let mime = b.type || (ext === 'webp' ? 'image/webp' : (ext.match(/jpe?g/) ? 'image/jpeg' : 'image/png'));
+            if (type === 'avatar') blobsToSave.get(id)!.avatarBlob = new Blob([b], { type: mime });
             if (type === 'original') {
-                blobsToSave.get(id)!.originalFile = new File([b], 'original.png', { type: b.type });
+                blobsToSave.get(id)!.originalFile = new File([b], `original.${ext}`, { type: mime });
             }
           }
         }

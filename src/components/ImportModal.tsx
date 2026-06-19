@@ -434,6 +434,9 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
             const zip = await JSZip.loadAsync(f);
           for (const relativePath in zip.files) {
             const zipEntry = zip.files[relativePath];
+            if (relativePath === 'aitavern_sys_db.json' || relativePath.startsWith('sys_blobs/') || relativePath === 'settings.json') {
+               continue;
+            }
             if (!zipEntry.dir && (relativePath.match(/\.(png|jpe?g|webp|gif|json)$/i))) {
               const blob = await zipEntry.async('blob');
               

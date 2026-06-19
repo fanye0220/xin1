@@ -699,11 +699,30 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
     if (baseBlob || localBuffer) {
       try {
-        const { injectTavernData } = await import('../lib/png');
         const buffer = localBuffer || await baseBlob!.arrayBuffer();
-        const newBuffer = injectTavernData(buffer, char.data);
-        const finalBlob = new Blob([newBuffer], { type: 'image/png' });
-        
+        let finalBlob: Blob = baseBlob || new Blob([buffer]);
+        let overrideExt = 'png';
+        let fallbackJson = false;
+
+        if (finalBlob.type === 'image/webp' || (char.originalFile && char.originalFile.name && char.originalFile.name.toLowerCase().endsWith('.webp'))) {
+          overrideExt = 'webp';
+          fallbackJson = true;
+        } else if (finalBlob.type === 'image/jpeg' || (char.originalFile && char.originalFile.name && char.originalFile.name.toLowerCase().match(/\.(jpe?g)$/))) {
+          overrideExt = 'jpg';
+          fallbackJson = true;
+        } else {
+          try {
+            const { injectTavernData } = await import('../lib/png');
+            const newBuffer = injectTavernData(buffer, char.data);
+            finalBlob = new Blob([newBuffer], { type: 'image/png' });
+          } catch (e) {
+            console.warn("Failed to inject PNG data, falling back to original image + json file", e);
+            fallbackJson = true;
+          }
+        }
+
+        const actualExportFileName = `${safeName}.${overrideExt}`;
+
         const targetData = char.data.data ? char.data.data : char.data;
         const hasQR = targetData.extensions?.quick_replies && targetData.extensions.quick_replies.length > 0;
         const hasAvatars = char.avatarHistory && char.avatarHistory.length > 0;
@@ -716,7 +735,10 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           const charFolder = zipFolder ? zipFolder.folder(safeName) : null;
           const folderPrefix = safeName;
           
-          await addFileHelper(charFolder, folderPrefix, exportFileName, finalBlob);
+          await addFileHelper(charFolder, folderPrefix, actualExportFileName, finalBlob);
+          if (fallbackJson) {
+            await addFileHelper(charFolder, folderPrefix, `${safeName}.json`, JSON.stringify(char.data, null, 2));
+          }
           
           if (hasQR) {
             const qrFileName = targetData.extensions?.qr_filename || `${safeName}_qr.json`;
@@ -767,7 +789,10 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
           }
           
         } else {
-          await addFileHelper(zipFolder, '', exportFileName, finalBlob);
+          await addFileHelper(zipFolder, '', actualExportFileName, finalBlob);
+          if (fallbackJson) {
+            await addFileHelper(zipFolder, '', `${safeName}.json`, JSON.stringify(char.data, null, 2));
+          }
         }
       } catch (err) {
         console.error("Failed to export injected PNG", err);
