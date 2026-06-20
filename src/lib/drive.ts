@@ -187,7 +187,7 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 
   // Export folders and memos explicitly
   onProgress("正在打包应用数据...");
-  const folders = await db.getAll('folders');
+  const folders = (await db.getAll('folders')).filter(f => !(f as any).deletedAt);
   zip.file("folders.json", JSON.stringify(folders));
   
   const memos = await db.getAll('memos');
@@ -234,7 +234,8 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
   const allChats = await getAllChatsMetadata();
   onProgress(`正在导出聊天记录 (总数: ${allChats.length})...`);
   for (let i = 0; i < allChats.length; i++) {
-    const chatInfo = allChats[i];
+    const chatInfo = allChats[i] as any;
+    if (chatInfo.deletedAt) continue;
     
     const chat = await getChatById(chatInfo.id);
     if (!chat) continue;
@@ -515,21 +516,25 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       charCount++;
       if (charCount % 5 === 0) onProgress(`正在以兼容模式恢复角色卡片 (${charCount}/${characterFolders.size})...`);
       
-      const charToSave: any = {};
+      let charToSave: any = {};
       
-      if (data.meta) {
+      const lastUnderscore = folderName.lastIndexOf('_');
+      let fallbackId = folderName;
+      let fallbackName = folderName;
+      if (lastUnderscore > 0) {
+        fallbackName = folderName.substring(0, lastUnderscore);
+        fallbackId = folderName.substring(lastUnderscore + 1);
+      }
+
+      const metaIsWrapper = data.meta && data.meta.id && data.meta.data;
+      
+      if (metaIsWrapper) {
         Object.assign(charToSave, data.meta);
-      } else if (data.card) {
-        const lastUnderscore = folderName.lastIndexOf('_');
-        let fallbackId = folderName;
-        let fallbackName = folderName;
-        if (lastUnderscore > 0) {
-          fallbackName = folderName.substring(0, lastUnderscore);
-          fallbackId = folderName.substring(lastUnderscore + 1);
-        }
+      } else {
+        const cardData = data.card || data.meta || {};
         charToSave.id = fallbackId;
-        charToSave.name = data.card.name || fallbackName;
-        charToSave.data = data.card;
+        charToSave.name = cardData.name || fallbackName;
+        charToSave.data = cardData;
         charToSave.createdAt = Date.now();
       }
 
