@@ -31,7 +31,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<{file: string, error: string}[]>([]);
   const [progress, setProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
-  const [overwriteDuplicates, setOverwriteDuplicates] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getOrCreateNestedFolder = async (pathParts: string[], startParentId?: string | null): Promise<string | undefined> => {
@@ -195,6 +194,13 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     const existingMeta = await getCachedMeta();
     const existingImportNames = new Set(existingMeta.map(c => c.autoImportFilename).filter(Boolean));
     const newPathsAssigned = new Set<string>();
+    
+    const existingByName = new Map<string, any>();
+    for (const em of existingMeta) {
+      if (em.name) {
+        existingByName.set(em.name.trim(), em);
+      }
+    }
 
     for (let i = 0; i < mainItems.length; i++) {
       const item = mainItems[i];
@@ -307,52 +313,36 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           originalFile = file;
         }
 
+        const matchedName = charName.trim();
+        let targetId = crypto.randomUUID();
+        let isOverwrite = false;
+        
+        if (existingByName.has(matchedName)) {
+          if (window.confirm(`检测到已有同名角色「${charName}」，是否覆盖已有角色？\n\n（确定：覆盖已有角色并保留聊天历史；取消：导入为独立的新副本）`)) {
+            const existing = existingByName.get(matchedName);
+            targetId = existing.id;
+            isOverwrite = true;
+          }
+        }
+
         let baseF = file.name.replace(/\.[^/.]+$/, "");
         let autoImportFilename = file.name;
-        let matchedId = crypto.randomUUID();
-        let matchedCreatedAt = Date.now();
-        let matchedFolderId = targetFolderId;
-        
-        let duplicateMatch = null;
-        if (overwriteDuplicates) {
-          duplicateMatch = existingMeta.find(e => {
-            if (e.name !== charName) return false;
-            
-            // Match category
-            const b = (e as any).data || {};
-            const eIsTheme = b.blur_strength !== undefined || b.main_text_color !== undefined || b.chat_display !== undefined;
-            const eIsAIPreset = b.temperature !== undefined || b.prompts !== undefined || b.top_p !== undefined;
-            const eIsWorldbook = b.entries !== undefined || (b.data && b.data.entries !== undefined);
-            const eIsQR = Array.isArray(b) ? b.length > 0 && b[0].label !== undefined : b.quick_replies !== undefined || b.qrList !== undefined;
-            const eIsScript = b.run !== undefined || b.type === 'tool' || (b.type === 'script' && b.content !== undefined && b.name !== undefined);
-            const eIsCharacter = !eIsTheme && !eIsAIPreset && !eIsWorldbook && !eIsQR && !eIsScript && !!(b.name || e.name);
-            
-            return (isTheme && eIsTheme) || (isAIPreset && eIsAIPreset) || (isWorldbook && eIsWorldbook) || (isQR && eIsQR) || (isScript && eIsScript) || (isCharacter && eIsCharacter);
-          });
-        }
-        
-        if (duplicateMatch) {
-          matchedId = duplicateMatch.id;
-          if (duplicateMatch.autoImportFilename) {
-            autoImportFilename = duplicateMatch.autoImportFilename;
-          }
-          if (duplicateMatch.createdAt) {
-            matchedCreatedAt = duplicateMatch.createdAt;
-          }
-          if (duplicateMatch.folderId) {
-            matchedFolderId = duplicateMatch.folderId;
-          }
-        } else {
+        if (!isOverwrite) {
           let c = 0;
           while (existingImportNames.has(autoImportFilename) || newPathsAssigned.has(autoImportFilename)) {
             c++;
             autoImportFilename = `${baseF}_${c}.png`;
           }
+          newPathsAssigned.add(autoImportFilename);
+        } else {
+          const existing = existingByName.get(matchedName);
+          if (existing.autoImportFilename) {
+            autoImportFilename = existing.autoImportFilename;
+          }
         }
-        newPathsAssigned.add(autoImportFilename);
           
         const newChar: CharacterCard & { autoImportFilename?: string } = {
-          id: matchedId,
+          id: targetId,
           name: charName,
           autoImportFilename,
           avatarBlob,
@@ -360,8 +350,8 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           avatarUrlFallback,
           data: data,
           originalFile,
-          createdAt: matchedCreatedAt,
-          folderId: matchedFolderId,
+          createdAt: isOverwrite ? (existingByName.get(matchedName).createdAt || Date.now()) : Date.now(),
+          folderId: isOverwrite ? (existingByName.get(matchedName).folderId || targetFolderId) : targetFolderId,
           avatarHistory: altImagesByMain.get(item) || []
         } as any;
         
@@ -687,19 +677,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
                     <div className="flex items-center gap-1 text-xs"><FileJson className="w-4 h-4" /> JSON</div>
                     <div className="flex items-center gap-1 text-xs"><FileArchive className="w-4 h-4" /> ZIP</div>
                   </div>
-                </div>
-
-                <div className="mt-4 flex items-center gap-3 bg-white/5 border border-white/5 rounded-xl p-3">
-                  <input
-                    id="overwrite-duplicates-checkbox"
-                    type="checkbox"
-                    checked={overwriteDuplicates}
-                    onChange={(e) => setOverwriteDuplicates(e.target.checked)}
-                    className="w-4 h-4 text-purple-600 bg-slate-950 border-white/20 rounded focus:ring-purple-500 focus:ring-offset-slate-900 focus:ring-2 cursor-pointer"
-                  />
-                  <label htmlFor="overwrite-duplicates-checkbox" className="text-xs select-none cursor-pointer text-slate-300">
-                    同名覆盖：若已存在同名的角色/预设/工具，上传时将其自动覆盖更新（否则保存为副本）
-                  </label>
                 </div>
 
                 {error && (

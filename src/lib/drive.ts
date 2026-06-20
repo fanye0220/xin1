@@ -552,9 +552,14 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
     }
   }
 
-  const db = await initDB();
-  const existingChars = await db.getAll('characters');
-  const restoredCharIdMap = new Map<string, string>();
+  // Pre-load all existing characters currently in DB so we can overwrite duplicates by Name
+  const existingChars = await getCachedMeta();
+  const existingCharsByName = new Map<string, any>();
+  for (const c of existingChars) {
+    if (c.name) {
+      existingCharsByName.set(c.name.trim(), c);
+    }
+  }
 
   let charCount = 0;
   for (const [folderName, data] of characterFolders.entries()) {
@@ -584,41 +589,19 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
         charToSave.createdAt = Date.now();
       }
 
-      if (data.avatar) {
-        charToSave.avatarBlob = data.avatar;
-      }
-
-      // Overwrite control: handle duplicates of matching category and name
-      let matchedId = charToSave.id;
-      const exactIdMatch = existingChars.find(c => c.id === charToSave.id);
-      if (exactIdMatch) {
-        matchedId = exactIdMatch.id;
-      } else {
-        const nameMatch = existingChars.find(c => {
-          if (c.name !== charToSave.name) return false;
-
-          // Verify category similarity
-          const isThemeA = c.data?.blur_strength !== undefined || c.data?.main_text_color !== undefined || c.data?.chat_display !== undefined;
-          const isThemeB = charToSave.data?.blur_strength !== undefined || charToSave.data?.main_text_color !== undefined || charToSave.data?.chat_display !== undefined;
-          if (isThemeA !== isThemeB) return false;
-
-          const isPresetA = c.data?.temperature !== undefined || c.data?.prompts !== undefined || c.data?.top_p !== undefined;
-          const isPresetB = charToSave.data?.temperature !== undefined || charToSave.data?.prompts !== undefined || charToSave.data?.top_p !== undefined;
-          if (isPresetA !== isPresetB) return false;
-
-          const isScriptA = c.data?.run !== undefined || c.data?.type === 'tool' || (c.data?.type === 'script' && c.data?.content !== undefined && c.data?.name !== undefined);
-          const isScriptB = charToSave.data?.run !== undefined || charToSave.data?.type === 'tool' || (charToSave.data?.type === 'script' && charToSave.data?.content !== undefined && charToSave.data?.name !== undefined);
-          if (isScriptA !== isScriptB) return false;
-
-          return true;
-        });
-        if (nameMatch) {
-          matchedId = nameMatch.id;
+      // Check if a character with the same name already exists in our local list to automatically overwrite
+      const matchedName = (charToSave.name || "").trim();
+      if (matchedName && existingCharsByName.has(matchedName)) {
+        const existing = existingCharsByName.get(matchedName);
+        charToSave.id = existing.id;
+        if (existing.folderId && !charToSave.folderId) {
+          charToSave.folderId = existing.folderId;
         }
       }
 
-      charToSave.id = matchedId;
-      restoredCharIdMap.set(folderName, matchedId);
+      if (data.avatar) {
+        charToSave.avatarBlob = data.avatar;
+      }
       
       try {
         await saveCharacter(charToSave);
@@ -663,31 +646,20 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       }
 
       const safeCharFolderFromPath = parts[1];
-      let targetCharId = restoredCharIdMap.get(safeCharFolderFromPath);
-      if (!targetCharId) {
-        // Fallback search keys
-        for (const [folderName, mid] of restoredCharIdMap.entries()) {
-           if (folderName.startsWith(safeCharFolderFromPath)) {
-              targetCharId = mid;
-              break;
-           }
-        }
-      }
-      if (!targetCharId) {
-         for (const [folderName, data] of characterFolders.entries()) {
-            if ((data.meta || data.card) && folderName.startsWith(safeCharFolderFromPath)) {
-               if (data.meta && data.meta.id) {
-                  targetCharId = data.meta.id;
+      let targetCharId = "";
+      for (const [folderName, data] of characterFolders.entries()) {
+         if ((data.meta || data.card) && folderName.startsWith(safeCharFolderFromPath)) {
+            if (data.meta && data.meta.id) {
+               targetCharId = data.meta.id;
+            } else {
+               const lastUnderscore = folderName.lastIndexOf('_');
+               if (lastUnderscore > 0) {
+                 targetCharId = folderName.substring(lastUnderscore + 1);
                } else {
-                  const lastUnderscore = folderName.lastIndexOf('_');
-                  if (lastUnderscore > 0) {
-                    targetCharId = folderName.substring(lastUnderscore + 1);
-                  } else {
-                    targetCharId = folderName;
-                  }
+                 targetCharId = folderName;
                }
-               break;
             }
+            break;
          }
       }
       
