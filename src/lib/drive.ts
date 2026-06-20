@@ -278,18 +278,10 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
     const folderId = await getOrCreateBackupFolder(accessToken);
 
     onProgress('正在上传数据到 Google Drive... (可能需要1-3分钟)');
-    const fileName = isAutoBackup ? 'aitavern_auto_backup.zip' : `aitavern_backup_${new Date().toISOString().substring(0, 10).replace(/-/g, '')}.zip`;
+    const prefix = isAutoBackup ? 'aitavern_auto_backup_' : 'aitavern_backup_';
+    const fileName = `${prefix}${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
 
-    let existingFileId = null;
-    const resInfo = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}' in parents and name='${fileName}' and trashed=false`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const infoData = await resInfo.json();
-    if (infoData.files && infoData.files.length > 0) {
-      existingFileId = infoData.files[0].id;
-    }
-
-    const metadata = existingFileId ? {} : {
+    const metadata = {
       name: fileName,
       parents: [folderId],
     };
@@ -298,12 +290,10 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', backupBlob);
 
-    const url = existingFileId 
-      ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
-      : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+    const url = `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
 
     const res = await fetch(url, {
-      method: existingFileId ? 'PATCH' : 'POST',
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
@@ -314,7 +304,30 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
       throw new Error(`Upload failed: ${res.statusText}`);
     }
 
-    onProgress('上传成功!');
+    onProgress('上传成功! 正在清理旧版本...');
+
+    try {
+      const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}' in parents and trashed=false&orderBy=createdTime desc&fields=files(id, name, createdTime)`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const backupFiles = (listData.files || []).filter((f: any) => f.name.startsWith('aitavern_') && f.name.endsWith('.zip'));
+        if (backupFiles.length > 3) {
+          const toDelete = backupFiles.slice(3);
+          for (const oldFile of toDelete) {
+            await fetch(`https://www.googleapis.com/drive/v3/files/${oldFile.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+          }
+        }
+      }
+    } catch (cleanupErr) {
+      console.error("Cleanup old backups failed", cleanupErr);
+    }
+
+    onProgress('备份完成!');
   } catch (err: any) {
     console.error("Backup to drive failed", err);
     throw new Error(`备份失败: ${err.message || '未知错误'}`);
