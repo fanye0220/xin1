@@ -366,6 +366,34 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       if (f.name.endsWith('.zip')) {
+        let isSysBackup = false;
+        if (f.name.includes("aitavern_backup") || f.name.includes("auto_backup") || f.name.includes("sys_db")) {
+           isSysBackup = true;
+        } else if (!isAndroid()) {
+           try {
+              const JSZip = (await import("jszip")).default;
+              const zip = await JSZip.loadAsync(f);
+              if (zip.file('folders.json') || zip.file('memos.json') || zip.file('aitavern_sys_db.json')) {
+                 isSysBackup = true;
+              }
+           } catch(e) {}
+        }
+
+        if (isSysBackup && window.confirm("检测到该 ZIP 为全站系统备份文件（包含分类、备忘录和配置等）。\n\n是否以【全站恢复】模式导入该备份？\n(确定：执行恢复并重组全站数据；取消：以普通方式仅提取合并角色卡)")) {
+           setProgress({ current: 0, total: 100, message: '正在初始化全站数据恢复...' });
+           try {
+              const { restoreBackupFromBlob } = await import('../lib/drive');
+              await restoreBackupFromBlob(f, (msg) => {
+                 setProgress({ current: 50, total: 100, message: msg });
+              });
+              alert("恢复成功！页面即将刷新...");
+              window.location.reload();
+           } catch(err: any) {
+              setError("全站恢复失败: " + err.message);
+           }
+           return;
+        }
+
         if (isAndroid() && (window as any).Android?.startTempFile) {
           try {
             setProgress({ current: 0, total: 100, message: `正在上传 ${f.name} 至原生解压引擎...` });
