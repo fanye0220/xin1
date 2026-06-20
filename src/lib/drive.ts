@@ -400,13 +400,14 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       // Restore blobs
       const sysBlobs = Object.values(loadedZip.files).filter(f => !f.dir && f.name.startsWith('sys_blobs/'));
       if (sysBlobs.length > 0) {
-        onProgress(`正在恢复图片与源二进制数据 (${sysBlobs.length}个文件)...`);
+        onProgress(`正在解析备份文件结构 (${sysBlobs.length}个二进制文件)...`);
+        const db = await initDB();
         const tx = db.transaction('blobs', 'readwrite');
         const os = tx.objectStore('blobs');
         await os.clear();
         
-        // Group by ID
-        const blobsToSave = new Map<string, any>();
+        // Group JSZip references by ID, keeping memory footprint low
+        const blobGroups = new Map<string, { avatarFile?: { f: any, ext: string }, originalFile?: { f: any, ext: string } }>();
         
         for (const file of sysBlobs) {
           const parts = file.name.split('/');
@@ -424,19 +425,34 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
                type = typeWithExt.substring(0, dotIndex);
             }
             
-            if (!blobsToSave.has(id)) blobsToSave.set(id, {});
-            
-            const b = await file.async("blob");
-            let mime = b.type || (ext === 'webp' ? 'image/webp' : (ext.match(/jpe?g/) ? 'image/jpeg' : 'image/png'));
-            if (type === 'avatar') blobsToSave.get(id)!.avatarBlob = new Blob([b], { type: mime });
-            if (type === 'original') {
-                blobsToSave.get(id)!.originalFile = new File([b], `original.${ext}`, { type: mime });
-            }
+            if (!blobGroups.has(id)) blobGroups.set(id, {});
+            const group = blobGroups.get(id)!;
+            if (type === 'avatar') group.avatarFile = { f: file, ext };
+            if (type === 'original') group.originalFile = { f: file, ext };
           }
         }
-        
-        for (const [id, val] of blobsToSave.entries()) {
-           await os.put(val, id);
+
+        // Now process and save sequentially, loading one blob at a time
+        let count = 0;
+        for (const [id, group] of blobGroups.entries()) {
+          count++;
+          if (count % 10 === 0 || count === blobGroups.size) {
+            onProgress(`正在导入多媒体与大图等数据 (${count}/${blobGroups.size})...`);
+          }
+          
+          const val: any = {};
+          if (group.avatarFile) {
+            const b = await group.avatarFile.f.async("blob");
+            const mime = b.type || (group.avatarFile.ext === 'webp' ? 'image/webp' : (group.avatarFile.ext.match(/jpe?g/) ? 'image/jpeg' : 'image/png'));
+            val.avatarBlob = new Blob([b], { type: mime });
+          }
+          if (group.originalFile) {
+            const b = await group.originalFile.f.async("blob");
+            const mime = b.type || (group.originalFile.ext === 'webp' ? 'image/webp' : (group.originalFile.ext.match(/jpe?g/) ? 'image/jpeg' : 'image/png'));
+            val.originalFile = new File([b], `original.${group.originalFile.ext}`, { type: mime });
+          }
+          
+          await os.put(val, id);
         }
         await tx.done;
       }

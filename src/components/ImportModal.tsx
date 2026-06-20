@@ -194,13 +194,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     const existingMeta = await getCachedMeta();
     const existingImportNames = new Set(existingMeta.map(c => c.autoImportFilename).filter(Boolean));
     const newPathsAssigned = new Set<string>();
-    
-    const existingByName = new Map<string, any>();
-    for (const em of existingMeta) {
-      if (em.name) {
-        existingByName.set(em.name.trim(), em);
-      }
-    }
 
     for (let i = 0; i < mainItems.length; i++) {
       const item = mainItems[i];
@@ -313,36 +306,17 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           originalFile = file;
         }
 
-        const matchedName = charName.trim();
-        let targetId = crypto.randomUUID();
-        let isOverwrite = false;
-        
-        if (existingByName.has(matchedName)) {
-          if (window.confirm(`检测到已有同名角色「${charName}」，是否覆盖已有角色？\n\n（确定：覆盖已有角色并保留聊天历史；取消：导入为独立的新副本）`)) {
-            const existing = existingByName.get(matchedName);
-            targetId = existing.id;
-            isOverwrite = true;
-          }
-        }
-
         let baseF = file.name.replace(/\.[^/.]+$/, "");
         let autoImportFilename = file.name;
-        if (!isOverwrite) {
-          let c = 0;
-          while (existingImportNames.has(autoImportFilename) || newPathsAssigned.has(autoImportFilename)) {
-            c++;
-            autoImportFilename = `${baseF}_${c}.png`;
-          }
-          newPathsAssigned.add(autoImportFilename);
-        } else {
-          const existing = existingByName.get(matchedName);
-          if (existing.autoImportFilename) {
-            autoImportFilename = existing.autoImportFilename;
-          }
+        let c = 0;
+        while (existingImportNames.has(autoImportFilename) || newPathsAssigned.has(autoImportFilename)) {
+          c++;
+          autoImportFilename = `${baseF}_${c}.png`;
         }
+        newPathsAssigned.add(autoImportFilename);
           
         const newChar: CharacterCard & { autoImportFilename?: string } = {
-          id: targetId,
+          id: crypto.randomUUID(),
           name: charName,
           autoImportFilename,
           avatarBlob,
@@ -350,8 +324,8 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           avatarUrlFallback,
           data: data,
           originalFile,
-          createdAt: isOverwrite ? (existingByName.get(matchedName).createdAt || Date.now()) : Date.now(),
-          folderId: isOverwrite ? (existingByName.get(matchedName).folderId || targetFolderId) : targetFolderId,
+          createdAt: Date.now(),
+          folderId: targetFolderId,
           avatarHistory: altImagesByMain.get(item) || []
         } as any;
         
