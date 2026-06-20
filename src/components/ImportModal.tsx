@@ -391,6 +391,9 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
 
             const tempFiles: File[] = [];
             for (const absPath of extractedPaths) {
+               if (absPath.endsWith('aitavern_sys_db.json') || absPath.includes('sys_blobs/') || absPath.endsWith('settings.json')) {
+                 continue;
+               }
                if (absPath.match(/\.(png|jpe?g|webp|gif|json)$/i)) {
                   let relativePath = absPath.substring(absPath.indexOf(extractedRoot) + extractedRoot.length + 1);
                   let type = 'application/octet-stream';

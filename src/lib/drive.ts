@@ -155,8 +155,7 @@ const FOLDER_NAME = 'AITavern_Backups';
 
 async function getOrCreateBackupFolder(accessToken: string): Promise<string> {
   // Check if folder exists
-  const query = `name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  let res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`, {
+  let res = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   let data = await res.json();
@@ -186,82 +185,57 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 
   const db = await initDB();
 
-  // 1. Lossless App Database Dump (100% accurate restore for this app)
-  onProgress("正在生成完整的数据库快照...");
-  const rawCharacters = (await db.getAll('characters')).filter(c => !c.deletedAt);
-  const rawExport = {
-    folders: await db.getAll('folders'),
-    characters: rawCharacters,
-    chats: await db.getAll('chats'),
-    memos: await db.getAll('memos')
-  };
-  zip.file("aitavern_sys_db.json", JSON.stringify(rawExport));
+  // Export folders and memos explicitly
+  onProgress("正在打包应用数据...");
+  const folders = await db.getAll('folders');
+  zip.file("folders.json", JSON.stringify(folders));
+  
+  const memos = await db.getAll('memos');
+  zip.file("memos.json", JSON.stringify(memos));
 
-  // 2. Blob dumps (Avatars and original files)
-  const activeCharIds = new Set(rawCharacters.map(c => c.id));
-  const allBlobsKeys = await db.getAllKeys('blobs');
-  onProgress(`正在导出图片及源文件数据 (${allBlobsKeys.length})...`);
-  for (const key of allBlobsKeys) {
-    if (!activeCharIds.has(key)) continue; // skip blobs for deleted characters
-    const blobData = await db.get('blobs', key);
-    if (blobData) {
-      if (blobData.avatarBlob) {
-        let type = blobData.avatarBlob.type || 'image/png';
-        let ext = type === 'image/webp' ? 'webp' : (type === 'image/jpeg' ? 'jpg' : 'png');
-        zip.file(`sys_blobs/${key}_avatar.${ext}`, new Blob([blobData.avatarBlob], { type }));
-      }
-      if (blobData.originalFile) {
-        let name = blobData.originalFile.name || 'original.png';
-        let ext = name.split('.').pop() || 'png';
-        zip.file(`sys_blobs/${key}_original.${ext}`, new Blob([blobData.originalFile], { type: blobData.originalFile.type || 'image/png' }));
-      }
-    }
-  }
-
-  // 3. Settings Backup
+  // Settings
   onProgress("正在导出系统配置...");
   const appSettings: any = {};
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key && (key.startsWith('tavern_') || key === 'ai_settings' || key === 'auto_backup_enabled')) {
+    // Don't backup Drive tokens
+    if (key && !key.startsWith("google_drive_")) {
       appSettings[key] = localStorage.getItem(key);
     }
   }
   zip.file("settings.json", JSON.stringify(appSettings));
 
-  // 4. SillyTavern Compatible Manual Export (For users wanting to extract manually)
+  // Compatible Export layout inside the same Backup Zip
   const chars = await getCachedMeta();
-  onProgress(`正在按日期生成角色文件 (总数: ${chars.length})...`);
+  onProgress(`正在导出角色文件 (总数: ${chars.length})...`);
   
   for (let i = 0; i < chars.length; i++) {
     const char = await getCharacter(chars[i].id);
     if (!char || char.deletedAt) continue;
     
     const safeCharName = char.name.replace(/[/\\?%*:|"<>]/g, '_');
-    const updatedAt = char.updatedAt || char.createdAt || Date.now();
-    const dateStr = new Date(updatedAt).toISOString().split('T')[0];
-    const folderPath = `Characters/${dateStr}/${safeCharName}_${char.id}`;
+    const folderPath = `Characters/${safeCharName}_${char.id}`;
     
-    // Save original file if exists, otherwise save a fallback card.json
-    if (char.originalFile) {
-       // Save as original png/webp so user can easily drag into SillyTavern
-       const extension = char.originalFile.name ? char.originalFile.name.split('.').pop() || 'png' : 'png';
-       zip.file(`${folderPath}/${safeCharName}.${extension}`, new Blob([char.originalFile], { type: char.originalFile.type || 'image/png' }));
+    const charOriginalFile = char.originalFile;
+    const charAvatarBlob = char.avatarBlob;
+
+    if (charOriginalFile) {
+       const extension = charOriginalFile.name ? charOriginalFile.name.split('.').pop() || 'png' : 'png';
+       zip.file(`${folderPath}/${safeCharName}.${extension}`, new Blob([charOriginalFile], { type: charOriginalFile.type || 'image/png' }));
     }
     
-    // Always include a raw JSON for guaranteed regex/worldbook extraction in ST
     zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
     
-    if (char.avatarBlob && !char.originalFile) {
-       zip.file(`${folderPath}/avatar.png`, new Blob([char.avatarBlob], { type: char.avatarBlob.type || 'image/png' }));
+    if (charAvatarBlob && !charOriginalFile) {
+       zip.file(`${folderPath}/avatar.png`, new Blob([charAvatarBlob], { type: charAvatarBlob.type || 'image/png' }));
     }
   }
 
   const allChats = await getAllChatsMetadata();
-  onProgress(`正在生成聊天记录 (总数: ${allChats.length})...`);
+  onProgress(`正在导出聊天记录 (总数: ${allChats.length})...`);
   for (let i = 0; i < allChats.length; i++) {
     const chatInfo = allChats[i];
-
+    
     const chat = await getChatById(chatInfo.id);
     if (!chat) continue;
     
@@ -273,19 +247,15 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     const formattedDate = new Date(chat.createdAt).toISOString().replace(/[:.]/g, "-");
     const filename = `${safeChatName}_${formattedDate}.jsonl`;
     
-    const chatDateStr = new Date(chat.createdAt).toISOString().split('T')[0];
-
     const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\n');
-    zip.file(`Chats/${chatDateStr}/${safeCharName}/${filename}`, jsonlString);
+    zip.file(`Chats/${safeCharName}/${filename}`, jsonlString);
   }
 
   onProgress("打包压缩中，请勿关闭...");
   return await zip.generateAsync({ 
-    type: "blob",
-    compression: "DEFLATE",
-    compressionOptions: {
-        level: 3 // Lowered to level 3 for faster compression speed
-    }
+    type: "blob", 
+    compression: "DEFLATE", 
+    compressionOptions: { level: 5 } 
   });
 }
 
@@ -297,18 +267,15 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
     const folderId = await getOrCreateBackupFolder(accessToken);
 
     onProgress('正在上传数据到 Google Drive... (可能需要1-3分钟)');
-    const fileName = isAutoBackup ? 'aitavern_auto_backup.zip' : `aitavern_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    const fileName = isAutoBackup ? 'aitavern_auto_backup.zip' : `aitavern_backup_${new Date().toISOString().substring(0, 10).replace(/-/g, '')}.zip`;
 
     let existingFileId = null;
-    if (isAutoBackup) {
-      const query = `'${folderId}' in parents and name='aitavern_auto_backup.zip' and trashed=false`;
-      const resInfo = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const infoData = await resInfo.json();
-      if (infoData.files && infoData.files.length > 0) {
-        existingFileId = infoData.files[0].id;
-      }
+    const resInfo = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}' in parents and name='${fileName}' and trashed=false`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const infoData = await resInfo.json();
+    if (infoData.files && infoData.files.length > 0) {
+      existingFileId = infoData.files[0].id;
     }
 
     const metadata = existingFileId ? {} : {
@@ -320,7 +287,7 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', backupBlob);
 
-    const url = existingFileId
+    const url = existingFileId 
       ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
       : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
 
@@ -345,11 +312,9 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
 
 export async function listBackupsFromDrive(accessToken: string) {
   const folderId = await getOrCreateBackupFolder(accessToken);
-  const query = `'${folderId}' in parents and trashed=false`;
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&orderBy=createdTime+desc&fields=files(id,name,createdTime,size)`, {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}' in parents and trashed=false&orderBy=createdTime desc&fields=files(id, name, createdTime, size)`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (res.status === 401) throw new Error('登录已过期，请重新登录账号授权(401)');
   if (!res.ok) throw new Error('读取备份列表失败');
   const data = await res.json();
   return data.files || [];
@@ -379,7 +344,7 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       const dbDump = JSON.parse(content);
       
       // Clear and Restore stores
-      const storesToRestore = ['folders', 'characters', 'chats', 'memos'] as const;
+      const storesToRestore = ['folders', 'characters', 'chats', 'chat_metadata', 'memos'] as const;
       for (const store of storesToRestore) {
         if (dbDump[store] && Array.isArray(dbDump[store])) {
            onProgress(`正在恢复 ${store} (${dbDump[store].length}条数据)...`);
@@ -406,20 +371,20 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
         
         for (const file of sysBlobs) {
           const parts = file.name.split('/');
-          const filename = parts[1]; // {id}_avatar.png or {id}_original.jpg
+          const filename = parts[1]; // {id}_avatar.png or {id}_original
           const lastUnderscore = filename.lastIndexOf('_');
           if (lastUnderscore > 0) {
             const id = filename.substring(0, lastUnderscore);
-            let typeWithExt = filename.substring(lastUnderscore + 1); // "avatar.webp" or "original.jpg"
+            let typeWithExt = filename.substring(lastUnderscore + 1); // "avatar.webp" or "original"
             let ext = 'png';
             let type = typeWithExt;
-
+            
             const dotIndex = typeWithExt.lastIndexOf('.');
             if (dotIndex > 0) {
                ext = typeWithExt.substring(dotIndex + 1);
                type = typeWithExt.substring(0, dotIndex);
             }
-
+            
             if (!blobsToSave.has(id)) blobsToSave.set(id, {});
             
             const b = await file.async("blob");
@@ -471,6 +436,25 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       }
     } catch (e) {
       console.error("Failed to restore folders", e);
+    }
+  }
+
+  const memosEntryCompat = loadedZip.file("memos.json");
+  if (memosEntryCompat) {
+    onProgress("正在恢复备忘录数据...");
+    try {
+      const db = await initDB();
+      const memosJson = await memosEntryCompat.async("string");
+      const memos = JSON.parse(memosJson);
+      const tx = db.transaction('memos', 'readwrite');
+      const os = tx.objectStore('memos');
+      await os.clear();
+      for (const m of memos) {
+        await os.put(m);
+      }
+      await tx.done;
+    } catch (e) {
+      console.error("Failed to restore memos", e);
     }
   }
 
