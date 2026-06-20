@@ -226,6 +226,16 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     
     zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
     
+    zip.file(`${folderPath}/character.json`, JSON.stringify({
+      id: char.id,
+      name: char.name,
+      createdAt: char.createdAt,
+      folderId: char.folderId,
+      sortOrder: char.sortOrder,
+      autoImportFilename: char.autoImportFilename,
+      data: char.data || {}
+    }));
+    
     if (charAvatarBlob && !charOriginalFile) {
        zip.file(`${folderPath}/avatar.png`, new Blob([charAvatarBlob], { type: charAvatarBlob.type || 'image/png' }));
     }
@@ -435,6 +445,25 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       for (const folder of folders) {
         await saveFolder(folder);
       }
+    } catch (e) {
+      console.error("Failed to restore folders", e);
+    }
+  }
+
+  const foldersEntryCompat = loadedZip.file("folders.json");
+  if (foldersEntryCompat) {
+    onProgress("正在恢复分类数据...");
+    try {
+      const db = await initDB();
+      const foldersJson = await foldersEntryCompat.async("string");
+      const folders = JSON.parse(foldersJson);
+      const tx = db.transaction('folders', 'readwrite');
+      const os = tx.objectStore('folders');
+      await os.clear();
+      for (const f of folders) {
+        await os.put(f);
+      }
+      await tx.done;
     } catch (e) {
       console.error("Failed to restore folders", e);
     }

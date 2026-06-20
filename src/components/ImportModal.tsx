@@ -366,34 +366,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       if (f.name.endsWith('.zip')) {
-        let isSysBackup = false;
-        if (f.name.includes("aitavern_backup") || f.name.includes("auto_backup") || f.name.includes("sys_db")) {
-           isSysBackup = true;
-        } else if (!isAndroid()) {
-           try {
-              const JSZip = (await import("jszip")).default;
-              const zip = await JSZip.loadAsync(f);
-              if (zip.file('folders.json') || zip.file('memos.json') || zip.file('aitavern_sys_db.json')) {
-                 isSysBackup = true;
-              }
-           } catch(e) {}
-        }
-
-        if (isSysBackup && window.confirm("检测到该 ZIP 为全站系统备份文件（包含分类、备忘录和配置等）。\n\n是否以【全站恢复】模式导入该备份？\n(确定：执行恢复并重组全站数据；取消：以普通方式仅提取合并角色卡)")) {
-           setProgress({ current: 0, total: 100, message: '正在初始化全站数据恢复...' });
-           try {
-              const { restoreBackupFromBlob } = await import('../lib/drive');
-              await restoreBackupFromBlob(f, (msg) => {
-                 setProgress({ current: 50, total: 100, message: msg });
-              });
-              alert("恢复成功！页面即将刷新...");
-              window.location.reload();
-           } catch(err: any) {
-              setError("全站恢复失败: " + err.message);
-           }
-           return;
-        }
-
         if (isAndroid() && (window as any).Android?.startTempFile) {
           try {
             setProgress({ current: 0, total: 100, message: `正在上传 ${f.name} 至原生解压引擎...` });
@@ -418,8 +390,14 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
             setProgress({ current: 0, total: extractedPaths.length, message: '解析解压文件列表...' });
 
             const tempFiles: File[] = [];
+            
+            const hasSettingsJson = extractedPaths.some(p => p.endsWith('settings.json'));
+
             for (const absPath of extractedPaths) {
-               if (absPath.endsWith('aitavern_sys_db.json') || absPath.includes('sys_blobs/') || absPath.endsWith('settings.json')) {
+               if (absPath.endsWith('aitavern_sys_db.json') || absPath.includes('sys_blobs/') || absPath.endsWith('settings.json') || absPath.endsWith('folders.json') || absPath.endsWith('memos.json')) {
+                 continue;
+               }
+               if (hasSettingsJson && absPath.endsWith('/character.json')) {
                  continue;
                }
                if (absPath.match(/\.(png|jpe?g|webp|gif|json)$/i)) {
@@ -463,9 +441,14 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
         } else {
           try {
             const zip = await JSZip.loadAsync(f);
+            
           for (const relativePath in zip.files) {
             const zipEntry = zip.files[relativePath];
-            if (relativePath === 'aitavern_sys_db.json' || relativePath.startsWith('sys_blobs/') || relativePath === 'settings.json') {
+            if (relativePath === 'aitavern_sys_db.json' || relativePath.startsWith('sys_blobs/') || relativePath === 'settings.json' || relativePath === 'folders.json' || relativePath === 'memos.json') {
+               continue;
+            }
+            // Prevent importing duplicate wrapper json from backup zips
+            if (zip.files['settings.json'] && relativePath.endsWith('/character.json')) {
                continue;
             }
             if (!zipEntry.dir && (relativePath.match(/\.(png|jpe?g|webp|gif|json)$/i))) {
