@@ -1,13 +1,14 @@
 import { getFallbackAvatar } from '../lib/avatar';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
+import { Plus, BookOpen, ChevronLeft, ChevronRight, Trash2, CheckCircle2, Cloud, X, FolderInput, Search, LayoutGrid, List, Filter, Folder as FolderIcon, Menu, Edit2, MoreVertical, Download, ArrowUpDown, LayoutDashboard, Link, Image as ImageIcon } from 'lucide-react';
 import { getCharacters, deleteCharacter, CharacterCard, saveCharacter, saveCharacters, getCharacter, getCharacterBlob, Folder, getFolders, getAllTags, saveFolder, deleteFolder, SortOption } from '../lib/db';
 import { useInView } from '../lib/useInView';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { BindQRModal } from './BindQRModal';
 import JSZip from 'jszip';
 import { injectTavernData } from '../lib/png';
+import { uploadCharacterToCloud } from '../lib/cloudDrive';
 import Cropper from 'react-easy-crop';
 import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -291,6 +292,9 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const longPressRef = useRef<{ timer: NodeJS.Timeout | null, triggered: boolean, startY?: number }>({ timer: null, triggered: false });
 
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
+  const [exportProgress, setExportProgress] = useState(0);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [isFoldersExpanded, setIsFoldersExpanded] = useState(() => localStorage.getItem('tavern_foldersExpanded') !== 'false');
   const lastScrollY = useRef(0);
@@ -568,6 +572,63 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     }
   };
 
+  
+  const handleBatchCloudBackup = async () => {
+    if (selectedIds.size === 0) return;
+    
+    const token = await import('../lib/drive').then(m => m.getAccessToken());
+    if (!token) {
+      alert("请先前往「云端同步」页面登录 Google 账号。");
+      return;
+    }
+    
+    try {
+      setIsExporting(true);
+      const allFolders = await getFolders();
+      const charIdsToExport = new Set<string>();
+      
+      for (const id of Array.from(selectedIds)) {
+        const folder = allFolders.find(f => f.id === id);
+        if (folder) {
+          const addFolderChars = async (fId) => {
+            const { characters: fc } = await getCharacters(1, 10000, fId);
+            fc.forEach(c => charIdsToExport.add(c.id));
+            const subs = allFolders.filter(f => f.parentId === fId);
+            for (const sub of subs) {
+              await addFolderChars(sub.id);
+            }
+          };
+          await addFolderChars(folder.id);
+        } else {
+          charIdsToExport.add(id);
+        }
+      }
+
+      const charsArray = Array.from(charIdsToExport);
+      if (charsArray.length === 0) {
+        alert("所选文件夹中没有可上传的角色。");
+        return;
+      }
+      let success = 0;
+      
+      for (let i = 0; i < charsArray.length; i++) {
+         setExportMessage(`正在同步至云端 (${i + 1}/${charsArray.length})...`);
+         await uploadCharacterToCloud(token, charsArray[i]);
+         success++;
+         setExportProgress(((i + 1) / charsArray.length) * 100);
+      }
+      alert(`云端备份成功！共备份 ${success} 个角色资料。`);
+    } catch (err) {
+      console.error(err);
+      alert("备份失败: " + err.message);
+    } finally {
+      setIsExporting(false);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    }
+  };
+
+
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要删除选中的 ${selectedIds.size} 项吗？\n（选中的角色将被移至回收站，文件夹将被直接删除且其内子项将移动到上一级）`)) {
@@ -720,7 +781,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
             fallbackJson = true;
           }
         }
-
+        
         const actualExportFileName = `${safeName}.${overrideExt}`;
 
         const targetData = char.data.data ? char.data.data : char.data;
@@ -1779,6 +1840,18 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                   </>
                 )}
 
+                
+                <div className="w-px h-8 bg-white/10 shrink-0" />
+                <button
+                  onClick={handleBatchCloudBackup}
+                  disabled={selectedIds.size === 0}
+                  className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-blue-500/10 text-white/70 hover:text-blue-400 transition disabled:opacity-50 group shrink-0"
+                >
+                  <div className="p-2 rounded-full bg-white/5 group-hover:bg-blue-400/20 transition">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <span className="font-medium text-[10px]">传云盘</span>
+                </button>
                 <div className="w-px h-8 bg-white/10 shrink-0" />
                 <button
                   onClick={handleBatchExport}
