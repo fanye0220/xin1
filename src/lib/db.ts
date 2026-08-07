@@ -485,6 +485,7 @@ export async function getCachedMeta(): Promise<CharMeta[]> {
 }
 
 export function invalidateCache() {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("tavern-db-updated"));
   cachedMeta = null;
   tagsCache = null;
 }

@@ -112,6 +112,17 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleDbUpdate = () => {
+      setRefreshKey(prev => prev + 1);
+    };
+    window.addEventListener('tavern-db-updated', handleDbUpdate);
+    return () => {
+      window.removeEventListener('tavern-db-updated', handleDbUpdate);
+    };
+  }, []);
+
   const [globalChatViewerId, setGlobalChatViewerId] = useState<string | null>(null);
   
   const [isMigrating, setIsMigrating] = useState(true);
