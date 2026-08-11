@@ -122,6 +122,17 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
   const char = await getCharacter(charId);
   if (!char) throw new Error("Character not found");
   
+
+  const rawData = char.data;
+  let charType = 'character';
+  if (rawData) {
+      if (!!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined)) charType = 'preset';
+      else if (rawData.entries !== undefined || (rawData.data && rawData.data.entries !== undefined)) charType = 'worldbook';
+      else if (rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined) charType = 'theme';
+      else if (Array.isArray(rawData) && rawData.length > 0 && rawData[0].message !== undefined) charType = 'qr';
+      else if (rawData.name && rawData.code !== undefined && rawData.trigger !== undefined) charType = 'script';
+  }
+
   const folderId = await getCloudFolderId(token);
   const safeName = char.name ? char.name.replace(/[\\/:*?"<>|]/g, "_") : "Character";
   
@@ -130,19 +141,7 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
     if (onProgress) onProgress("生成云端预览图...");
     thumbB64 = await generateThumbnail(char.avatarBlob);
   }
-  
-  if (onProgress) onProgress("打包角色数据...");
-  const zip = new JSZip();
-  zip.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));
-  
-  if (char.avatarBlob) {
-    let ext = 'png';
-    if (char.avatarBlob.type === 'image/jpeg') ext = 'jpg';
-    else if (char.avatarBlob.type === 'image/webp') ext = 'webp';
-    else if (char.avatarBlob.type === 'image/gif') ext = 'gif';
-    zip.file(`avatar.${ext}`, char.avatarBlob);
-  }
-  
+
   let folderPath = "";
   if (char.folderId) {
     const allFolders = await getFolders();
@@ -154,25 +153,70 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
     }
     folderPath = pathParts.join('/');
   }
+
+  let finalBlob: Blob;
+  let fileName = "";
+  let mimeType = "";
   
-  const studioMeta = {
-    folderPath,
-    createdAt: char.createdAt
-  };
-  zip.file('studio_meta.json', JSON.stringify(studioMeta));
-  
-  const finalBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-  const fileName = `${safeName}_${char.id}.zip`;
-  
+  async function createZip(): Promise<Blob> {
+    const zip = new JSZip();
+    zip.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));
+    
+    if (char.avatarBlob) {
+      let ext = 'png';
+      if (char.avatarBlob.type === 'image/jpeg') ext = 'jpg';
+      else if (char.avatarBlob.type === 'image/webp') ext = 'webp';
+      else if (char.avatarBlob.type === 'image/gif') ext = 'gif';
+      zip.file(`avatar.${ext}`, char.avatarBlob);
+    }
+    
+    const studioMeta = {
+      folderPath,
+      createdAt: char.createdAt
+    };
+    zip.file('studio_meta.json', JSON.stringify(studioMeta));
+    return await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+  }
+
+  if (char.avatarBlob && (char.avatarBlob.type === 'image/png' || !char.avatarBlob.type)) {
+    if (onProgress) onProgress("打包角色数据(PNG)...");
+    try {
+      const buffer = await char.avatarBlob.arrayBuffer();
+      const injectedBuffer = injectTavernData(buffer, char.data);
+      finalBlob = new Blob([injectedBuffer], { type: 'image/png' });
+      fileName = `${safeName}_${char.id}.png`;
+      mimeType = 'image/png';
+    } catch (e) {
+      console.error("Failed to inject PNG", e);
+      finalBlob = await createZip();
+      fileName = `${safeName}_${char.id}.zip`;
+      mimeType = 'application/zip';
+    }
+  } else if (!char.avatarBlob) {
+    if (onProgress) onProgress("打包角色数据(JSON)...");
+    finalBlob = new Blob([JSON.stringify(char.data, null, 2)], { type: 'application/json' });
+    fileName = `${safeName}_${char.id}.json`;
+    mimeType = 'application/json';
+  } else {
+    if (onProgress) onProgress("打包角色数据(ZIP)...");
+    finalBlob = await createZip();
+    fileName = `${safeName}_${char.id}.zip`;
+    mimeType = 'application/zip';
+  }
+
   if (onProgress) onProgress("检查是否已存在...");
   const metadata: any = {
     name: fileName,
     appProperties: {
       isChar: "true",
       charId: char.id,
-      charName: char.name || ""
+      charName: char.name || "",
+      cardType: charType,
+      folderPath: folderPath,
+      createdAt: char.createdAt.toString()
     }
   };
+  
   if (thumbB64) {
     metadata.contentHints = {
       thumbnail: {
@@ -189,7 +233,6 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
   const searchData = await searchRes.json();
   
   let targetFileId = '';
-  
   if (searchData.files && searchData.files.length > 0) {
     targetFileId = searchData.files[0].id;
     if (onProgress) onProgress("更新云端文件信息...");
@@ -222,7 +265,7 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/zip'
+      'Content-Type': mimeType
     },
     body: finalBlob
   });

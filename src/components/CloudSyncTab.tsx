@@ -41,7 +41,7 @@ export function CloudSyncTab() {
   }, [token, activeTab]);
 
   
-  const handleDownloadCloudChar = async (fileId: string, charName: string, fileName: string) => {
+  const handleDownloadCloudChar = async (fileId: string, charName: string, fileName: string, appProperties?: any) => {
     if (!token) return;
     setDownloadingId(fileId);
     try {
@@ -59,9 +59,10 @@ export function CloudSyncTab() {
             createTime = existing.createdAt || Date.now();
         }
         
-        if (!existing && studioMeta?.folderPath) {
+        const mergedMeta = { ...studioMeta, ...appProperties };
+        if (!existing && mergedMeta?.folderPath) {
            const allFolders = await getFolders();
-           const parts = studioMeta.folderPath.split('/');
+           const parts = mergedMeta.folderPath.split('/');
            let currentParentId: string | undefined = undefined;
            for (const part of parts) {
                let found = allFolders.find(f => f.name === part && f.parentId === currentParentId);
@@ -84,8 +85,8 @@ export function CloudSyncTab() {
            folderId = currentParentId;
         }
 
-        if (studioMeta?.createdAt) {
-           createTime = studioMeta.createdAt;
+        if (mergedMeta?.createdAt) {
+           createTime = parseInt(mergedMeta.createdAt as string) || mergedMeta.createdAt;
         }
         
         jsonData.id = targetId;
@@ -444,10 +445,10 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
                 {cloudChars.filter(char => {
                   if (!searchCloudQuery) return true;
-                  const charName = char.appProperties?.charName || char.name?.replace('.zip', '') || '';
+                  const charName = char.appProperties?.charName || char.name?.replace(/\\.(zip|png|json|webp|jpg)$/i, '') || '';
                   return charName.toLowerCase().includes(searchCloudQuery.toLowerCase());
                 }).map(char => {
-                  const charName = char.appProperties?.charName || char.name?.replace('.zip', '');
+                  const charName = char.appProperties?.charName || char.name?.replace(/\\.(zip|png|json|webp|jpg)$/i, '');
                   return (
                     <div key={char.id} className="relative group rounded-xl overflow-hidden bg-white/5 border border-white/10 flex flex-col h-auto">
                       <div className="relative aspect-[3/4] overflow-hidden bg-black/40">
@@ -475,11 +476,22 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
                             <Cloud className="w-8 h-8 text-white/20" />
                           </div>
                         )}
+                        
+                        {char.appProperties?.cardType && char.appProperties.cardType !== 'character' && (
+                          <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/60 backdrop-blur-md rounded-md text-[10px] font-medium text-white/90 border border-white/10 uppercase">
+                            {char.appProperties.cardType === 'worldbook' ? '世界书' :
+                             char.appProperties.cardType === 'qr' ? '快速回复' :
+                             char.appProperties.cardType === 'preset' ? '预设' :
+                             char.appProperties.cardType === 'theme' ? '主题' :
+                             char.appProperties.cardType === 'script' ? '脚本' : char.appProperties.cardType}
+                          </div>
+                        )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition pointer-events-none" />
+
                         
                         <div className="absolute inset-0 items-center justify-center gap-3 opacity-0 lg:group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm hidden lg:flex">
                            <button 
-                             onClick={() => handleDownloadCloudChar(char.id, charName, char.name)}
+                             onClick={() => handleDownloadCloudChar(char.id, charName, char.name, char.appProperties)}
                              disabled={downloadingId === char.id}
                              title="下载卡片"
                              className="p-3 rounded-full bg-blue-500 hover:bg-blue-400 text-white transition transform hover:scale-105 active:scale-95 shadow-lg disabled:opacity-50"
@@ -506,7 +518,7 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
                         </div>
                         <div className="flex items-center gap-1.5 sm:gap-2 mt-2 lg:hidden">
                            <button 
-                             onClick={() => handleDownloadCloudChar(char.id, charName, char.name)}
+                             onClick={() => handleDownloadCloudChar(char.id, charName, char.name, char.appProperties)}
                              disabled={downloadingId === char.id}
                              className="flex-1 py-1 sm:py-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center gap-1 active:bg-blue-500/40 transition disabled:opacity-50"
                            >
