@@ -191,7 +191,16 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
   zip.file("folders.json", JSON.stringify(folders));
   
   const memos = await db.getAll('memos');
-  zip.file("memos.json", JSON.stringify(memos));
+  const processedMemos = memos.map(m => {
+      if (m.blob) {
+          const extension = m.blob.type === 'image/jpeg' ? 'jpg' : (m.blob.type === 'image/webp' ? 'webp' : 'png');
+          const filename = `memo_${m.id}.${extension}`;
+          zip.file(`Memos/${filename}`, m.blob, { compression: "STORE" });
+          return { ...m, _blobFilename: filename, blob: undefined };
+      }
+      return m;
+  });
+  zip.file("memos.json", JSON.stringify(processedMemos));
 
   // Settings
   onProgress("正在导出系统配置...");
@@ -237,7 +246,7 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 
     if (charOriginalFile) {
        const extension = charOriginalFile.name ? charOriginalFile.name.split('.').pop() || 'png' : 'png';
-       zip.file(`${folderPath}/${safeCharName}.${extension}`, new Blob([charOriginalFile], { type: charOriginalFile.type || 'image/png' }));
+       zip.file(`${folderPath}/${safeCharName}.${extension}`, new Blob([charOriginalFile], { type: charOriginalFile.type || 'image/png' }), { compression: "STORE" });
     }
     
     zip.file(`${folderPath}/${safeCharName}.json`, JSON.stringify(char.data || {}));
@@ -253,7 +262,7 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     }));
     
     if (charAvatarBlob && !charOriginalFile) {
-       zip.file(`${folderPath}/avatar.png`, new Blob([charAvatarBlob], { type: charAvatarBlob.type || 'image/png' }));
+       zip.file(`${folderPath}/avatar.png`, new Blob([charAvatarBlob], { type: charAvatarBlob.type || 'image/png' }), { compression: "STORE" });
     }
   }
 
@@ -278,10 +287,16 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
     zip.file(`Chats/${safeCharName}/${filename}`, jsonlString);
   }
 
-  onProgress("打包中，请勿关闭...");
+  // Handle memos correctly, avoid stringifying Blobs by skipping them or converting?
+  // Wait, the current logic already just does JSON.stringify(memos). It's flawed for images but that's what it was.
+  
+  onProgress("打包中，请稍候...");
   return await zip.generateAsync({ 
     type: "blob", 
-    compression: "STORE" // 使用 STORE 不进行额外压缩。由于头像、大图等媒体格式本就已压缩，跳过解压/压缩计算能将 CPU 及峰值内存消耗降低 90% 以上，彻底杜绝手机端在处理 2000+ 卡片时的 OOM 闪退问题
+    compression: "DEFLATE",
+    compressionOptions: {
+      level: 6
+    }
   });
 }
 
@@ -524,6 +539,14 @@ export async function restoreBackupFromBlob(blob: Blob, onProgress: (msg: string
       const os = tx.objectStore('memos');
       await os.clear();
       for (const m of memos) {
+        if (m._blobFilename) {
+            const blobEntry = loadedZip.file(`Memos/${m._blobFilename}`);
+            if (blobEntry) {
+                const b = await blobEntry.async("blob");
+                m.blob = new Blob([b], { type: m._blobFilename.endsWith('jpg') ? 'image/jpeg' : (m._blobFilename.endsWith('webp') ? 'image/webp' : 'image/png') });
+            }
+            delete m._blobFilename;
+        }
         await os.put(m);
       }
       await tx.done;

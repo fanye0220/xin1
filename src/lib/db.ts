@@ -100,7 +100,7 @@ interface TavernDB extends DBSchema {
 export interface CharacterMemo {
   id: string;
   characterId: string;
-  type: 'text' | 'image' | 'file';
+  type: 'text' | 'image' | 'file' | 'worldbook';
   content: string; // Markdown or File name
   blob?: Blob;     // For images/files
   createdAt: number;

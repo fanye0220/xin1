@@ -73,6 +73,10 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
   const handleNameSave = async () => {
     if (!editNameValue.trim() || !character) return;
+    if (editNameValue.trim() === character.name) {
+      setIsEditingName(false);
+      return;
+    }
     
     // Deep clone data to avoid reference mutation bugs
     const updatedData = JSON.parse(JSON.stringify(character.data));
@@ -103,6 +107,10 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     setIsEditingTags(false);
     if (!character) return;
     const newTags = tagsStr.split(',').map(t => t.trim()).filter(t => t);
+    const currentTags = (character.data.data ? character.data.data.tags : character.data.tags) || [];
+    if (JSON.stringify(currentTags) === JSON.stringify(newTags)) {
+      return;
+    }
     
     let updatedData = { ...character.data };
     if (updatedData.data) {
@@ -124,6 +132,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const handleUpdateSource = async (sourceStr: string) => {
     setIsEditingSource(false);
     if (!character) return;
+    const currentSource = character.data?.data?.creator_notes || character.data?.creator_notes || '';
+    if (sourceStr === currentSource) return;
     
     let updatedData = { ...character.data };
     if (updatedData.data) {
@@ -148,6 +158,13 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
   const updateField = async (field: string, value: any) => {
     if (!character) return;
+    
+    // Check if changed
+    let currentVal = character.data?.data ? character.data.data[field] : character.data[field];
+    if (JSON.stringify(currentVal) === JSON.stringify(value)) {
+      return;
+    }
+
     const updatedChar = { ...character };
     let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
     targetData[field] = value;
@@ -197,6 +214,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
   const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : rawData.quick_replies !== undefined || rawData.qrList !== undefined;
   const isScript = rawData.run !== undefined || rawData.type === 'tool' || (rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined);
+  const isSpecialType = isPreset || isTheme || isQR || isScript;
 
   const getSafeFilename = (name: string) => {
     return name.replace(/[\\/:*?"<>|]/g, '_') || 'character';
@@ -768,21 +786,21 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
         <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-16 z-20">
           {[
             ...(!isStandaloneWorldbook ? [
-              { id: 'profile', icon: User, label: isPreset ? '预设条目' : '档案' },
+              { id: 'profile', icon: User, label: isSpecialType ? '数据详情' : '档案' },
             ] : []),
-            ...(!isPreset && !isStandaloneWorldbook ? [
+            ...(!isSpecialType && !isStandaloneWorldbook ? [
               { id: 'greetings', icon: MessageSquare, label: '开场白' },
             ] : []),
-            ...(!isPreset ? [
+            ...(!isSpecialType ? [
               { id: 'worldbook', icon: Book, label: '世界书' },
             ] : []),
-            ...(!isPreset && !isStandaloneWorldbook ? [
+            ...(!isSpecialType && !isStandaloneWorldbook ? [
               { id: 'regex', icon: Edit2, label: '正则替换' },
             ] : []),
-            ...(!isPreset && !isStandaloneWorldbook ? [
+            ...(!isSpecialType && !isStandaloneWorldbook ? [
               { id: 'chats', icon: MessageSquare, label: '聊天记录' },
             ] : []),
-            ...(!isPreset && !isStandaloneWorldbook ? [
+            ...(!isSpecialType && !isStandaloneWorldbook ? [
               { id: 'memos', icon: StickyNote, label: '备忘录' },
             ] : []),
           ].map((tab) => (
@@ -813,9 +831,9 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                   exit={{ opacity: 0, x: 20 }}
                   className="space-y-6"
                 >
-                  {isPreset ? (
+                  {isSpecialType ? (
                     <div className="space-y-6">
-                      {rawData.prompts && rawData.prompts.length > 0 && (
+                      {isPreset && rawData.prompts && rawData.prompts.length > 0 && (
                         <div className="space-y-4">
                           <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">提示词条目 (Prompts)</h3>
                           {rawData.prompts.map((prompt: any, i: number) => (
@@ -826,20 +844,35 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                         </div>
                       )}
                       
-                      {rawData.system_prompt && <Section title="系统提示词 (System Prompt)" content={rawData.system_prompt} />}
-                      {rawData.post_history_instructions && <Section title="历史后提示词 (Post History Instructions)" content={rawData.post_history_instructions} />}
+                      {isPreset && rawData.system_prompt && <Section title="系统提示词 (System Prompt)" content={rawData.system_prompt} />}
+                      {isPreset && rawData.post_history_instructions && <Section title="历史后提示词 (Post History Instructions)" content={rawData.post_history_instructions} />}
                       
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">生成参数 (Generation Settings)</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                          {rawData.temperature !== undefined && <div><span className="text-white/50">Temperature:</span> {rawData.temperature}</div>}
-                          {rawData.top_p !== undefined && <div><span className="text-white/50">Top P:</span> {rawData.top_p}</div>}
-                          {rawData.top_k !== undefined && <div><span className="text-white/50">Top K:</span> {rawData.top_k}</div>}
-                          {rawData.rep_pen !== undefined && <div><span className="text-white/50">Rep Pen:</span> {rawData.rep_pen}</div>}
-                          {rawData.presence_penalty !== undefined && <div><span className="text-white/50">Presence Pen:</span> {rawData.presence_penalty}</div>}
-                          {rawData.frequency_penalty !== undefined && <div><span className="text-white/50">Frequency Pen:</span> {rawData.frequency_penalty}</div>}
+                      {isPreset && (rawData.temperature !== undefined || rawData.top_p !== undefined) && (
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">生成参数 (Generation Settings)</h3>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                            {rawData.temperature !== undefined && <div><span className="text-white/50">Temperature:</span> {rawData.temperature}</div>}
+                            {rawData.top_p !== undefined && <div><span className="text-white/50">Top P:</span> {rawData.top_p}</div>}
+                            {rawData.top_k !== undefined && <div><span className="text-white/50">Top K:</span> {rawData.top_k}</div>}
+                            {rawData.rep_pen !== undefined && <div><span className="text-white/50">Rep Pen:</span> {rawData.rep_pen}</div>}
+                            {rawData.presence_penalty !== undefined && <div><span className="text-white/50">Presence Pen:</span> {rawData.presence_penalty}</div>}
+                            {rawData.frequency_penalty !== undefined && <div><span className="text-white/50">Frequency Pen:</span> {rawData.frequency_penalty}</div>}
+                          </div>
                         </div>
-                      </div>
+                      )}
+
+                      {(!isPreset || isTheme || isQR || isScript) && (
+                         <div className="space-y-4">
+                            <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">
+                                {isTheme ? '主题美化配置 (Theme config)' : isQR ? '快速回复配置 (QR config)' : isScript ? '脚本配置 (Script config)' : '数据内容 (Raw Data)'}
+                            </h3>
+                            <div className="bg-black/30 p-4 rounded-xl overflow-x-auto">
+                                <pre className="text-xs sm:text-sm text-white/80 font-mono">
+                                    {JSON.stringify(rawData, null, 2)}
+                                </pre>
+                            </div>
+                         </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -1385,7 +1418,7 @@ function Section({ title, content, onSave }: { title: string; content?: string; 
   );
 }
 
-function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (newBook: any) => void, onDelete: () => void }) {
+export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (newBook: any) => void, onDelete: () => void }) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [showControls, setShowControls] = useState(false);

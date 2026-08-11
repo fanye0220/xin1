@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { getMemosForCharacter, saveMemo, deleteMemo, CharacterMemo } from '../lib/db';
-import { StickyNote, Image as ImageIcon, File, Trash2, Plus, Download, X, Pin, Edit } from 'lucide-react';
+import { Book, StickyNote, Image as ImageIcon, File, Trash2, Plus, Download, X, Pin, Edit, FileUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { WorldbookViewer } from './CharacterDetail';
 import remarkGfm from 'remark-gfm';
 
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
@@ -23,6 +25,7 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
                     setIsExpanded(true);
                 }}
             />
+            {typeof document !== 'undefined' && createPortal(
             <AnimatePresence>
                 {isExpanded && (
                     <motion.div 
@@ -67,7 +70,9 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
                         </button>
                     </motion.div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence>,
+            document.body
+            )}
         </>
     );
 }
@@ -220,8 +225,8 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                 onClick={() => fileInputRef.current?.click()}
                 className="flex-1 sm:flex-none justify-center px-3 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg text-sm transition flex items-center gap-1.5"
             >
-                <ImageIcon className="w-4 h-4" />
-                图文
+                <FileUp className="w-4 h-4" />
+                更多
             </button>
         </div>
         <input 
@@ -230,10 +235,11 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
             className="hidden" 
             ref={fileInputRef} 
             onChange={handleFileUpload} 
-            accept="image/*,.txt,.md"
+            accept="image/*,.txt,.md,.json"
         />
       </div>
 
+      {typeof document !== 'undefined' && createPortal(
       <AnimatePresence>
       {isAddingMode && (
           <motion.div 
@@ -286,8 +292,9 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
             </motion.div>
           </motion.div>
       )}
-      </AnimatePresence>
-
+      </AnimatePresence>,
+      document.body
+      )}
       {memos.length === 0 && !isAddingMode ? (
          <div className="flex flex-col items-center justify-center p-12 bg-white/5 rounded-2xl border border-white/10 text-center border-dashed border-2">
             <StickyNote className="w-12 h-12 text-white/20 mb-4" />
@@ -310,17 +317,23 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                       dragListener={isReorderingMode}
                       className={`bg-white/5 border ${memo.isPinned ? 'border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'border-white/10'} rounded-xl overflow-hidden group break-inside-avoid shadow-lg relative ${isReorderingMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                   >
-                      <div className="absolute top-2 right-2 flex gap-1 z-10">
+                      <div className="absolute top-2 right-2 flex gap-1 z-20">
+                          {memo.type !== 'text' && memo.blob && (
+                              <button onClick={(e) => { e.stopPropagation(); handleDownloadFile(memo); }} className="p-1.5 bg-black/40 hover:bg-blue-500 text-white/70 hover:text-white rounded-lg transition backdrop-blur-sm" title="下载">
+                                  <Download className="w-4 h-4" />
+                              </button>
+                          )}
                           <button 
-                             onClick={() => handleTogglePin(memo)}
-                             className={`p-1.5 bg-black/40 ${memo.isPinned ? 'text-purple-400' : 'text-white/50 hover:text-white'} hover:bg-white/10 rounded-lg transition`}
+                             onClick={(e) => { e.stopPropagation(); handleTogglePin(memo); }}
+                             className={`p-1.5 bg-black/40 ${memo.isPinned ? 'text-purple-400' : 'text-white/50 hover:text-white'} hover:bg-white/20 rounded-lg transition backdrop-blur-sm`}
                              title={memo.isPinned ? "取消置顶" : "置顶记录"}
                           >
                              <Pin className={`w-4 h-4 ${memo.isPinned ? 'fill-current' : ''}`} />
                           </button>
                           <button 
-                             onClick={() => handleDelete(memo.id)}
-                             className="p-1.5 bg-black/40 hover:bg-red-500 text-white/50 hover:text-white rounded-lg transition"
+                             onClick={(e) => { e.stopPropagation(); handleDelete(memo.id); }}
+                             className="p-1.5 bg-black/40 hover:bg-red-500 text-white/50 hover:text-white rounded-lg transition backdrop-blur-sm"
+                             title="删除"
                           >
                              <Trash2 className="w-4 h-4" />
                           </button>
@@ -328,7 +341,7 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                       
                       {memo.type === 'text' && (
                           <div className="p-5 cursor-pointer group/text relative" onClick={() => { setReadingMemo(memo); setEditMemoContent(memo.content); setIsEditingMemo(false); }}>
-                             <div className="prose prose-sm prose-invert memo-prose-adapt max-w-none text-white/80 leading-relaxed markdown-body line-clamp-[8]">
+                             <div className="mt-6 prose prose-sm prose-invert memo-prose-adapt max-w-none text-white/80 leading-relaxed markdown-body line-clamp-[8]">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                     {memo.content}
                                 </ReactMarkdown>
@@ -350,30 +363,36 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                              <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent flex justify-between items-end">
                                 <span className="text-xs text-white/60">{new Date(memo.createdAt).toLocaleString()}</span>
                              </div>
-                             <div className="absolute bottom-3 right-3 flex gap-2 transition">
-                                 <button onClick={() => handleDownloadFile(memo)} className="p-1.5 bg-black/40 hover:bg-blue-500 text-white/70 hover:text-white rounded-lg transition">
-                                    <Download className="w-4 h-4" />
-                                 </button>
-                             </div>
+
                           </div>
                       )}
 
+                      {memo.type === 'worldbook' && memo.blob && (
+                          <div className="p-4 pr-24 flex items-center gap-3 cursor-pointer group/wb min-h-[5rem]" onClick={async () => {
+                              try {
+                                  const text = await memo.blob.text();
+                                  setReadingMemo({ ...memo, _wbContent: text } as any);
+                              } catch(e) {
+                                  console.error("Failed to read wb", e);
+                              }
+                          }}>
+                              <div className="w-10 h-10 bg-purple-500/20 text-purple-400 rounded-lg flex items-center justify-center shrink-0 group-hover/wb:bg-purple-500/30 transition">
+                                  <Book className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-white truncate">{memo.content || '世界书'}</div>
+                                  <div className="text-xs text-white/40">{new Date(memo.createdAt).toLocaleString()}</div>
+                              </div>
+                          </div>
+                      )}
                       {memo.type === 'file' && memo.blob && (
-                          <div className="p-4 flex items-center gap-3">
+                          <div className="p-4 pr-24 flex items-center gap-3 min-h-[5rem]">
                               <div className="w-10 h-10 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center shrink-0">
                                   <File className="w-5 h-5" />
                               </div>
                               <div className="flex-1 min-w-0">
                                   <div className="text-sm font-medium text-white truncate">{memo.content}</div>
                                   <div className="text-xs text-white/40">{new Date(memo.createdAt).toLocaleString()}</div>
-                              </div>
-                              <div className="flex gap-2">
-                                  <button onClick={() => handleDownloadFile(memo)} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/70 transition">
-                                      <Download className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => handleDelete(memo.id)} className="p-2 bg-white/5 hover:bg-red-500/20 text-red-400 rounded-lg transition sm:hidden">
-                                      <Trash2 className="w-4 h-4" />
-                                  </button>
                               </div>
                           </div>
                       )}
@@ -382,6 +401,7 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
           </Reorder.Group>
       )}
 
+      {typeof document !== 'undefined' && createPortal(
       <AnimatePresence>
         {readingMemo && (
            <motion.div
@@ -431,6 +451,24 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
                            <button onClick={handleSaveEdit} className="px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white transition font-medium" disabled={!editMemoContent.trim()}>保存</button>
                        </div>
                     </div>
+                  ) : (readingMemo as any)._wbContent || readingMemo.type === 'worldbook' ? (
+                    <div className="h-full overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <WorldbookViewer 
+                            book={JSON.parse((readingMemo as any)._wbContent || '{}')} 
+                            onUpdate={async (newBook) => {
+                                const newMemo = { 
+                                    ...readingMemo, 
+                                    content: newBook.name || '世界书', 
+                                    blob: new Blob([JSON.stringify(newBook)], { type: 'application/json' }) 
+                                };
+                                (newMemo as any)._wbContent = JSON.stringify(newBook);
+                                await saveMemo(newMemo);
+                                setReadingMemo(newMemo);
+                                loadMemos();
+                            }} 
+                            onDelete={() => { handleDelete(readingMemo.id); setReadingMemo(null); }} 
+                        />
+                    </div>
                   ) : (
                     <div className="prose prose-invert memo-prose-adapt prose-base sm:prose-lg max-w-none text-white/80 leading-relaxed markdown-body" onClick={e => e.stopPropagation()}>
                        <ReactMarkdown 
@@ -447,7 +485,9 @@ export function CharacterMemosSection({ characterId }: { characterId: string }) 
              </motion.div>
            </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </div>
   );
 }
