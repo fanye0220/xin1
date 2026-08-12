@@ -422,6 +422,7 @@ export async function deleteFolder(id: string): Promise<void> {
               if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){freshChar.localFilePath=syncPaths[0];}else{delete freshChar.localFilePath; (freshChar as any)._androidSyncPath=syncPaths[0];}
               await dbRef.put('characters', freshChar);
             }
+              await new Promise(r => setTimeout(r, 10));
           }
           await new Promise(r => setTimeout(r, 20));
         }
@@ -801,6 +802,7 @@ export async function deleteCharactersBulk(ids: string[]): Promise<void> {
                      if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=syncPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=syncPaths[0];}
                      await dbRef.put('characters', char);
                   }
+                     await new Promise(r => setTimeout(r, 10));
                }
                await new Promise(r => setTimeout(r, 5));
             }
@@ -870,6 +872,7 @@ export async function deleteCharacter(id: string): Promise<void> {
                  if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=syncPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=syncPaths[0];}
                  await dbRef.put('characters', char);
                }
+                     await new Promise(r => setTimeout(r, 10));
             }
           } catch (e) {}
         });
@@ -901,6 +904,7 @@ export async function restoreCharacter(id: string): Promise<void> {
               if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=syncPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=syncPaths[0];}
               await dbRef.put('characters', char);
             }
+                     await new Promise(r => setTimeout(r, 10));
           }
         } catch (e) {}
       });

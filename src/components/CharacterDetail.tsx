@@ -678,7 +678,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                           if (isEditingTags) {
                             handleUpdateTags(tempTags);
                           } else {
-                            setTempTags((data.tags || []).join(', '));
+                            setTempTags(((data.tags || (data.data && data.data.tags)) || []).join(', '));
                             setIsEditingTags(true);
                           }
                         }}>
@@ -712,8 +712,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                         </div>
                       ) : (
                         <div className="bg-white/5 rounded-xl px-3 py-2 text-sm text-white/80 min-h-[36px] flex flex-wrap gap-1">
-                          {data.tags && data.tags.length > 0 ? (
-                            data.tags.map((tag: string, i: number) => (
+                          {(data.tags || (data.data && data.data.tags)) && (data.tags || (data.data && data.data.tags)).length > 0 ? (
+                            (data.tags || (data.data && data.data.tags)).map((tag: string, i: number) => (
                               <span key={i} className="bg-white/10 px-2 py-0.5 rounded-md text-xs">{tag}</span>
                             ))
                           ) : (
@@ -876,13 +876,13 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                     </div>
                   ) : (
                     <>
-                      <Section title="描述 (Description)" content={data.description} onSave={(val) => updateField('description', val)} />
-                      <Section title="性格 (Personality)" content={data.personality} onSave={(val) => updateField('personality', val)} />
-                      <Section title="场景 (Scenario)" content={data.scenario} onSave={(val) => updateField('scenario', val)} />
-                      <Section title="示例对话 (Mes Example)" content={data.mes_example} onSave={(val) => updateField('mes_example', val)} />
-                      <Section title="作者备注 (Creator's Notes)" content={data.creator_notes} onSave={(val) => updateField('creator_notes', val)} />
-                      <Section title="系统提示词 (System Prompt)" content={data.system_prompt} onSave={(val) => updateField('system_prompt', val)} />
-                      <Section title="历史后提示词 (Post History Instructions)" content={data.post_history_instructions} onSave={(val) => updateField('post_history_instructions', val)} />
+                      <Section title="描述 (Description)" content={data.description || (data.data && data.data.description)} onSave={(val) => updateField('description', val)} />
+                      <Section title="性格 (Personality)" content={data.personality || (data.data && data.data.personality)} onSave={(val) => updateField('personality', val)} />
+                      <Section title="场景 (Scenario)" content={data.scenario || (data.data && data.data.scenario)} onSave={(val) => updateField('scenario', val)} />
+                      <Section title="示例对话 (Mes Example)" content={data.mes_example || (data.data && data.data.mes_example)} onSave={(val) => updateField('mes_example', val)} />
+                      <Section title="作者备注 (Creator's Notes)" content={data.creator_notes || (data.data && data.data.creator_notes)} onSave={(val) => updateField('creator_notes', val)} />
+                      <Section title="系统提示词 (System Prompt)" content={data.system_prompt || (data.data && data.data.system_prompt)} onSave={(val) => updateField('system_prompt', val)} />
+                      <Section title="历史后提示词 (Post History Instructions)" content={data.post_history_instructions || (data.data && data.data.post_history_instructions)} onSave={(val) => updateField('post_history_instructions', val)} />
                       
                       {character && (
                         <QuickRepliesSection 
@@ -903,7 +903,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                   exit={{ opacity: 0, x: 20 }}
                   className="space-y-6"
                 >
-                  <Section title="首条消息" content={data.first_mes} onSave={(val) => updateField('first_mes', val)} />
+                  <Section title="首条消息" content={data.first_mes || (data.data && data.data.first_mes)} onSave={(val) => updateField('first_mes', val)} />
                   
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2">
