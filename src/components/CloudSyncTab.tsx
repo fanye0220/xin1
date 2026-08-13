@@ -47,7 +47,8 @@ export function CloudSyncTab() {
     try {
         const { jsonData, avatarBlob, studioMeta } = await downloadCloudCharacter(token, fileId, fileName, (msg) => console.log(msg));
         const existingChars = await getCachedMeta();
-        const existing = existingChars.find(c => c.name?.trim() === jsonData.name?.trim());
+        const extractedName = jsonData.name || jsonData.data?.name || charName;
+        const existing = existingChars.find(c => c.name?.trim() === extractedName?.trim());
         
         let targetId: string = crypto.randomUUID();
         let folderId = undefined;
@@ -93,7 +94,7 @@ export function CloudSyncTab() {
         
         const charToSave: any = {
             id: targetId,
-            name: jsonData.name || charName,
+            name: extractedName,
             data: jsonData,
             createdAt: createTime,
             folderId,

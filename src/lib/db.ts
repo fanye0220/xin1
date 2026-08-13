@@ -407,6 +407,7 @@ export async function deleteFolder(id: string): Promise<void> {
     await charStore2.put(char);
   }
   await tx2.done;
+  invalidateCache();
 
   // Sync to Android outside of transactions asynchronously
   if (isAndroid() && charsToSoftDelete.length > 0) {
@@ -667,12 +668,10 @@ export async function getCharacter(id: string): Promise<CharacterCard | undefine
 }
 
 export async function saveCharacter(character: CharacterCard): Promise<void> {
-  invalidateCache();
   return saveCharacters([character]);
 }
 
 export async function saveCharacters(characters: CharacterCard[], cleanupAndroidPaths?: string[]): Promise<void> {
-  invalidateCache();
   if (characters.length === 0) return;
   const db = await initDB();
   
@@ -727,6 +726,7 @@ export async function saveCharacters(characters: CharacterCard[], cleanupAndroid
   }
   
   await tx2.done;
+  invalidateCache();
 
   // 3) Sync mapped files to Android (Async without transaction bounds)
   if (isAndroid()) {
@@ -982,6 +982,7 @@ export async function emptyTrash(): Promise<void> {
     await blobStore.delete(char.id);
   }
   await tx2.done;
+  invalidateCache();
 }
 
 export async function cleanupOldTrash(): Promise<void> {
@@ -1025,6 +1026,7 @@ export async function cleanupOldTrash(): Promise<void> {
     await blobStore.delete(char.id);
   }
   await tx2.done;
+  invalidateCache();
 }
 
 export interface DuplicateCharacter {
