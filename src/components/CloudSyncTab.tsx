@@ -105,6 +105,7 @@ export function CloudSyncTab() {
         }
         
         await saveCharacter(charToSave);
+        window.dispatchEvent(new CustomEvent('charactersUpdated'));
         alert(`「${charToSave.name}」已成功下载至本地！`);
     } catch (err: any) {
         alert("下载失败: " + err.message);

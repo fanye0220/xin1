@@ -493,8 +493,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
                continue;
             }
             if (!zipEntry.dir && (relativePath.match(/\.(png|jpe?g|webp|gif|json|jsonl)$/i))) {
-              const blob = await zipEntry.async('blob');
-              
               let type = 'application/octet-stream';
               if (relativePath.endsWith('.png')) type = 'image/png';
               else if (relativePath.match(/\.jpe?g$/i)) type = 'image/jpeg';
@@ -503,7 +501,14 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
               else if (relativePath.endsWith('.json')) type = 'application/json';
               else if (relativePath.endsWith('.jsonl')) type = 'application/jsonl';
               
-              const extractedFile = new File([blob], zipEntry.name.split('/').pop() || 'file', { type });
+              const extractedFile = new File([], zipEntry.name.split('/').pop() || 'file', { type });
+              
+              extractedFile.arrayBuffer = async () => await zipEntry.async('arraybuffer');
+              extractedFile.text = async () => await zipEntry.async('text');
+              extractedFile.slice = (start, end) => {
+                 // Not fully supported for lazy zip files but we don't slice them usually
+                 return new Blob([], { type });
+              };
               // Mock webkitRelativePath to preserve folder structure from ZIP
               Object.defineProperty(extractedFile, 'webkitRelativePath', {
                 value: relativePath,
