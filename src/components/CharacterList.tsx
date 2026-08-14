@@ -573,7 +573,7 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   };
 
   
-  const handleBatchCloudBackup = async () => {
+    const handleBatchCloudBackup = async () => {
     if (selectedIds.size === 0) return;
     
     const token = await import('../lib/drive').then(m => m.getAccessToken());
@@ -582,52 +582,61 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
       return;
     }
     
-    try {
-      setIsExporting(true);
-      const allFolders = await getFolders();
-      const charIdsToExport = new Set<string>();
-      
-      for (const id of Array.from(selectedIds)) {
-        const folder = allFolders.find(f => f.id === id);
-        if (folder) {
-          const addFolderChars = async (fId) => {
-            const { characters: fc } = await getCharacters(1, 10000, fId);
-            fc.forEach(c => charIdsToExport.add(c.id));
-            const subs = allFolders.filter(f => f.parentId === fId);
-            for (const sub of subs) {
-              await addFolderChars(sub.id);
-            }
-          };
-          await addFolderChars(folder.id);
-        } else {
-          charIdsToExport.add(id);
+    const idsToProcess = Array.from(selectedIds);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    
+    (async () => {
+      try {
+        setIsExporting(true);
+        const allFolders = await getFolders();
+        const charIdsToExport = new Set<string>();
+        
+        for (const id of idsToProcess) {
+          const folder = allFolders.find(f => f.id === id);
+          if (folder) {
+            const addFolderChars = async (fId: string) => {
+              const { characters: fc } = await getCharacters(1, 10000, fId);
+              fc.forEach(c => charIdsToExport.add(c.id));
+              const subs = allFolders.filter(f => f.parentId === fId);
+              for (const sub of subs) {
+                await addFolderChars(sub.id);
+              }
+            };
+            await addFolderChars(folder.id);
+          } else {
+            charIdsToExport.add(id);
+          }
         }
-      }
 
-      const charsArray = Array.from(charIdsToExport);
-      if (charsArray.length === 0) {
-        alert("所选文件夹中没有可上传的角色。");
-        return;
+        const charsArray = Array.from(charIdsToExport);
+        if (charsArray.length === 0) {
+          alert("所选文件夹中没有可上传的角色。");
+          return;
+        }
+
+        let success = 0;
+        
+        for (let i = 0; i < charsArray.length; i++) {
+           setExportMessage(`正在同步至云端 (${i + 1}/${charsArray.length})...`);
+           await uploadCharacterToCloud(token, charsArray[i]);
+           success++;
+           setExportProgress(((i + 1) / charsArray.length) * 100);
+        }
+
+        setExportMessage('');
+        setExportProgress(0);
+        alert(`云端备份成功！共备份 ${success} 个角色资料。`);
+      } catch (err: any) {
+        console.error(err);
+        setExportMessage('');
+        setExportProgress(0);
+        alert("备份失败: " + err.message);
+      } finally {
+        setIsExporting(false);
       }
-      let success = 0;
-      
-      for (let i = 0; i < charsArray.length; i++) {
-         setExportMessage(`正在同步至云端 (${i + 1}/${charsArray.length})...`);
-         await uploadCharacterToCloud(token, charsArray[i]);
-         success++;
-         setExportProgress(((i + 1) / charsArray.length) * 100);
-      }
-      alert(`云端备份成功！共备份 ${success} 个角色资料。`);
-    } catch (err) {
-      console.error(err);
-      alert("备份失败: " + err.message);
-    } finally {
-      setIsExporting(false);
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-    }
+    })();
   };
-
 
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
@@ -864,97 +873,56 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
     }
   };
 
-  const handleBatchExport = async () => {
+    const handleBatchExport = async () => {
     if (selectedIds.size === 0) return;
     
-    try {
-      const allFolders = await getFolders();
-      
-      const { isAndroid, saveToGallery, startAndroidZip, addAndroidZipEntry, finishAndroidZip } = await import('../lib/appBridge');
-      if (isAndroid()) {
-        const charIdsToExport = new Set<string>();
+    const idsToProcess = Array.from(selectedIds);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    
+    (async () => {
+      try {
+        setIsExporting(true);
+        const allFolders = await getFolders();
         
-        for (const id of Array.from(selectedIds)) {
-          const folder = allFolders.find(f => f.id === id);
-          if (folder) {
-            const addFolderChars = async (fId: string) => {
-              const { characters: fc } = await getCharacters(1, 10000, fId);
-              fc.forEach(c => charIdsToExport.add(c.id));
-              const subs = allFolders.filter(f => f.parentId === fId);
-              for (const sub of subs) {
-                await addFolderChars(sub.id);
-              }
-            };
-            await addFolderChars(folder.id);
-          } else {
-            charIdsToExport.add(id);
+        const { isAndroid, saveToGallery, startAndroidZip, addAndroidZipEntry, finishAndroidZip } = await import('../lib/appBridge');
+        if (isAndroid()) {
+          const charIdsToExport = new Set<string>();
+          
+          for (const id of idsToProcess) {
+            const folder = allFolders.find(f => f.id === id);
+            if (folder) {
+              const addFolderChars = async (fId: string) => {
+                const { characters: fc } = await getCharacters(1, 10000, fId);
+                fc.forEach(c => charIdsToExport.add(c.id));
+                const subs = allFolders.filter(f => f.parentId === fId);
+                for (const sub of subs) {
+                  await addFolderChars(sub.id);
+                }
+              };
+              await addFolderChars(folder.id);
+            } else {
+              charIdsToExport.add(id);
+            }
           }
-        }
-
-        const charsArray = Array.from(charIdsToExport);
-        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-        
-        // Native Android Streaming Zip
-        if ((window as any).Android && (window as any).Android.startZip) {
-           const zipName = `批量导出/Tavern_Export_${timestamp}.zip`;
-           const started = await startAndroidZip(zipName);
-           if (!started) {
-              alert("无法启动原生ZIP导出引擎");
-              return;
-           }
-
-           let successCount = 0;
-           const nameOccurrences = new Map<string, number>();
-           for (const cid of charsArray) {
-               const char = await getCharacter(cid);
-               if (!char) continue;
-               
-               const baseName = getSafeFilename(char.name);
-               const count = nameOccurrences.get(baseName) || 0;
-               nameOccurrences.set(baseName, count + 1);
-               const uniqueName = count === 0 ? baseName : `${baseName}_${count}`;
-               
-               const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
-               let prefix = '';
-               if (folderName === '未归类' || !folderName) {
-                 prefix = '未归类/';
-               } else {
-                 prefix = folderName.split('/').map(getSafeFilename).join('/') + '/';
-               }
-
-               await addCharacterToZip(char, null, {
-                   zipName,
-                   prefix,
-                   addEntry: addAndroidZipEntry
-               }, uniqueName);
-               successCount++;
-           }
-
-           const finalPath = await finishAndroidZip(zipName);
-           if (finalPath) {
-              alert(`批量导出成功！共导出 ${successCount} 个角色资料。\n文件已存至：Download/MIU/${zipName}`);
-           } else {
-              alert("导出结束时发生错误！");
-           }
-           
-           setSelectionMode(false);
-           setSelectedIds(new Set());
-           return;
-        }
-
-        // Fallback: JSZip Chunked approach
-        const CHUNK_SIZE = 999999; 
-        const totalParts = Math.ceil(charsArray.length / CHUNK_SIZE);
-        
-        let successCountChunks = 0;
-        let failedChunks: number[] = [];
-        const nameOccurrences = new Map<string, number>();
-
-        for (let i = 0; i < charsArray.length; i += CHUNK_SIZE) {
-            const chunk = charsArray.slice(i, i + CHUNK_SIZE);
-            const zip = new JSZip();
-            
-            for (const cid of chunk) {
+          const charsArray = Array.from(charIdsToExport);
+          const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+          
+          // Native Android Streaming Zip
+          if ((window as any).Android && (window as any).Android.startZip) {
+             const zipName = `批量导出/Tavern_Export_${timestamp}.zip`;
+             const started = await startAndroidZip(zipName);
+             if (!started) {
+                alert("无法启动原生ZIP导出引擎");
+                setIsExporting(false);
+                return;
+             }
+             let successCount = 0;
+             const nameOccurrences = new Map<string, number>();
+             for (let i = 0; i < charsArray.length; i++) {
+                 setExportMessage(`原生 ZIP 引擎导出中 (${i + 1}/${charsArray.length})...`);
+                 setExportProgress(((i + 1) / charsArray.length) * 100);
+                 const cid = charsArray[i];
                  const char = await getCharacter(cid);
                  if (!char) continue;
                  
@@ -963,133 +931,189 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                  nameOccurrences.set(baseName, count + 1);
                  const uniqueName = count === 0 ? baseName : `${baseName}_${count}`;
                  
-                 const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
-                 if (folderName === '未归类' || !folderName) {
-                   const uZip = zip.folder('未归类');
-                   await addCharacterToZip(char, uZip || zip, undefined, uniqueName);
-                 } else {
+                 const cardBuffer = new TextEncoder().encode(JSON.stringify(char.data, null, 2)).buffer;
+                 await addAndroidZipEntry(zipName, `${uniqueName}.json`, cardBuffer);
+                 successCount++;
+             }
+             
+             if (await finishAndroidZip(zipName)) {
+                alert(`批量导出成功！共导出 ${successCount} 个角色资料。\n文件已存至：Download/MIU/${zipName}`);
+             } else {
+                alert("导出结束时发生错误！");
+             }
+             
+             setExportMessage('');
+             setExportProgress(0);
+             setIsExporting(false);
+             return;
+          }
+
+          // Fallback: JSZip Chunked approach
+          const CHUNK_SIZE = 15;
+          const totalParts = Math.ceil(charsArray.length / CHUNK_SIZE);
+          let successCountChunks = 0;
+          let failedChunks: number[] = [];
+          
+          for (let i = 0; i < charsArray.length; i += CHUNK_SIZE) {
+              const chunk = charsArray.slice(i, i + CHUNK_SIZE);
+              const zip = new JSZip();
+              const nameOccurrencesChunk = new Map<string, number>();
+              
+              for (const cid of chunk) {
+                   const char = await getCharacter(cid);
+                   if (!char) continue;
+                   
+                   const baseName = getSafeFilename(char.name);
+                   const count = nameOccurrencesChunk.get(baseName) || 0;
+                   nameOccurrencesChunk.set(baseName, count + 1);
+                   const uniqueName = count === 0 ? baseName : `${baseName}_${count}`;
+                   
+                   // Determine folder path for chunked (simplified, flattens paths to avoid deep queries here, or we can use char.folderId if needed)
                    let currentZip: JSZip = zip;
-                   const parts = folderName.split('/');
-                   for (const p of parts) {
-                     currentZip = currentZip.folder(getSafeFilename(p)) || currentZip;
+                   if (char.folderId && char.folderId !== 'all') {
+                      let currentFolderId: string | undefined = char.folderId;
+                      const pathParts: string[] = [];
+                      while (currentFolderId) {
+                         const f = allFolders.find(x => x.id === currentFolderId);
+                         if (f) {
+                            pathParts.unshift(f.name);
+                            currentFolderId = f.parentId;
+                         } else {
+                            break;
+                         }
+                      }
+                      if (pathParts.length > 0) {
+                         for (const p of pathParts) {
+                            currentZip = currentZip.folder(getSafeFilename(p)) || currentZip;
+                         }
+                      } else {
+                         currentZip = currentZip.folder('未归类') || currentZip;
+                      }
+                   } else {
+                      currentZip = currentZip.folder('未归类') || currentZip;
                    }
                    await addCharacterToZip(char, currentZip, undefined, uniqueName);
-                 }
-            }
-            
-            const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-            const buffer = await zipBlob.arrayBuffer();
-            const chunkIndex = (i/CHUNK_SIZE) + 1;
-            const fileName = totalParts > 1 ? `批量导出/Tavern_Export_${timestamp}_卷${chunkIndex}.zip` : `批量导出/Tavern_Export_${timestamp}.zip`;
-            
-            const result = await saveToGallery(fileName, buffer);
-            if (result) {
-              successCountChunks++;
-            } else {
-              failedChunks.push(chunkIndex);
-            }
-            
-            // 添加延迟等待安卓端落盘，释放内存限制导致前序任务被抛弃。
-            if (i + CHUNK_SIZE < charsArray.length) {
-              await new Promise(resolve => setTimeout(resolve, 3500));
-            }
-        }
-        
-        if (failedChunks.length > 0) {
-          alert(`导出失败！由于文件过大，导致安卓内存过载。\n强烈建议：请下载最新源码重新打包安装您的安卓App（APK），升级后将开启底层原生 ZIP 引擎，支持上千张卡片无限制一次性导出且无内存报错！`);
-        } else {
-          alert(`批量导出成功！本次为传统JS导出引擎。保存在 Download/MIU/批量导出/ 目录下。\n如果遇到导出不全、闪退问题，请重新编译更新您的 Android App (APK) 获取最新原生无限制导出引擎！`);
-        }
-        
-        setSelectionMode(false);
-        setSelectedIds(new Set());
-        return;
-      }
-
-      const zip = new JSZip();
-      const nameOccurrences = new Map<string, number>();
-      
-      const getUniqueName = (charName: string) => {
-        const baseName = getSafeFilename(charName);
-        const count = nameOccurrences.get(baseName) || 0;
-        nameOccurrences.set(baseName, count + 1);
-        return count === 0 ? baseName : `${baseName}_${count}`;
-      };
-
-      await Promise.all(Array.from(selectedIds).map(async (id) => {
-        const folder = allFolders.find(f => f.id === id);
-        if (folder) {
-          // Export all characters in this folder and its subfolders
-          const exportFolderRecursive = async (currentFolderId: string, currentZip: JSZip) => {
-            const { characters: folderChars } = await getCharacters(1, 10000, currentFolderId);
-            await Promise.all(folderChars.map(char => {
-               const uniqueName = getUniqueName(char.name);
-               return addCharacterToZip(char, currentZip, undefined, uniqueName);
-            }));
-            
-            const subFolders = allFolders.filter(f => f.parentId === currentFolderId);
-            await Promise.all(subFolders.map(async subFolder => {
-              const subZip = currentZip.folder(getSafeFilename(subFolder.name));
-              if (subZip) {
-                await exportFolderRecursive(subFolder.id, subZip);
               }
-            }));
-          };
-          
-          const folderZip = zip.folder(getSafeFilename(folder.name));
-          if (folderZip) {
-            await exportFolderRecursive(folder.id, folderZip);
-          }
-        } else {
-          const char = await getCharacter(id);
-          if (char) {
-            const uniqueName = getUniqueName(char.name);
-            if (!char.folderId || char.folderId === 'all') {
-              const uncategorizedZip = zip.folder('未归类');
-              if (uncategorizedZip) {
-                await addCharacterToZip(char, uncategorizedZip, undefined, uniqueName);
+              
+              setExportMessage(`正在导出 (${i + chunk.length}/${charsArray.length})...`);
+              setExportProgress(((i + chunk.length) / charsArray.length) * 100);
+              const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+              const buffer = await zipBlob.arrayBuffer();
+              const chunkIndex = (i/CHUNK_SIZE) + 1;
+              const fileName = totalParts > 1 ? `批量导出/Tavern_Export_${timestamp}_卷${chunkIndex}.zip` : `批量导出/Tavern_Export_${timestamp}.zip`;
+              
+              const result = await saveToGallery(fileName, buffer);
+              if (result) {
+                successCountChunks++;
               } else {
-                await addCharacterToZip(char, zip, undefined, uniqueName);
+                failedChunks.push(chunkIndex);
               }
-            } else {
-               // Technically if it's selected individually but inside a folder,
-               // we should ideally put it in its folder.
-               const folderName = await import('../lib/db').then(m => m.resolveFolderPath(char.folderId));
-               if (folderName === '未归类' || !folderName) {
-                 const uZip = zip.folder('未归类');
-                 if (uZip) await addCharacterToZip(char, uZip, undefined, uniqueName);
-                 else await addCharacterToZip(char, zip, undefined, uniqueName);
-               } else {
-                 let currentZip: JSZip = zip;
-                 const parts = folderName.split('/');
-                 for (const p of parts) {
-                   currentZip = currentZip.folder(p) || currentZip;
-                 }
-                 await addCharacterToZip(char, currentZip, undefined, uniqueName);
-               }
+              
+              if (i + CHUNK_SIZE < charsArray.length) {
+                await new Promise(resolve => setTimeout(resolve, 3500));
+              }
+          }
+          
+          setExportMessage('');
+          setExportProgress(0);
+          setIsExporting(false);
+          if (failedChunks.length > 0) {
+            alert(`导出失败！由于文件过大，导致安卓内存过载。\n强烈建议：请下载最新源码重新打包安装您的安卓App（APK），升级后将开启底层原生 ZIP 引擎，支持上千张卡片无限制一次性导出且无内存报错！`);
+          } else {
+            alert(`批量导出成功！本次为传统JS导出引擎。保存在 Download/MIU/批量导出/ 目录下。\n如果遇到导出不全、闪退问题，请重新编译更新您的 Android App (APK) 获取最新原生无限制导出引擎！`);
+          }
+          return;
+        }
+
+        const zip = new JSZip();
+        const nameOccurrences = new Map<string, number>();
+        
+        const getUniqueName = (charName: string) => {
+          const baseName = getSafeFilename(charName);
+          const count = nameOccurrences.get(baseName) || 0;
+          nameOccurrences.set(baseName, count + 1);
+          return count === 0 ? baseName : `${baseName}_${count}`;
+        };
+
+        setExportMessage(`正在准备导出...`);
+        setExportProgress(0);
+        await Promise.all(Array.from(idsToProcess).map(async (id) => {
+          const folder = allFolders.find(f => f.id === id);
+          if (folder) {
+            const exportFolderRecursive = async (currentFolderId: string, currentZip: JSZip) => {
+              const { characters: folderChars } = await getCharacters(1, 10000, currentFolderId);
+              await Promise.all(folderChars.map(char => {
+                 const uniqueName = getUniqueName(char.name);
+                 return addCharacterToZip(char, currentZip, undefined, uniqueName);
+              }));
+              
+              const subFolders = allFolders.filter(f => f.parentId === currentFolderId);
+              await Promise.all(subFolders.map(async subFolder => {
+                const subZip = currentZip.folder(getSafeFilename(subFolder.name));
+                if (subZip) {
+                  await exportFolderRecursive(subFolder.id, subZip);
+                }
+              }));
+            };
+            
+            const folderZip = zip.folder(getSafeFilename(folder.name));
+            if (folderZip) {
+              await exportFolderRecursive(folder.id, folderZip);
+            }
+          } else {
+            const char = await getCharacter(id);
+            if (char) {
+              const uniqueName = getUniqueName(char.name);
+              if (!char.folderId || char.folderId === 'all') {
+                const uncategorizedZip = zip.folder('未归类');
+                if (uncategorizedZip) {
+                  await addCharacterToZip(char, uncategorizedZip, undefined, uniqueName);
+                }
+              } else {
+                let currentZip: JSZip = zip;
+                let currentFolderId: string | undefined = char.folderId;
+                const pathParts: string[] = [];
+                while (currentFolderId) {
+                   const f = allFolders.find(x => x.id === currentFolderId);
+                   if (f) {
+                      pathParts.unshift(f.name);
+                      currentFolderId = f.parentId;
+                   } else {
+                      break;
+                   }
+                }
+                for (const p of pathParts) {
+                   currentZip = currentZip.folder(getSafeFilename(p)) || currentZip;
+                }
+                await addCharacterToZip(char, currentZip, undefined, uniqueName);
+              }
             }
           }
-        }
-      }));
-      
-      // Use internal streaming/chunks to reduce memory overhead during generation, 
-      // though generateAsync still buffers entirely into a Blob.
-      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-      const exportName = `Tavern_Export_${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}.zip`;
-      
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = exportName;
-      a.click();
-      URL.revokeObjectURL(url);
-      
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-    } catch (e) {
-      console.error("Batch export failed", e);
-      alert("导出失败，请重试");
-    }
+        }));
+        
+        setExportMessage(`正在生成 ZIP 文件...`);
+        setExportProgress(50);
+        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        const exportName = `Tavern_Export_${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}.zip`;
+        
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = exportName;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        setExportMessage('');
+        setExportProgress(0);
+        setIsExporting(false);
+      } catch (e) {
+        console.error("Batch export failed", e);
+        setExportMessage('');
+        setExportProgress(0);
+        setIsExporting(false);
+        alert("导出失败，请重试");
+      }
+    })();
   };
 
   const handleMoveToFolder = async (targetFolderId: string | null) => {
