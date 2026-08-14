@@ -1,11 +1,6 @@
-// Capacitor stubs — only used on Android; not needed for web deployment
-const Capacitor = { isNativePlatform: () => false, convertFileSrc: (s: string) => s };
-const Directory = { Cache: 'CACHE' as const };
-const Filesystem = {
-  writeFile: async (_: any) => ({ uri: '' }),
-  appendFile: async (_: any) => {},
-};
-const Share = { share: async (_: any) => {} };
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 export const isAndroid = () => typeof window !== 'undefined' && !!(window as any).Android;
 

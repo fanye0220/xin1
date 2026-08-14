@@ -302,27 +302,17 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           targetFilePath = pathParts.join('/') + '/' + file.name;
         }
 
-        if (isAndroid()) {
-          if ((file as any).androidAbsPath) {
+        if (isAndroid() && (file as any).androidAbsPath) {
             // Already unzipped natively! 
             localFilePath = (file as any).androidAbsPath;
-            const buffer = await file.arrayBuffer(); // read it locally just strictly if needed, but wait!
-            // Actually, we don't need to read it if we skip setting avatarBlob, but we already read it during `parseChunk` to get metadata.
-            // By NOT setting avatarBlob, we prevent it from being loaded into IDB blobs table!
             avatarBlob = undefined;
             originalFile = undefined;
-          } else {
+        } else {
             const buffer = await file.arrayBuffer();
             if (file.type === 'image/png' || file.name.endsWith('.png')) {
-              avatarBlob = file;
+              avatarBlob = new Blob([buffer], { type: file.type || 'image/png' });
             }
-            originalFile = file;
-          }
-        } else {
-          if (file.type === 'image/png' || file.name.endsWith('.png')) {
-            avatarBlob = file;
-          }
-          originalFile = file;
+            originalFile = new File([buffer], file.name, { type: file.type || 'application/octet-stream' });
         }
 
         let baseF = file.name.replace(/\.[^/.]+$/, "");
@@ -362,7 +352,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId }: Props) {
           originalFile,
           createdAt: Date.now(),
           folderId: targetFolderId,
-          avatarHistory: altImagesByMain.get(item) || []
+          avatarHistory: await Promise.all((altImagesByMain.get(item) || []).map(async altF => new Blob([await altF.arrayBuffer()], { type: altF.type || 'image/png' })))
         } as any;
         
         charsToSave.push(newChar);

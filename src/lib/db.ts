@@ -599,7 +599,6 @@ export async function getAllTags(): Promise<string[]> {
 }
 
 export async function renameTag(oldTag: string, newTag: string): Promise<void> {
-  invalidateCache();
   const db = await initDB();
   const tx = db.transaction('characters', 'readwrite');
   const store = tx.store;
@@ -621,10 +620,10 @@ export async function renameTag(oldTag: string, newTag: string): Promise<void> {
     cursor = await cursor.continue();
   }
   await tx.done;
+  invalidateCache();
 }
 
 export async function deleteTag(tagToDelete: string): Promise<void> {
-  invalidateCache();
   const db = await initDB();
   const tx = db.transaction('characters', 'readwrite');
   const store = tx.store;
@@ -646,6 +645,7 @@ export async function deleteTag(tagToDelete: string): Promise<void> {
     cursor = await cursor.continue();
   }
   await tx.done;
+  invalidateCache();
 }
 
 export async function getCharacterBlob(id: string) {
@@ -760,15 +760,19 @@ export async function saveCharacters(characters: CharacterCard[], cleanupAndroid
 }
 
 export async function deleteCharactersBulk(ids: string[]): Promise<void> {
-  invalidateCache();
   if (ids.length === 0) return;
   const db = await initDB();
   
   const toHardDelete: CharacterCard[] = [];
   const toSoftDelete: CharacterCard[] = [];
   
-  for (const id of ids) {
-    const char = await db.get('characters', id);
+  // Use a single read transaction to fetch all characters quickly
+  const readTx = db.transaction('characters', 'readonly');
+  const fetchPromises = ids.map(id => readTx.store.get(id));
+  const chars = await Promise.all(fetchPromises);
+  
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
     if (!char) continue;
     if (char.deletedAt) {
        toHardDelete.push(char);
@@ -785,6 +789,7 @@ export async function deleteCharactersBulk(ids: string[]): Promise<void> {
         await tx.store.put(char);
      }
      await tx.done;
+     invalidateCache();
      
      if (isAndroid()) {
        import('./androidSync').then(async ({ fastMoveCharacterOnAndroid, syncCharacterToAndroid }) => {
@@ -819,6 +824,7 @@ export async function deleteCharactersBulk(ids: string[]): Promise<void> {
         await tx.objectStore('blobs').delete(char.id);
      }
      await tx.done;
+     invalidateCache();
 
      if (isAndroid()) {
        import('./androidSync').then(async ({ deleteCharacterFromAndroid }) => {
@@ -834,7 +840,6 @@ export async function deleteCharactersBulk(ids: string[]): Promise<void> {
 }
 
 export async function deleteCharacter(id: string): Promise<void> {
-  invalidateCache();
   const db = await initDB();
   const char = await db.get('characters', id);
   if (char) {
@@ -856,6 +861,7 @@ export async function deleteCharacter(id: string): Promise<void> {
       // Soft delete
       char.deletedAt = Date.now();
       await db.put('characters', char);
+      invalidateCache();
       
       if (isAndroid()) {
         import('./androidSync').then(async ({ fastMoveCharacterOnAndroid, syncCharacterToAndroid }) => {
@@ -882,7 +888,6 @@ export async function deleteCharacter(id: string): Promise<void> {
 }
 
 export async function restoreCharacter(id: string): Promise<void> {
-  invalidateCache();
   const db = await initDB();
   const char = await db.get('characters', id);
   if (char && char.deletedAt) {
@@ -945,7 +950,6 @@ export async function getTrashedCharacters(includeBlobs: boolean = false): Promi
 }
 
 export async function emptyTrash(): Promise<void> {
-  invalidateCache();
   const db = await initDB();
   const tx1 = db.transaction('characters', 'readonly');
   const store = tx1.store;
@@ -986,7 +990,6 @@ export async function emptyTrash(): Promise<void> {
 }
 
 export async function cleanupOldTrash(): Promise<void> {
-  invalidateCache();
   const db = await initDB();
   const tx1 = db.transaction('characters', 'readonly');
   const store = tx1.store;

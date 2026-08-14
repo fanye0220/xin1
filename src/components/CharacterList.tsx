@@ -2027,7 +2027,10 @@ function CharacterCardItem({
   const isInView = useInView(cardRef);
 
   useEffect(() => {
-    if (!isInView) return;
+    if (!isInView) {
+      setUrl(initialUrl);
+      return;
+    }
     
     let objectUrl: string | null = null;
     let isMounted = true;
@@ -2092,7 +2095,7 @@ function CharacterCardItem({
         onMouseDown={handleTouchStart}
         onMouseUp={handleTouchEnd}
         onMouseLeave={handleTouchEnd}
-        className={`relative flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all select-none ${isSelected ? 'bg-purple-500/20 border-purple-500/50' : 'bg-white/5 hover:bg-white/10 border-transparent'} border`}
+        className={`card-item-list relative flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all select-none ${isSelected ? 'bg-purple-500/20 border-purple-500/50' : 'bg-white/5 hover:bg-white/10 border-transparent'} border`}
       >
         <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0">
         <img 
