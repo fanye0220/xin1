@@ -217,66 +217,89 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const handleSaveCrop = async () => {
     if (imageToCrop && croppedAreaPixels) {
       try {
+        // 先生成截图 Blob
         const croppedBlob = await getCroppedImgBlob(imageToCrop, croppedAreaPixels);
         if (!croppedBlob) {
           closeCrop();
           return;
         }
 
-        const allFolders = await getFolders();
-        let compressedFolderBlob: Blob | null = null;
-        
-        // We typecast croppedBlob as File for compressImage because it inherits it theoretically.
-        // It's just a Blob, but standard compressImage can work or fail then fallback.
-        const croppedFile = new File([croppedBlob], "cropped.png", { type: "image/png" });
-
-        for (const id of selectedIds) {
-          const folder = allFolders.find(f => f.id === id);
-          if (folder) {
-            if (!compressedFolderBlob) {
-              try {
-                compressedFolderBlob = await compressImage(croppedFile, 400);
-              } catch (err) {
-                compressedFolderBlob = croppedBlob;
-              }
-            }
-            folder.avatarBlob = compressedFolderBlob;
-            await saveFolder(folder);
-          } else {
-            const char = characters.find(c => c.id === id);
-            if (char) {
-               char.avatarBlob = croppedBlob;
-               await saveCharacter(char);
-            }
-          }
-        }
-        
-        // reload
-        loadData();
-        getFolders().then(data => {
-          let currentFolders: Folder[] = [];
-          if (folderId === null) {
-            currentFolders = data.filter(f => !f.parentId);
-          } else {
-            currentFolders = data.filter(f => f.parentId === folderId);
-          }
-          currentFolders.sort((a, b) => {
-            if (sortBy === 'custom') {
-              if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
-              if (a.sortOrder !== undefined) return -1;
-              if (b.sortOrder !== undefined) return 1;
-            }
-            return b.createdAt - a.createdAt;
-          });
-          setFolders(currentFolders);
-        });
-
+        // 立即关闭所有 UI，给用户最快反馈
+        const idsToProcess = Array.from(selectedIds);
         closeCrop();
         setSelectionMode(false);
         setSelectedIds(new Set());
+        
+        setIsExporting(true);
+        setExportMessage('正在处理并保存封面...');
+        setExportProgress(0);
+
+        // 后台慢慢存
+        (async () => {
+          try {
+            const allFolders = await getFolders();
+            let compressedFolderBlob: Blob | null = null;
+            const croppedFile = new File([croppedBlob], "cropped.png", { type: "image/png" });
+
+            for (let i = 0; i < idsToProcess.length; i++) {
+              const id = idsToProcess[i];
+              setExportMessage(`正在保存新封面 (${i + 1}/${idsToProcess.length})...`);
+              setExportProgress(((i + 1) / idsToProcess.length) * 100);
+
+              const folder = allFolders.find(f => f.id === id);
+              if (folder) {
+                if (!compressedFolderBlob) {
+                  try {
+                    compressedFolderBlob = await compressImage(croppedFile, 400);
+                  } catch (err) {
+                    compressedFolderBlob = croppedBlob;
+                  }
+                }
+                folder.avatarBlob = compressedFolderBlob;
+                await saveFolder(folder);
+              } else {
+                // Fetch fresh char from db just in case it's not in the visible current list
+                const char = await getCharacter(id);
+                if (char) {
+                   char.avatarBlob = croppedBlob;
+                   await saveCharacter(char);
+                }
+              }
+            }
+            
+            // reload
+            loadData();
+            const data = await getFolders();
+            let currentFolders: Folder[] = [];
+            if (folderId === null) {
+              currentFolders = data.filter(f => !f.parentId);
+            } else {
+              currentFolders = data.filter(f => f.parentId === folderId);
+            }
+            currentFolders.sort((a, b) => {
+              if (sortBy === 'custom') {
+                if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+                if (a.sortOrder !== undefined) return -1;
+                if (b.sortOrder !== undefined) return 1;
+              }
+              return b.createdAt - a.createdAt;
+            });
+            setFolders(currentFolders);
+
+            setIsExporting(false);
+            setExportMessage('');
+            setExportProgress(0);
+          } catch (err) {
+            console.error('Error saving cropped image:', err);
+            alert('封面更换失败');
+            setIsExporting(false);
+            setExportMessage('');
+            setExportProgress(0);
+          }
+        })();
       } catch (err) {
-        console.error('Error saving cropped image:', err);
-        alert('封面更换失败');
+        console.error('Error getting crop blob:', err);
+        closeCrop();
       }
     }
   };
@@ -931,12 +954,11 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
                  nameOccurrences.set(baseName, count + 1);
                  const uniqueName = count === 0 ? baseName : `${baseName}_${count}`;
                  
-                 const cardBuffer = new TextEncoder().encode(JSON.stringify(char.data, null, 2)).buffer;
-                 await addAndroidZipEntry(zipName, `${uniqueName}.json`, cardBuffer);
+                 await addAndroidZipEntry(char, uniqueName);
                  successCount++;
              }
              
-             if (await finishAndroidZip(zipName)) {
+             if (await finishAndroidZip()) {
                 alert(`批量导出成功！共导出 ${successCount} 个角色资料。\n文件已存至：Download/MIU/${zipName}`);
              } else {
                 alert("导出结束时发生错误！");

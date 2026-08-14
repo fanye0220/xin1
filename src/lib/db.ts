@@ -1,6 +1,6 @@
 import { getFallbackAvatar } from './avatar';
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import { getLocalImageUrl, isAndroid } from './appBridge';
+import { getLocalImageUrl } from './appBridge';
 
 export function getSafeFilename(name: string): string {
   if (!name) return 'Unknown';
@@ -324,37 +324,6 @@ export async function saveFolder(folder: Folder): Promise<void> {
   const db = await initDB();
   await db.put('folders', folder);
   
-  if (isAndroid()) {
-    import('./androidSync').then(async ({ syncCharacterToAndroid }) => {
-      try {
-        const allFolders = await db.getAllFromIndex('folders', 'by-date');
-        const descendantIds = new Set<string>([folder.id]);
-        let added = true;
-        while (added) {
-          added = false;
-          for (const f of allFolders) {
-            if (f.parentId && descendantIds.has(f.parentId) && !descendantIds.has(f.id)) {
-              descendantIds.add(f.id);
-              added = true;
-            }
-          }
-        }
-        
-        const allChars = await db.getAll('characters');
-        const charsToSync = allChars.filter(c => c.folderId && descendantIds.has(c.folderId) && !c.deletedAt);
-        
-        for (const char of charsToSync) {
-          const blobs = await db.get('blobs', char.id);
-          const newPaths = await syncCharacterToAndroid(char, blobs || null);
-          if (newPaths && newPaths.length > 0) {
-             if(newPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath = newPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=newPaths[0];}
-             await db.put('characters', char);
-          }
-          await new Promise(r => setTimeout(r, 20));
-        }
-      } catch(e) { console.error('Android folder sync failed', e); }
-    });
-  }
 }
 
 export async function deleteFolder(id: string): Promise<void> {
@@ -409,27 +378,6 @@ export async function deleteFolder(id: string): Promise<void> {
   await tx2.done;
   invalidateCache();
 
-  // Sync to Android outside of transactions asynchronously
-  if (isAndroid() && charsToSoftDelete.length > 0) {
-    import('./androidSync').then(async ({ syncCharacterToAndroid }) => {
-      try {
-        const dbRef = await initDB();
-        for (const char of charsToSoftDelete) {
-          const blobs = await dbRef.get('blobs', char.id);
-          const syncPaths = await syncCharacterToAndroid(char, blobs || null);
-          if (syncPaths && syncPaths.length > 0) {
-            const freshChar = await dbRef.get('characters', char.id);
-            if (freshChar) {
-              if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){freshChar.localFilePath=syncPaths[0];}else{delete freshChar.localFilePath; (freshChar as any)._androidSyncPath=syncPaths[0];}
-              await dbRef.put('characters', freshChar);
-            }
-              await new Promise(r => setTimeout(r, 10));
-          }
-          await new Promise(r => setTimeout(r, 20));
-        }
-      } catch(e) { console.error('Android folder delete sync failed', e); }
-    });
-  }
 }
 
 export type SortOption = 'newest_import' | 'oldest_import' | 'recently_modified' | 'a_z' | 'z_a' | 'custom';
@@ -671,7 +619,7 @@ export async function saveCharacter(character: CharacterCard): Promise<void> {
   return saveCharacters([character]);
 }
 
-export async function saveCharacters(characters: CharacterCard[], cleanupAndroidPaths?: string[]): Promise<void> {
+export async function saveCharacters(characters: CharacterCard[]): Promise<void> {
   if (characters.length === 0) return;
   const db = await initDB();
   
@@ -728,35 +676,6 @@ export async function saveCharacters(characters: CharacterCard[], cleanupAndroid
   await tx2.done;
   invalidateCache();
 
-  // 3) Sync mapped files to Android (Async without transaction bounds)
-  if (isAndroid()) {
-     import('./androidSync').then(async ({ syncCharacterToAndroid }) => {
-       try {
-         const dbRef = await initDB();
-         for (const character of characters) {
-           const finalBlobs = allFinalBlobs.get(character.id);
-           const syncPaths = await syncCharacterToAndroid(character, finalBlobs);
-           if (syncPaths && syncPaths.length > 0) {
-              const freshChar = await dbRef.get('characters', character.id);
-              if (freshChar) {
-                 if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){freshChar.localFilePath=syncPaths[0];}else{delete freshChar.localFilePath; (freshChar as any)._androidSyncPath=syncPaths[0];}
-                 await dbRef.put('characters', freshChar);
-              }
-           }
-           await new Promise(r => setTimeout(r, 20)); // prevent JSI congestion
-         }
-         if (cleanupAndroidPaths && cleanupAndroidPaths.length > 0) {
-            import('./appBridge').then(async ({ deleteLocalGalleryFile }) => {
-                for (const p of cleanupAndroidPaths) {
-                    await deleteLocalGalleryFile(p);
-                }
-            });
-         }
-       } catch (err) {
-         console.error("Failed to sync to android gallery", err);
-       }
-     });
-  }
 }
 
 export async function deleteCharactersBulk(ids: string[]): Promise<void> {
@@ -791,29 +710,6 @@ export async function deleteCharactersBulk(ids: string[]): Promise<void> {
      await tx.done;
      invalidateCache();
      
-     if (isAndroid()) {
-       import('./androidSync').then(async ({ fastMoveCharacterOnAndroid, syncCharacterToAndroid }) => {
-          try {
-            const dbRef = await initDB();
-            for (const char of toSoftDelete) {
-               const fastPaths = await fastMoveCharacterOnAndroid(char);
-               if (fastPaths && fastPaths.length > 0) {
-                  if(fastPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=fastPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=fastPaths[0];}
-                  await dbRef.put('characters', char);
-               } else {
-                  const blobs = await dbRef.get('blobs', char.id);
-                  const syncPaths = await syncCharacterToAndroid(char, blobs || null);
-                  if (syncPaths && syncPaths.length > 0) {
-                     if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=syncPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=syncPaths[0];}
-                     await dbRef.put('characters', char);
-                  }
-                     await new Promise(r => setTimeout(r, 10));
-               }
-               await new Promise(r => setTimeout(r, 5));
-            }
-          } catch (e) {}
-        });
-     }
   }
 
   // Hard Delete Transaction
@@ -826,16 +722,6 @@ export async function deleteCharactersBulk(ids: string[]): Promise<void> {
      await tx.done;
      invalidateCache();
 
-     if (isAndroid()) {
-       import('./androidSync').then(async ({ deleteCharacterFromAndroid }) => {
-         try {
-           for (const char of toHardDelete) {
-              await deleteCharacterFromAndroid(char);
-              await new Promise(r => setTimeout(r, 50));
-           }
-         } catch (e) {}
-       });
-     }
   }
 }
 
@@ -850,39 +736,12 @@ export async function deleteCharacter(id: string): Promise<void> {
       await tx.objectStore('blobs').delete(id);
       await tx.done;
 
-      if (isAndroid()) {
-        import('./androidSync').then(async ({ deleteCharacterFromAndroid }) => {
-          try {
-            await deleteCharacterFromAndroid(char);
-          } catch (e) {}
-        });
-      }
     } else {
       // Soft delete
       char.deletedAt = Date.now();
       await db.put('characters', char);
       invalidateCache();
       
-      if (isAndroid()) {
-        import('./androidSync').then(async ({ fastMoveCharacterOnAndroid, syncCharacterToAndroid }) => {
-          try {
-            const dbRef = await initDB();
-            const fastPaths = await fastMoveCharacterOnAndroid(char);
-            if (fastPaths && fastPaths.length > 0) {
-               if(fastPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=fastPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=fastPaths[0];}
-               await dbRef.put('characters', char);
-            } else {
-               const blobs = await dbRef.get('blobs', id);
-               const syncPaths = await syncCharacterToAndroid(char, blobs || null);
-               if (syncPaths && syncPaths.length > 0) {
-                 if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=syncPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=syncPaths[0];}
-                 await dbRef.put('characters', char);
-               }
-                     await new Promise(r => setTimeout(r, 10));
-            }
-          } catch (e) {}
-        });
-      }
     }
   }
 }
@@ -894,26 +753,6 @@ export async function restoreCharacter(id: string): Promise<void> {
     delete char.deletedAt;
     await db.put('characters', char);
     
-    if (isAndroid()) {
-      import('./androidSync').then(async ({ fastMoveCharacterOnAndroid, syncCharacterToAndroid }) => {
-        try {
-          const dbRef = await initDB();
-          const fastPaths = await fastMoveCharacterOnAndroid(char);
-          if (fastPaths && fastPaths.length > 0) {
-            if(fastPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=fastPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=fastPaths[0];}
-            await dbRef.put('characters', char);
-          } else {
-            const blobs = await dbRef.get('blobs', id);
-            const syncPaths = await syncCharacterToAndroid(char, blobs || null);
-            if (syncPaths && syncPaths.length > 0) {
-              if(syncPaths[0].match(/\.(png|jpe?g|webp|gif|bmp)$/i)){char.localFilePath=syncPaths[0];}else{delete char.localFilePath; (char as any)._androidSyncPath=syncPaths[0];}
-              await dbRef.put('characters', char);
-            }
-                     await new Promise(r => setTimeout(r, 10));
-          }
-        } catch (e) {}
-      });
-    }
   }
 }
 
@@ -965,18 +804,6 @@ export async function emptyTrash(): Promise<void> {
   }
   await tx1.done;
 
-  if (isAndroid()) {
-    import('./androidSync').then(async ({ deleteCharacterFromAndroid }) => {
-      try {
-        for (const char of toDelete) {
-          await deleteCharacterFromAndroid(char);
-          await new Promise(r => setTimeout(r, 50));
-        }
-      } catch (e) {
-        console.error('Failed to void async trash on Android', e);
-      }
-    });
-  }
 
   const tx2 = db.transaction(['characters', 'blobs'], 'readwrite');
   const store2 = tx2.objectStore('characters');
@@ -1008,18 +835,6 @@ export async function cleanupOldTrash(): Promise<void> {
   }
   await tx1.done;
 
-  if (isAndroid()) {
-    import('./androidSync').then(async ({ deleteCharacterFromAndroid }) => {
-      try {
-        for (const char of toDelete) {
-          await deleteCharacterFromAndroid(char);
-          await new Promise(r => setTimeout(r, 50));
-        }
-      } catch (e) {
-        console.error('Failed to async clean up old trash on Android', e);
-      }
-    });
-  }
 
   const tx2 = db.transaction(['characters', 'blobs'], 'readwrite');
   const store2 = tx2.objectStore('characters');
@@ -1267,15 +1082,6 @@ export async function saveChat(chat: ChatLog): Promise<void> {
   await tx.objectStore('chat_metadata').put(computeChatMetadata(chat));
   await tx.done;
   
-  if (isAndroid()) {
-    try {
-      const { syncChatToAndroid, deleteChatFromAndroid } = await import('./androidSync');
-      if (oldChat && (oldChat.characterId !== chat.characterId || oldChat.name !== chat.name)) {
-         await deleteChatFromAndroid(oldChat);
-      }
-      await syncChatToAndroid(chat);
-    } catch(e) {}
-  }
 }
 
 export async function saveChatsBulk(chats: ChatLog[], onProgress?: (current: number, total: number, phase: string) => void): Promise<void> {
@@ -1300,18 +1106,6 @@ export async function saveChatsBulk(chats: ChatLog[], onProgress?: (current: num
     await new Promise(r => setTimeout(r, 0));
   }
 
-  if (isAndroid()) {
-    import('./androidSync').then(async ({ syncChatToAndroid }) => {
-      try {
-        for (let i = 0; i < chats.length; i++) {
-           await syncChatToAndroid(chats[i]);
-           await new Promise(r => setTimeout(r, 50));
-        }
-      } catch(e) {
-        console.error('Android chat sync bulk failed', e);
-      }
-    });
-  }
 }
 
 export async function deleteChat(id: string): Promise<void> {
@@ -1322,15 +1116,6 @@ export async function deleteChat(id: string): Promise<void> {
   await tx.objectStore('chat_metadata').delete(id);
   await tx.done;
   
-  if (isAndroid() && chat) {
-    import('./androidSync').then(async ({ deleteChatFromAndroid }) => {
-      try {
-        await deleteChatFromAndroid(chat);
-      } catch (e) {
-        console.error('Failed to delete chat file on Android', e);
-      }
-    });
-  }
 }
 
 export async function deleteChatsBulk(ids: string[]): Promise<void> {
@@ -1349,19 +1134,6 @@ export async function deleteChatsBulk(ids: string[]): Promise<void> {
   }
   await tx.done;
   
-  if (isAndroid() && chatsToDelete.length > 0) {
-    import('./androidSync').then(async ({ deleteChatFromAndroid }) => {
-      try {
-        for (const chat of chatsToDelete) {
-           await deleteChatFromAndroid(chat);
-           // Small delay to prevent JSI congestion
-           await new Promise(r => setTimeout(r, 50));
-        }
-      } catch (e) {
-        console.error('Failed to async delete chat files on Android', e);
-      }
-    });
-  }
 }
 
 export async function getMemosForCharacter(characterId: string): Promise<CharacterMemo[]> {
