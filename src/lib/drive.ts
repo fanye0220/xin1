@@ -301,67 +301,8 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 }
 
 export async function uploadBackupToDrive(accessToken: string, onProgress: (msg: string) => void, isAutoBackup: boolean = false): Promise<void> {
-  try {
-    const backupBlob = await exportAllDataForBackup(onProgress);
-
-    onProgress('正在查找/创建网盘备份文件夹...');
-    const folderId = await getOrCreateBackupFolder(accessToken);
-
-    onProgress('正在上传数据到 Google Drive... (可能需要1-3分钟)');
-    const prefix = isAutoBackup ? 'aitavern_auto_backup_' : 'aitavern_backup_';
-    const fileName = `${prefix}${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
-
-    const metadata = {
-      name: fileName,
-      parents: [folderId],
-    };
-
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', backupBlob);
-
-    const url = `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: form,
-    });
-
-    if (!res.ok) {
-      throw new Error(`Upload failed: ${res.statusText}`);
-    }
-
-    onProgress('上传成功! 正在清理旧版本...');
-
-    try {
-      const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}' in parents and trashed=false&orderBy=createdTime desc&fields=files(id, name, createdTime)`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        const backupFiles = (listData.files || []).filter((f: any) => f.name.startsWith('aitavern_') && f.name.endsWith('.zip'));
-        if (backupFiles.length > 3) {
-          const toDelete = backupFiles.slice(3);
-          for (const oldFile of toDelete) {
-            await fetch(`https://www.googleapis.com/drive/v3/files/${oldFile.id}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${accessToken}` }
-            });
-          }
-        }
-      }
-    } catch (cleanupErr) {
-      console.error("Cleanup old backups failed", cleanupErr);
-    }
-
-    onProgress('备份完成!');
-  } catch (err: any) {
-    console.error("Backup to drive failed", err);
-    throw new Error(`备份失败: ${err.message || '未知错误'}`);
-  }
+  const { syncLibraryToCloud } = await import('./cloudDrive');
+  await syncLibraryToCloud(accessToken, onProgress);
 }
 
 export async function listBackupsFromDrive(accessToken: string) {

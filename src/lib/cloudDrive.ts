@@ -409,6 +409,31 @@ if (!jsonData) throw new Error("无效的云端卡片格式或未找到卡片数
   
   return { jsonData, avatarBlob, studioMeta };
 }
+export async function syncLibraryToCloud(token: string, onProgress?: (msg: string) => void) {
+  if (onProgress) onProgress('准备同步到云端卡库...');
+  const { getCachedMeta } = await import('./db');
+  const allChars = await getCachedMeta();
+  let successCount = 0;
+  let skipCount = 0;
+  let failCount = 0;
+  for (let i = 0; i < allChars.length; i++) {
+    const char = allChars[i];
+    if (onProgress) onProgress(`正在同步 [${i + 1}/${allChars.length}] ${char.name || '未命名'}...`);
+    try {
+      // uploadCharacterToCloud is smart enough to skip if contentHash matches
+      const skipped = await uploadCharacterToCloud(token, char.id, (msg) => {
+         // optionally pass progress, but we might want to stay quiet for each char to not overwrite our main progress
+      });
+      // We can't strictly tell if skipped from return val right now, but it's ok.
+      successCount++;
+    } catch (e) {
+      console.error("Sync char error", char.id, e);
+      failCount++;
+    }
+  }
+  if (onProgress) onProgress(`同步完成! 成功: ${successCount} 个, 失败: ${failCount} 个`);
+}
+
 export async function deleteCloudCharacter(token: string, fileId: string) {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
     method: 'DELETE',

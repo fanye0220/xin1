@@ -369,7 +369,7 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
               ) : (
                 <>
                   <Upload className="w-5 h-5" />
-                  创建并上传新备份
+                  一键同步所有本地卡片到云库
                 </>
               )}
             </button>
@@ -377,7 +377,7 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
 
           <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-4">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-white/80">历史备份档案</h4>
+              <h4 className="text-sm font-medium text-white/80">遗留 Zip 备份档案</h4>
               <button onClick={() => {if(token) loadBackups(token)}} className="text-xs text-blue-400 hover:text-blue-300 transition px-2 py-1 bg-blue-500/10 rounded-md">
                 刷新
               </button>
@@ -493,16 +493,46 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
                 
                 {!searchCloudQuery && cloudFolders.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-6">
-                    {cloudFolders.map(folderName => (
-                      <button
-                        key={folderName}
-                        onClick={() => setCurrentCloudPath(currentCloudPath ? `${currentCloudPath}/${folderName}` : folderName)}
-                        className="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition text-left"
-                      >
-                        <Folder className="w-6 h-6 text-blue-400 shrink-0" />
-                        <span className="text-sm font-medium text-white/90 truncate">{folderName}</span>
-                      </button>
-                    ))}
+                                        {cloudFolders.map(folderName => {
+                      const fullFolderPath = currentCloudPath ? `${currentCloudPath}/${folderName}` : folderName;
+                      return (
+                      <div key={folderName} className="relative group flex items-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition overflow-hidden">
+                        <button
+                          onClick={() => setCurrentCloudPath(fullFolderPath)}
+                          className="flex-1 flex items-center gap-3 p-3 text-left"
+                        >
+                          <Folder className="w-6 h-6 text-blue-400 shrink-0" />
+                          <span className="text-sm font-medium text-white/90 truncate">{folderName}</span>
+                        </button>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`确定要删除云端文件夹 "${folderName}" 及其包含的所有卡片吗？此操作不可恢复！`)) {
+                               const charsToDelete = cloudChars.filter(c => {
+                                  const p = c.appProperties?.folderPath || "";
+                                  return p === fullFolderPath || p.startsWith(fullFolderPath + '/');
+                               });
+                               try {
+                                  setIsLoadingCloud(true);
+                                  for (const c of charsToDelete) {
+                                      await deleteCloudCharacter(token!, c.id);
+                                  }
+                                  setCloudChars(prev => prev.filter(c => !charsToDelete.includes(c)));
+                               } catch (err) {
+                                  alert("删除部分文件时出错");
+                               } finally {
+                                  setIsLoadingCloud(false);
+                               }
+                            }
+                          }}
+                          className="p-3 text-red-400 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition shrink-0"
+                          title="删除文件夹"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )})}
+
                   </div>
                 )}
 
