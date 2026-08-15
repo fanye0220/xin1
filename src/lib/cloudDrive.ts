@@ -204,6 +204,14 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
     mimeType = 'application/zip';
   }
 
+  
+  if (onProgress) onProgress("计算数据指纹...");
+  const dataStr = JSON.stringify(char.data);
+  const avatarInfo = char.avatarBlob ? char.avatarBlob.size.toString() : 'no-avatar';
+  const rawHashData = dataStr + "|" + avatarInfo;
+  const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawHashData));
+  const contentHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
   if (onProgress) onProgress("检查是否已存在...");
   const metadata: any = {
     name: fileName,
@@ -213,7 +221,8 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
       charName: char.name || "",
       cardType: charType,
       folderPath: folderPath,
-      createdAt: char.createdAt.toString()
+      createdAt: char.createdAt.toString(),
+      contentHash: contentHash
     }
   };
   
@@ -227,14 +236,24 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
   }
 
   const q = `appProperties has { key='charId' and value='${char.id}' } and '${folderId}' in parents and trashed=false`;
-  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive`, {
+  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,appProperties)`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   const searchData = await searchRes.json();
   
   let targetFileId = '';
+  let finalCharName = char.name || "未命名";
+
   if (searchData.files && searchData.files.length > 0) {
-    targetFileId = searchData.files[0].id;
+    const existingFile = searchData.files[0];
+    if (existingFile.appProperties?.contentHash === contentHash) {
+      if (onProgress) onProgress("内容未变更，跳过上传");
+      return;
+    }
+    targetFileId = existingFile.id;
+    finalCharName = existingFile.appProperties?.charName || finalCharName;
+    metadata.appProperties.charName = finalCharName;
+    
     if (onProgress) onProgress("更新云端文件信息...");
     await fetch(`https://www.googleapis.com/drive/v3/files/${targetFileId}`, {
       method: 'PATCH',
@@ -245,6 +264,27 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
       body: JSON.stringify(metadata)
     });
   } else {
+    if (onProgress) onProgress("检查同名卡片...");
+    const safeQueryName = finalCharName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const qName = `name contains '${safeQueryName}' and '${folderId}' in parents and trashed=false`;
+    const searchResName = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(qName)}&spaces=drive&fields=files(id,name,appProperties)`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const searchDataName = await searchResName.json();
+    
+    if (searchDataName.files && searchDataName.files.length > 0) {
+       const exactMatches = searchDataName.files.filter((f:any) => f.appProperties?.charName === finalCharName || f.appProperties?.charName?.startsWith(finalCharName + '_'));
+       if (exactMatches.length > 0) {
+          const identical = exactMatches.find((f:any) => f.appProperties?.contentHash === contentHash);
+          if (identical) {
+             if (onProgress) onProgress("云端已有相同内容的卡片，跳过");
+             return;
+          }
+          finalCharName = `${finalCharName}_${exactMatches.length}`;
+          metadata.appProperties.charName = finalCharName;
+       }
+    }
+
     if (onProgress) onProgress("创建云端文件...");
     metadata.parents = [folderId];
     const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {

@@ -664,18 +664,34 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要删除选中的 ${selectedIds.size} 项吗？\n（选中的角色将被移至回收站，文件夹将被直接删除且其内子项将移动到上一级）`)) {
-      await Promise.all(
-        Array.from(selectedIds).map(async (id) => {
-          if (folders.some(f => f.id === id)) {
-            await deleteFolder(id);
-          } else {
-            await deleteCharacter(id);
-          }
-        })
-      );
+      const idsToProcess = Array.from(selectedIds);
       setSelectionMode(false);
       setSelectedIds(new Set());
-      loadData();
+      
+      setIsExporting(true);
+      setExportMessage(`正在删除 ${idsToProcess.length} 个项目...`);
+      setExportProgress(0);
+
+      (async () => {
+        try {
+          await Promise.all(
+            idsToProcess.map(async (id) => {
+              if (folders.some(f => f.id === id)) {
+                await deleteFolder(id);
+              } else {
+                await deleteCharacter(id);
+              }
+            })
+          );
+          loadData();
+        } catch (err) {
+          console.error("Batch delete failed", err);
+          alert("删除过程中出现错误");
+        } finally {
+          setIsExporting(false);
+          setExportMessage('');
+        }
+      })();
     }
   };
 
@@ -1664,14 +1680,14 @@ export function CharacterList({ folderId, onSelect, onImport, onSelectFolder, on
 
               <div className={
                 viewMode === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4" : 
-                viewMode === 'masonry' ? "columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4" : 
+                viewMode === 'masonry' ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 items-start" : 
                 "flex flex-col gap-2"
               }>
 
             {characters.map((char) => {
                 
               return (
-                <SortableItemWrapper key={`char-${char.id}`} id={`char-${char.id}`} disabled={!!searchQuery || selectedTags.length > 0} className={viewMode === 'masonry' ? 'break-inside-avoid inline-block w-full mb-4' : ''}>
+                <SortableItemWrapper key={`char-${char.id}`} id={`char-${char.id}`} disabled={!!searchQuery || selectedTags.length > 0} className={viewMode === 'masonry' ? 'h-fit' : ''}>
                   <CharacterCardItem
                     char={char}
                     selectionMode={selectionMode}

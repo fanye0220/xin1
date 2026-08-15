@@ -11,6 +11,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
     "@dicebear/collection": "^9.4.2",
     "@dicebear/core": "^9.4.2",
     "@dnd-kit/core": "^6.3.1",
