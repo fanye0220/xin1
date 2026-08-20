@@ -101,6 +101,8 @@ export function ChatViewer({
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
 
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+  const [bindSearchQuery, setBindSearchQuery] = useState("");
+  const [isBindDropdownOpen, setIsBindDropdownOpen] = useState(false);
   const [isMainHeaderExpanded, setIsMainHeaderExpanded] = useState(true);
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
@@ -1254,24 +1256,67 @@ export function ChatViewer({
                           <label className="text-xs text-white/50 font-medium">
                             绑定角色获得正则效果
                           </label>
-                          <select
-                            value={
-                              activeChat.characterId ||
-                              activeCharacter?.id ||
-                              ""
-                            }
-                            onChange={(e) =>
-                              handleUpdateBinding(e.target.value)
-                            }
-                            className="bg-black/30 border border-white/10 text-sm text-white focus:outline-none rounded-lg p-2 w-full appearance-none"
-                          >
-                            <option value="">暂不绑定</option>
-                            {characters.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
+                          {isBindDropdownOpen ? (
+                            <div className="flex flex-col bg-black/40 border border-white/20 rounded-lg overflow-hidden">
+                              <div className="flex items-center px-3 py-2 border-b border-white/10 bg-black/40">
+                                <Search className="w-4 h-4 text-white/50 mr-2 shrink-0" />
+                                <input
+                                  autoFocus
+                                  placeholder="搜索角色..."
+                                  value={bindSearchQuery}
+                                  onChange={(e) => setBindSearchQuery(e.target.value)}
+                                  className="bg-transparent border-none text-sm text-white focus:outline-none w-full"
+                                />
+                                <button onClick={() => setIsBindDropdownOpen(false)} className="text-white/50 hover:text-white p-1 rounded-md hover:bg-white/10 transition shrink-0 ml-1">
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <div className="max-h-48 overflow-y-auto custom-scrollbar flex flex-col p-1">
+                                <button
+                                  className="w-full text-left px-3 py-2 text-sm rounded-md transition flex items-center justify-between hover:bg-white/10 text-white/70"
+                                  onClick={() => {
+                                    handleUpdateBinding("");
+                                    setIsBindDropdownOpen(false);
+                                  }}
+                                >
+                                  <span>暂不绑定</span>
+                                  {!(activeChat.characterId || activeCharacter?.id) && <CheckCircle2 className="w-4 h-4 text-blue-400" />}
+                                </button>
+                                {characters
+                                  .filter(c => c.name.toLowerCase().includes(bindSearchQuery.toLowerCase()))
+                                  .map((c) => {
+                                    const isSelected = (activeChat.characterId || activeCharacter?.id) === c.id;
+                                    return (
+                                      <button
+                                        key={c.id}
+                                        className={`w-full text-left px-3 py-2 text-sm rounded-md transition flex items-center justify-between ${isSelected ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/10 text-white/90'}`}
+                                        onClick={() => {
+                                          handleUpdateBinding(c.id);
+                                          setIsBindDropdownOpen(false);
+                                          setBindSearchQuery("");
+                                        }}
+                                      >
+                                        <span className="truncate pr-2">{c.name}</span>
+                                        {isSelected && <CheckCircle2 className="w-4 h-4 shrink-0 text-blue-400" />}
+                                      </button>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsBindDropdownOpen(true)}
+                              className="bg-black/30 hover:bg-black/50 border border-white/10 text-sm text-white focus:outline-none rounded-lg px-3 py-2.5 w-full flex items-center justify-between transition"
+                            >
+                              <span className="truncate">
+                                {activeChat.characterId || activeCharacter?.id
+                                  ? characters.find(c => c.id === (activeChat.characterId || activeCharacter?.id))?.name || "未知角色"
+                                  : "暂不绑定"}
+                              </span>
+                              <ChevronDown className="w-4 h-4 opacity-50" />
+                            </button>
+                          )}
                         </div>
                         {activeCharacter && (
                           <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">

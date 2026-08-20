@@ -492,17 +492,17 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
                 )}
                 
                 {!searchCloudQuery && cloudFolders.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-6">
+                  <div className="flex flex-wrap gap-2 sm:gap-3 mb-6">
                                         {cloudFolders.map(folderName => {
                       const fullFolderPath = currentCloudPath ? `${currentCloudPath}/${folderName}` : folderName;
                       return (
-                      <div key={folderName} className="relative group flex items-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition overflow-hidden">
+                      <div key={folderName} className="relative group flex items-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition overflow-hidden max-w-full pr-1">
                         <button
                           onClick={() => setCurrentCloudPath(fullFolderPath)}
-                          className="flex-1 flex items-center gap-3 p-3 text-left"
+                          className="flex items-center gap-2 p-2.5 sm:p-3 text-left min-w-0"
                         >
-                          <Folder className="w-6 h-6 text-blue-400 shrink-0" />
-                          <span className="text-sm font-medium text-white/90 truncate">{folderName}</span>
+                          <Folder className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400 shrink-0" />
+                          <span className="text-sm font-medium text-white/90 truncate" title={folderName}>{folderName}</span>
                         </button>
                         <button
                           onClick={async (e) => {
@@ -525,13 +525,14 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
                                }
                             }
                           }}
-                          className="p-3 text-red-400 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition shrink-0"
+                          className="p-2 sm:p-2.5 text-white/30 hover:text-red-400 hover:bg-red-500/20 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition shrink-0 rounded-lg"
                           title="删除文件夹"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     )})}
+
 
                   </div>
                 )}
