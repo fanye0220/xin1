@@ -125,6 +125,23 @@ export async function uploadCharacterToCloud(
   if (onProgress) onProgress("准备云端数据...");
   const char = await getCharacter(charId);
   if (!char) throw new Error("Character not found");
+  let charAvatarBlob = char.avatarBlob;
+  if (!charAvatarBlob && char.localFilePath) {
+    try {
+      const { readLocalFileBuffer } = await import("./appBridge");
+      const buffer = await readLocalFileBuffer(char.localFilePath);
+      if (buffer) {
+        let mime = "image/png";
+        const lower = char.localFilePath.toLowerCase();
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) mime = "image/jpeg";
+        else if (lower.endsWith(".webp")) mime = "image/webp";
+        else if (lower.endsWith(".gif")) mime = "image/gif";
+        charAvatarBlob = new Blob([buffer], { type: mime });
+      }
+    } catch (e) {
+      console.error("Failed to read local avatar for cloud upload", e);
+    }
+  }
   
 
   const rawData = char.data;
@@ -141,9 +158,9 @@ export async function uploadCharacterToCloud(
   const safeName = char.name ? char.name.replace(/[\\/:*?"<>|]/g, "_") : "Character";
   
   let thumbB64: string | null = null;
-  if (char.avatarBlob) {
+  if (charAvatarBlob) {
     if (onProgress) onProgress("生成云端预览图...");
-    thumbB64 = await generateThumbnail(char.avatarBlob);
+    thumbB64 = await generateThumbnail(charAvatarBlob);
   }
 
   let folderPath = "";
@@ -166,12 +183,12 @@ export async function uploadCharacterToCloud(
     const zip = new JSZip();
     zip.file(`${safeName}.json`, JSON.stringify(char.data, null, 2));
     
-    if (char.avatarBlob) {
+    if (charAvatarBlob) {
       let ext = 'png';
-      if (char.avatarBlob.type === 'image/jpeg') ext = 'jpg';
-      else if (char.avatarBlob.type === 'image/webp') ext = 'webp';
-      else if (char.avatarBlob.type === 'image/gif') ext = 'gif';
-      zip.file(`avatar.${ext}`, char.avatarBlob);
+      if (charAvatarBlob.type === 'image/jpeg') ext = 'jpg';
+      else if (charAvatarBlob.type === 'image/webp') ext = 'webp';
+      else if (charAvatarBlob.type === 'image/gif') ext = 'gif';
+      zip.file(`avatar.${ext}`, charAvatarBlob);
     }
     
     if (char.avatarHistory && char.avatarHistory.length > 0) {
@@ -201,10 +218,10 @@ export async function uploadCharacterToCloud(
   }
 
   const hasHistory = char.avatarHistory && char.avatarHistory.length > 0;
-  if (!hasHistory && char.avatarBlob && (char.avatarBlob.type === 'image/png' || !char.avatarBlob.type)) {
+  if (!hasHistory && charAvatarBlob && (charAvatarBlob.type === 'image/png' || !charAvatarBlob.type)) {
     if (onProgress) onProgress("打包角色数据(PNG)...");
     try {
-      const buffer = await char.avatarBlob.arrayBuffer();
+      const buffer = await charAvatarBlob.arrayBuffer();
       const injectedBuffer = injectTavernData(buffer, char.data);
       finalBlob = new Blob([injectedBuffer], { type: 'image/png' });
       fileName = `${safeName}_${char.id}.png`;
@@ -215,7 +232,7 @@ export async function uploadCharacterToCloud(
       fileName = `${safeName}_${char.id}.zip`;
       mimeType = 'application/zip';
     }
-  } else if (!char.avatarBlob) {
+  } else if (!charAvatarBlob) {
     if (onProgress) onProgress("打包角色数据(JSON)...");
     finalBlob = new Blob([JSON.stringify(char.data, null, 2)], { type: 'application/json' });
     fileName = `${safeName}_${char.id}.json`;
@@ -230,7 +247,7 @@ export async function uploadCharacterToCloud(
   
   if (onProgress) onProgress("计算数据指纹...");
   const dataStr = JSON.stringify(char.data);
-  const avatarInfo = char.avatarBlob ? char.avatarBlob.size.toString() : 'no-avatar';
+  const avatarInfo = charAvatarBlob ? charAvatarBlob.size.toString() : 'no-avatar';
   const historyInfo = char.avatarHistory ? char.avatarHistory.map(b => b.size.toString()).join(',') : 'no-history';
   const rawHashData = dataStr + "|" + avatarInfo + "|" + historyInfo;
   const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawHashData));
