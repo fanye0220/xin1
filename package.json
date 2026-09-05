@@ -1,7 +1,7 @@
 {
-  "name": "react-example",
+  "name": "miu",
   "private": true,
-  "version": "0.0.0",
+  "version": "3.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -11,7 +11,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.5.1",
     "@capacitor/android": "^8.3.4",
+    "@capacitor/app": "^8.1.0",
     "@capacitor/core": "^8.3.4",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/share": "^8.0.1",
@@ -27,8 +29,8 @@
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "firebase": "^12.14.0",
     "framer-motion": "^12.38.0",
+    "firebase": "^12.17.1",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
@@ -37,6 +39,7 @@
     "react-dom": "^19.0.0",
     "react-easy-crop": "^5.5.7",
     "react-markdown": "^10.1.0",
+    "react-masonry-css": "^1.0.16",
     "react-virtuoso": "^4.18.6",
     "react-zoom-pan-pinch": "^4.0.3",
     "rehype-raw": "^7.0.0",

@@ -117,7 +117,11 @@ async function convertToPNG(blob: Blob): Promise<Blob> {
 }
 
 
-export async function uploadCharacterToCloud(token: string, charId: string, onProgress?: (msg: string) => void) {
+export async function uploadCharacterToCloud(
+  token: string,
+  charId: string,
+  onProgress?: (msg: string) => void,
+): Promise<'uploaded' | 'skipped'> {
   if (onProgress) onProgress("准备云端数据...");
   const char = await getCharacter(charId);
   if (!char) throw new Error("Character not found");
@@ -170,6 +174,24 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
       zip.file(`avatar.${ext}`, char.avatarBlob);
     }
     
+    if (char.avatarHistory && char.avatarHistory.length > 0) {
+      const historyFolder = zip.folder("替换头像");
+      if (historyFolder) {
+        for (let i = 0; i < char.avatarHistory.length; i++) {
+          const ab = char.avatarHistory[i];
+          let ext = "png";
+          if (ab instanceof File) {
+            ext = ab.name.split('.').pop() || "png";
+          } else {
+            if (ab.type === "image/jpeg") ext = "jpg";
+            else if (ab.type === "image/webp") ext = "webp";
+            else if (ab.type === "image/gif") ext = "gif";
+          }
+          historyFolder.file(`替换头像_${i + 1}.${ext}`, ab);
+        }
+      }
+    }
+    
     const studioMeta = {
       folderPath,
       createdAt: char.createdAt
@@ -178,7 +200,8 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
     return await zip.generateAsync({ type: 'blob', compression: 'STORE' });
   }
 
-  if (char.avatarBlob && (char.avatarBlob.type === 'image/png' || !char.avatarBlob.type)) {
+  const hasHistory = char.avatarHistory && char.avatarHistory.length > 0;
+  if (!hasHistory && char.avatarBlob && (char.avatarBlob.type === 'image/png' || !char.avatarBlob.type)) {
     if (onProgress) onProgress("打包角色数据(PNG)...");
     try {
       const buffer = await char.avatarBlob.arrayBuffer();
@@ -208,7 +231,8 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
   if (onProgress) onProgress("计算数据指纹...");
   const dataStr = JSON.stringify(char.data);
   const avatarInfo = char.avatarBlob ? char.avatarBlob.size.toString() : 'no-avatar';
-  const rawHashData = dataStr + "|" + avatarInfo;
+  const historyInfo = char.avatarHistory ? char.avatarHistory.map(b => b.size.toString()).join(',') : 'no-history';
+  const rawHashData = dataStr + "|" + avatarInfo + "|" + historyInfo;
   const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawHashData));
   const contentHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
@@ -239,6 +263,9 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
   const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,appProperties)`, {
     headers: { Authorization: `Bearer ${token}` }
   });
+  if (!searchRes.ok) {
+    throw new Error(`云端查询失败: HTTP ${searchRes.status}`);
+  }
   const searchData = await searchRes.json();
   
   let targetFileId = '';
@@ -248,7 +275,7 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
     const existingFile = searchData.files[0];
     if (existingFile.appProperties?.contentHash === contentHash) {
       if (onProgress) onProgress("内容未变更，跳过上传");
-      return;
+      return 'skipped';
     }
     targetFileId = existingFile.id;
     finalCharName = existingFile.appProperties?.charName || finalCharName;
@@ -270,6 +297,9 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
     const searchResName = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(qName)}&spaces=drive&fields=files(id,name,appProperties)`, {
       headers: { Authorization: `Bearer ${token}` }
     });
+    if (!searchResName.ok) {
+      throw new Error(`云端同名查询失败: HTTP ${searchResName.status}`);
+    }
     const searchDataName = await searchResName.json();
     
     if (searchDataName.files && searchDataName.files.length > 0) {
@@ -278,7 +308,7 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
           const identical = exactMatches.find((f:any) => f.appProperties?.contentHash === contentHash);
           if (identical) {
              if (onProgress) onProgress("云端已有相同内容的卡片，跳过");
-             return;
+             return 'skipped';
           }
           finalCharName = `${finalCharName}_${exactMatches.length}`;
           metadata.appProperties.charName = finalCharName;
@@ -315,6 +345,7 @@ export async function uploadCharacterToCloud(token: string, charId: string, onPr
   }
   
   if (onProgress) onProgress("上传完成！");
+  return 'uploaded';
 }
 
 export async function listCloudCharacters(token: string) {
@@ -342,6 +373,7 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
   let jsonData: any = null;
   let avatarBlob: Blob | null = null;
   let studioMeta: any = null;
+  let avatarHistory: Blob[] = [];
   
   
   const fName = (fileName || "").toLowerCase();
@@ -351,7 +383,9 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
      let zipJson = null;
      let zipAvatar = null;
      let zipMeta = null;
+     let zipAvatarHistory: Blob[] = [];
      for (const [filename, file] of Object.entries(zip.files)) {
+       if (file.dir) continue;
        if (filename === 'studio_meta.json') {
          const text = await file.async('text');
          try { zipMeta = JSON.parse(text); } catch(e){}
@@ -366,9 +400,30 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
          else if (ext === 'gif') mime = 'image/gif';
          const b = await file.async('blob');
          zipAvatar = new Blob([b], { type: mime });
+       } else if (filename.startsWith('替换头像/') || filename.startsWith('history/') || filename.startsWith('avatars/') || filename.startsWith('alt/') || filename.startsWith('alternate/')) {
+         const ext = filename.split('.').pop()?.toLowerCase();
+         let mime = 'image/png';
+         if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+         else if (ext === 'webp') mime = 'image/webp';
+         else if (ext === 'gif') mime = 'image/gif';
+         const b = await file.async('blob');
+         const ab = new Blob([b], { type: mime });
+         // attach filename for sorting later
+         (ab as any)._filename = filename;
+         zipAvatarHistory.push(ab);
        }
      }
-     return { jsonData: zipJson, avatarBlob: zipAvatar, studioMeta: zipMeta };
+     
+     // sort history to maintain 1, 2, 3... order
+     zipAvatarHistory.sort((a: any, b: any) => {
+         const getNum = (name: string) => {
+             const m = name.match(/_(\d+)\./);
+             return m ? parseInt(m[1]) : 0;
+         };
+         return getNum(a._filename) - getNum(b._filename);
+     });
+     
+     return { jsonData: zipJson, avatarBlob: zipAvatar, studioMeta: zipMeta, avatarHistory: zipAvatarHistory };
   };
 
   if (fName.endsWith('.zip')) {
@@ -377,6 +432,7 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
      jsonData = res.jsonData;
      avatarBlob = res.avatarBlob;
      studioMeta = res.studioMeta;
+     if (res.avatarHistory) avatarHistory = res.avatarHistory;
   } else if (fName.endsWith('.json')) {
      const text = await blob.text();
      jsonData = JSON.parse(text);
@@ -399,6 +455,7 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
               jsonData = res.jsonData;
               if (res.avatarBlob) avatarBlob = res.avatarBlob;
               if (res.studioMeta) studioMeta = res.studioMeta;
+              if (res.avatarHistory) avatarHistory = res.avatarHistory;
           }
        } catch (zipErr) {
           console.error("Also failed to parse as ZIP", zipErr);
@@ -407,31 +464,49 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
   }
 if (!jsonData) throw new Error("无效的云端卡片格式或未找到卡片数据");
   
-  return { jsonData, avatarBlob, studioMeta };
+  return { jsonData, avatarBlob, studioMeta, avatarHistory };
 }
 export async function syncLibraryToCloud(token: string, onProgress?: (msg: string) => void) {
   if (onProgress) onProgress('准备同步到云端卡库...');
   const { getCachedMeta } = await import('./db');
-  const allChars = await getCachedMeta();
+  const allChars = (await getCachedMeta()).filter((c) => !c.deletedAt);
   let successCount = 0;
-  let skipCount = 0;
+  let skippedCount = 0;
   let failCount = 0;
-  for (let i = 0; i < allChars.length; i++) {
-    const char = allChars[i];
-    if (onProgress) onProgress(`正在同步 [${i + 1}/${allChars.length}] ${char.name || '未命名'}...`);
-    try {
-      // uploadCharacterToCloud is smart enough to skip if contentHash matches
-      const skipped = await uploadCharacterToCloud(token, char.id, (msg) => {
-         // optionally pass progress, but we might want to stay quiet for each char to not overwrite our main progress
-      });
-      // We can't strictly tell if skipped from return val right now, but it's ok.
-      successCount++;
-    } catch (e) {
-      console.error("Sync char error", char.id, e);
-      failCount++;
+  let completedCount = 0;
+
+  const CONCURRENCY = 5;
+  let currentIndex = 0;
+
+  const uploadWorker = async () => {
+    while (currentIndex < allChars.length) {
+      const charIndex = currentIndex++;
+      const char = allChars[charIndex];
+      try {
+        const result = await uploadCharacterToCloud(token, char.id, () => {});
+        if (result === 'skipped') {
+          skippedCount++;
+        } else {
+          successCount++;
+        }
+      } catch (e) {
+        console.error("Sync char error", char.id, e);
+        failCount++;
+      } finally {
+        completedCount++;
+        if (onProgress) onProgress(`正在批量同步至云端... (${completedCount}/${allChars.length})`);
+      }
     }
+  };
+
+  const workers = [];
+  for (let i = 0; i < CONCURRENCY; i++) {
+    workers.push(uploadWorker());
   }
-  if (onProgress) onProgress(`同步完成! 成功: ${successCount} 个, 失败: ${failCount} 个`);
+  
+  await Promise.all(workers);
+
+  if (onProgress) onProgress(`同步完成! 成功: ${successCount} 个, 跳过: ${skippedCount} 个, 失败: ${failCount} 个`);
 }
 
 export async function deleteCloudCharacter(token: string, fileId: string) {

@@ -12,7 +12,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   qrSets: QRSet[];
-  onExport: (selectedSets: QRSet[]) => void;
+  onExport: (selectedSets: QRSet[], share?: boolean) => void;
 }
 
 export function ExportQRModal({ isOpen, onClose, qrSets, onExport }: Props) {
@@ -34,9 +34,9 @@ export function ExportQRModal({ isOpen, onClose, qrSets, onExport }: Props) {
     setSelectedIds(next);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = (share: boolean = false) => {
     const selectedSets = qrSets.filter(s => selectedIds.has(s.id));
-    onExport(selectedSets);
+    onExport(selectedSets, share);
     onClose();
   };
 
@@ -94,7 +94,7 @@ export function ExportQRModal({ isOpen, onClose, qrSets, onExport }: Props) {
              取消
            </button>
            <button 
-             onClick={handleConfirm}
+              onClick={() => handleConfirm()}
              disabled={selectedIds.size === 0}
              className="flex-1 py-2.5 rounded-xl font-medium text-white bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
            >

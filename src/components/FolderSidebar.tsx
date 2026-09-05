@@ -76,7 +76,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, onClose, onOpe
   };
 
   const handleDeleteFolder = async (id: string, name: string) => {
-    if (confirm(`确定要删除文件夹 "${name}" 吗？\n文件夹内的所有子文件夹和角色都将被移至回收站。`)) {
+    if (confirm(`确定要删除文件夹 "${name}" 吗？\n文件夹将被直接删除，其内的所有角色都将被移至回收站。`)) {
       await deleteFolder(id);
       if (selectedFolderId === id) {
         onSelectFolder(null);

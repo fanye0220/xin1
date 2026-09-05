@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CharacterList } from './components/CharacterList';
 import { CharacterDetail } from './components/CharacterDetail';
@@ -15,10 +15,11 @@ import { AutoTagger } from './components/AutoTagger';
 import { AIRecommender } from './components/AIRecommender';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatViewer } from './components/ChatViewer';
+import { SyncWidget } from './components/SyncWidget';
 import { migrateDatabase } from './lib/db';
 import { useTaggerState } from './lib/taggerState';
-import { initAuth } from './lib/drive';
-import { SyncWidget } from './components/SyncWidget';
+import { isAndroid } from './lib/appBridge';
+import { syncWithAndroidLocalDirectory } from './lib/androidSync';
 import { Tag, Loader2, AlertCircle, Pause, X } from 'lucide-react';
 
 function TaggerWidget({ onClick }: { onClick: () => void }) {
@@ -92,11 +93,13 @@ function TaggerWidget({ onClick }: { onClick: () => void }) {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden relative">
               <div 
-                className={`h-full transition-all duration-500 ${isPaused ? 'bg-yellow-500' : hasError ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-blue-500'}`}
+                className={`h-full transition-all duration-500 relative ${isPaused ? 'bg-yellow-500' : hasError ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-blue-500'}`}
                 style={{ width: `${(progress.current / Math.max(1, progress.total)) * 100}%` }}
-              />
+              >
+                <div className="absolute inset-0 bg-white/20 animate-pulse" />
+              </div>
             </div>
           </motion.div>
         )}
@@ -105,51 +108,230 @@ function TaggerWidget({ onClick }: { onClick: () => void }) {
   );
 }
 
+// 全量扫描很重(遍历安卓存储目录 + 读取全部角色/聊天记录做比对),
+// 不应该每次切回 App 都跑一遍。用一个节流窗口限制频率。
+const FULL_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5分钟
+let lastFullSyncAt = 0;
+let fullSyncInFlight: Promise<boolean | void> | null = null;
+
+function throttledFullSync(force = false): Promise<boolean | void> {
+  // 注意: .nomedia 的写入顺序保证已经下沉到 appBridge.ts 的 saveToGallery 内部,
+  // 这里不需要再关心顺序问题, syncWithAndroidLocalDirectory 内部任何一次
+  // saveToGallery 调用都会自动先确保 .nomedia 已经写完。
+  const now = Date.now();
+  if (!force && now - lastFullSyncAt < FULL_SYNC_MIN_INTERVAL_MS) {
+    return Promise.resolve();
+  }
+  if (fullSyncInFlight) {
+    // 已经有一次扫描在跑,不重复触发
+    return fullSyncInFlight;
+  }
+  lastFullSyncAt = now;
+  fullSyncInFlight = syncWithAndroidLocalDirectory()
+    .catch(console.error)
+    .finally(() => {
+      fullSyncInFlight = null;
+    });
+  return fullSyncInFlight;
+}
+
 export default function App() {
+  useEffect(() => {
+    if (isAndroid()) {
+      // 启动时强制跑一次,保证数据是最新的
+      throttledFullSync(true);
+      
+      // 切回 App 时只在超过节流窗口时才重新全量扫描,
+      // 避免频繁切换 App 时反复扫描目录 + 读取整个数据库
+      const onFocus = () => {
+        throttledFullSync(false);
+      };
+      window.addEventListener('focus', onFocus);
+      return () => {
+        window.removeEventListener('focus', onFocus);
+      };
+    }
+  }, []);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-
+  const [importModalInitialFiles, setImportModalInitialFiles] = useState<FileList | File[] | null>(null);
+  const handleOpenImportModal = useCallback((files?: FileList | File[]) => {
+    setImportModalInitialFiles(files || null);
+    setIsImportModalOpen(true);
+  }, []);
+  const handleCloseCharacterDetail = useCallback(() => {
+    setSelectedCharId(null);
+    setRefreshKey(prev => prev + 1);
+  }, []);
   useEffect(() => {
-    const handleDbUpdate = () => {
+    const handleTriggerImport = (e: any) => {
+      if (e.detail && e.detail.files) {
+        handleOpenImportModal(e.detail.files);
+      }
+    };
+    window.addEventListener('openImportModal', handleTriggerImport);
+    return () => window.removeEventListener('openImportModal', handleTriggerImport);
+  }, [handleOpenImportModal]);
+  useEffect(() => {
+    const handleCharactersUpdated = () => {
       setRefreshKey(prev => prev + 1);
     };
-    window.addEventListener('tavern-db-updated', handleDbUpdate);
-    return () => {
-      window.removeEventListener('tavern-db-updated', handleDbUpdate);
-    };
+    window.addEventListener('charactersUpdated', handleCharactersUpdated);
+    return () => window.removeEventListener('charactersUpdated', handleCharactersUpdated);
   }, []);
-
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [globalChatViewerId, setGlobalChatViewerId] = useState<string | null>(null);
   
   const [isMigrating, setIsMigrating] = useState(true);
   const [migrationProgress, setMigrationProgress] = useState({ current: 0, total: 0 });
 
+  // Refs for back button handling
+  const stateRefs = useRef({
+    isImportModalOpen,
+    isSettingsOpen,
+    globalChatViewerId,
+    selectedCharId,
+    isSidebarOpen,
+    selectedFolderId
+  });
+  
   useEffect(() => {
+    stateRefs.current = {
+      isImportModalOpen,
+      isSettingsOpen,
+      globalChatViewerId,
+      selectedCharId,
+      isSidebarOpen,
+      selectedFolderId
+    };
+  }, [isImportModalOpen, isSettingsOpen, globalChatViewerId, selectedCharId, isSidebarOpen, selectedFolderId]);
+
+  useEffect(() => {
+    if (!window.history.state?.isAppRoot) {
+      window.history.replaceState({ isAppRoot: true }, '');
+      window.history.pushState({ isAppForward: true }, '');
+    }
+
+    const handlePopState = (e: PopStateEvent) => {
+      const state = stateRefs.current;
+      let closedSomething = false;
+
+      if (state.isImportModalOpen) {
+        setIsImportModalOpen(false); closedSomething = true;
+      } else if (state.isSettingsOpen) {
+        setIsSettingsOpen(false); closedSomething = true;
+      } else if (state.globalChatViewerId) {
+        setGlobalChatViewerId(null); closedSomething = true;
+      } else if (state.selectedCharId) {
+        setSelectedCharId(null); closedSomething = true;
+      } else if (state.isSidebarOpen) {
+        setIsSidebarOpen(false); closedSomething = true;
+      } else if (state.selectedFolderId) {
+        closedSomething = true;
+        if (['trash', 'duplicates', 'autotagger', 'recommender', 'chatviewer'].includes(state.selectedFolderId)) {
+          setSelectedFolderId(null);
+        } else {
+          import('./lib/db').then(({ getFolders }) => {
+            getFolders().then(allFolders => {
+              const current = allFolders.find(f => f.id === state.selectedFolderId);
+              setSelectedFolderId(current?.parentId || null);
+            });
+          });
+        }
+      }
+
+      if (closedSomething) {
+        window.history.pushState({ isAppForward: true }, '');
+      } else {
+        // Nothing to close, user wants to exit
+        // On Android WebView, navigating back from root will exit the app
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    // 尽早触发 .nomedia 写入(具体的顺序保证在 appBridge.ts 里)
     import('./lib/appBridge').then(({ isAndroid, saveToGallery }) => {
       if (isAndroid()) {
-        try {
-          saveToGallery('.nomedia', new ArrayBuffer(0));
-        } catch (e) {
-          // ignore
-        }
+        saveToGallery('.nomedia', new ArrayBuffer(0)).catch((e) => {
+          console.error('写入 .nomedia 失败:', e);
+        });
       }
     });
 
-    // Initialize global drive auth listener for auto-sync
-    const unsubscribeDrive = initAuth();
+    let cleanupVisibility: (() => void) | null = null;
+    let cleanupFocus: (() => void) | null = null;
 
     migrateDatabase((current, total) => {
       setMigrationProgress({ current, total });
     }).then(() => {
-      setIsMigrating(false);
+      import('./lib/db').then(({ cleanupEmptyFolders }) => {
+        cleanupEmptyFolders().then(() => {
+          setIsMigrating(false);
+          // Removed startup background scanning per user request
+        });
+      });
     });
+
+    return () => {
+    };
+  }, []);
+
+  // Back button handling for Capacitor Android (Swipe Back / Hardware Back)
+  useEffect(() => {
+    let listenerPromise: Promise<any> | null = null;
+    import('@capacitor/app').then(({ App: CapacitorApp }) => {
+      import('@capacitor/core').then(({ Capacitor }) => {
+        if (Capacitor.isNativePlatform()) {
+          listenerPromise = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+            const state = stateRefs.current;
+            let closedSomething = false;
+
+            if (state.isImportModalOpen) {
+              setIsImportModalOpen(false); closedSomething = true;
+            } else if (state.isSettingsOpen) {
+              setIsSettingsOpen(false); closedSomething = true;
+            } else if (state.globalChatViewerId) {
+              setGlobalChatViewerId(null); closedSomething = true;
+            } else if (state.selectedCharId) {
+              setSelectedCharId(null); closedSomething = true;
+            } else if (state.isSidebarOpen) {
+              setIsSidebarOpen(false); closedSomething = true;
+            } else if (state.selectedFolderId) {
+              closedSomething = true;
+              if (['trash', 'duplicates', 'autotagger', 'recommender', 'chatviewer'].includes(state.selectedFolderId)) {
+                setSelectedFolderId(null);
+              } else {
+                import('./lib/db').then(({ getFolders }) => {
+                  getFolders().then(allFolders => {
+                    const current = allFolders.find(f => f.id === state.selectedFolderId);
+                    setSelectedFolderId(current?.parentId || null);
+                  });
+                });
+              }
+            }
+
+            if (!closedSomething) {
+              if (canGoBack) {
+                window.history.back();
+              } else {
+                CapacitorApp.exitApp();
+              }
+            }
+          });
+        }
+      });
+    }).catch(() => {});
     
     return () => {
-      if (unsubscribeDrive) unsubscribeDrive();
+      if (listenerPromise) listenerPromise.then(l => l.remove());
     };
   }, []);
 
@@ -221,7 +403,11 @@ export default function App() {
             onOpenSettings={() => setIsSettingsOpen(true)} 
           />
         ) : selectedFolderId === 'chatviewer' ? (
-          <ChatViewer onClose={() => { setSelectedFolderId(null); setRefreshKey(prev => prev + 1); }} />
+          <ChatViewer 
+            onClose={() => { setSelectedFolderId(null); setRefreshKey(prev => prev + 1); }} 
+            onOpenImport={handleOpenImportModal}
+            refreshKey={refreshKey}
+          />
         ) : (
           <CharacterList
             key={selectedFolderId}
@@ -242,11 +428,10 @@ export default function App() {
             <div className="absolute inset-0 z-50 bg-slate-900">
               <CharacterDetail
                 id={selectedCharId}
-                onBack={() => {
-                  setSelectedCharId(null);
-                  setRefreshKey(prev => prev + 1);
-                }}
+                onBack={handleCloseCharacterDetail}
                 onOpenChat={setGlobalChatViewerId}
+                onOpenImport={handleOpenImportModal}
+                refreshKey={refreshKey}
               />
             </div>
           )}
@@ -266,6 +451,8 @@ export default function App() {
               initialChatId={globalChatViewerId} 
               singleMode={true}
               onClose={() => setGlobalChatViewerId(null)} 
+              onOpenImport={handleOpenImportModal}
+              refreshKey={refreshKey}
             />
           </motion.div>
         )}
@@ -273,9 +460,13 @@ export default function App() {
 
       <ImportModal
         isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setImportModalInitialFiles(null);
+        }}
         onImported={() => setRefreshKey(prev => prev + 1)}
         folderId={selectedFolderId}
+        initialFiles={importModalInitialFiles}
       />
 
       <SettingsModal

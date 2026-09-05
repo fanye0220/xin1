@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.silicon.tavern',
-  appName: 'TavernCards',
+  appId: 'com.miu.app',
+  appName: 'MIU',
   webDir: 'dist',
   server: {
     cleartext: true
@@ -10,6 +10,10 @@ const config: CapacitorConfig = {
   plugins: {
     CapacitorHttp: {
       enabled: false,
+    },
+    FirebaseAuthentication: {
+      skipNativeAuth: false,
+      providers: ['google.com'],
     },
   },
 };

@@ -1,7 +1,9 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signInWithCredential } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { getFolders, getCachedMeta, getCharacter, getAllChatsMetadata, getChatById, saveFolder, saveCharacter, saveChatsBulk, invalidateCache, initDB } from './db';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -60,6 +62,27 @@ export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
+  // Check for redirect result on initialization (for Android WebView support)
+  import('firebase/auth').then(({ getAuth, getRedirectResult, GoogleAuthProvider }) => {
+    const authInstance = getAuth();
+    getRedirectResult(authInstance).then(result => {
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          cachedAccessToken = credential.accessToken;
+          const expiresAt = Date.now() + 3500 * 1000;
+          localStorage.setItem('google_drive_access_token', cachedAccessToken);
+          localStorage.setItem('google_drive_token_expiration', expiresAt.toString());
+          currentAccessToken = cachedAccessToken;
+          startAutoSyncRunner();
+          if (onAuthSuccess) onAuthSuccess(result.user, cachedAccessToken);
+        }
+      }
+    }).catch(e => {
+      console.error("Redirect auth error:", e);
+    });
+  });
+
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
       if (cachedAccessToken) {
@@ -116,19 +139,39 @@ function stopAutoSyncRunner() {
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Failed to get access token from Firebase Auth');
+    let resultUser;
+    let resultAccessToken;
+
+    if (Capacitor.isNativePlatform()) {
+      const result = await FirebaseAuthentication.signInWithGoogle({ scopes: ['https://www.googleapis.com/auth/drive.file'] });
+      
+      if (result.credential?.idToken) {
+        const firebaseCred = GoogleAuthProvider.credential(result.credential.idToken, result.credential.accessToken);
+        const authResult = await signInWithCredential(auth, firebaseCred);
+        resultUser = authResult.user;
+        resultAccessToken = result.credential.accessToken;
+      } else {
+        throw new Error('No credential returned from native Google Sign-In');
+      }
+    } else {
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (!credential?.accessToken) {
+        throw new Error('Failed to get access token from Firebase Auth');
+      }
+      resultUser = result.user;
+      resultAccessToken = credential.accessToken;
     }
 
-    cachedAccessToken = credential.accessToken;
+    cachedAccessToken = resultAccessToken;
     const expiresAt = Date.now() + 3500 * 1000;
-    localStorage.setItem('google_drive_access_token', cachedAccessToken);
-    localStorage.setItem('google_drive_token_expiration', expiresAt.toString());
-    currentAccessToken = cachedAccessToken;
+    if (cachedAccessToken) {
+      localStorage.setItem('google_drive_access_token', cachedAccessToken);
+      localStorage.setItem('google_drive_token_expiration', expiresAt.toString());
+      currentAccessToken = cachedAccessToken;
+    }
     startAutoSyncRunner();
-    return { user: result.user, accessToken: cachedAccessToken };
+    return { user: resultUser as User, accessToken: cachedAccessToken! };
   } catch (error: any) {
     console.error('Sign in error:', error);
     throw error;
@@ -142,6 +185,9 @@ export const getAccessToken = async (): Promise<string | null> => {
 };
 
 export const logout = async () => {
+  if (Capacitor.isNativePlatform()) {
+    await FirebaseAuthentication.signOut();
+  }
   await auth.signOut();
   cachedAccessToken = null;
   localStorage.removeItem('google_drive_access_token');
@@ -201,18 +247,6 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
       return m;
   });
   zip.file("memos.json", JSON.stringify(processedMemos));
-
-  // Settings
-  onProgress("正在导出系统配置...");
-  const appSettings: any = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    // Don't backup Drive tokens
-    if (key && !key.startsWith("google_drive_")) {
-      appSettings[key] = localStorage.getItem(key);
-    }
-  }
-  zip.file("settings.json", JSON.stringify(appSettings));
 
   // Compatible Export layout inside the same Backup Zip
   const chars = await getCachedMeta();
@@ -301,8 +335,55 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
 }
 
 export async function uploadBackupToDrive(accessToken: string, onProgress: (msg: string) => void, isAutoBackup: boolean = false): Promise<void> {
-  const { syncLibraryToCloud } = await import('./cloudDrive');
-  await syncLibraryToCloud(accessToken, onProgress);
+  onProgress("正在打包完整备份...");
+  const zipBlob = await exportAllDataForBackup(onProgress);
+
+  const folderId = await getOrCreateBackupFolder(accessToken);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = isAutoBackup
+    ? `MIU_AutoBackup_${timestamp}.zip`
+    : `MIU_Backup_${timestamp}.zip`;
+
+  onProgress("正在创建云端备份文件...");
+  const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: filename,
+      parents: [folderId],
+      mimeType: "application/zip",
+    }),
+  });
+  if (!createRes.ok) {
+    throw new Error(`创建云端备份失败: HTTP ${createRes.status}`);
+  }
+  const created = await createRes.json();
+  const fileId = created.id;
+  if (!fileId) {
+    throw new Error("云端返回的备份文件 ID 无效");
+  }
+
+  onProgress("正在上传完整备份...");
+  const uploadRes = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/zip",
+      },
+      body: zipBlob,
+    },
+  );
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => "");
+    throw new Error(`备份上传失败: ${uploadRes.status} ${errText}`);
+  }
+
+  onProgress("完整备份上传完成");
 }
 
 export async function listBackupsFromDrive(accessToken: string) {

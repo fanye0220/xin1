@@ -1,9 +1,9 @@
 import { getFallbackAvatar } from '../lib/avatar';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload, Send, Loader2 } from 'lucide-react';
-import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders, resolveFolderPath } from '../lib/db';
+import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload, Send, Loader2, Share2 } from 'lucide-react';
+import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders, resolveFolderPath, getCachedMeta } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
@@ -14,17 +14,21 @@ import { CharacterRegexSection } from './CharacterRegexSection';
 import { CharacterChatsSection } from './CharacterChatsSection';
 import { CharacterMemosSection } from './CharacterMemosSection';
 import JSZip from 'jszip';
-import { isAndroid, saveToGallery, shareFileOnAndroid, readLocalFileBuffer } from '../lib/appBridge';
+import { isAndroid, saveToGallery, shareFileOnAndroid, exportFileToMIU, readLocalFileBuffer } from '../lib/appBridge';
 
 interface Props {
   id: string;
   onBack: () => void;
   onOpenChat?: (chatId: string) => void;
+  onOpenImport?: (files?: FileList | File[]) => void;
+  refreshKey?: number;
 }
 
-export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
+// memo 化: 防止父组件里无关的状态变化(比如列表滚动位置、其他弹窗开关)
+// 连带触发这个 1700+ 行的大组件整体重渲染。
+export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpenChat, onOpenImport, refreshKey }: Props) {
   const [character, setCharacter] = useState<CharacterCard | null>(null);
-  const [activeTab, setActiveTab] = useState<'profile' | 'greetings' | 'worldbook' | 'regex' | 'chats' | 'memos'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'greetings' | 'worldbook' | 'regex' | 'chats' | 'memos' | 'data_viewer'>('profile');
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showExportAlert, setShowExportAlert] = useState(false);
@@ -51,13 +55,25 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     getCharacter(id).then(async (char) => {
       setCharacter(char);
       if (char) {
+        const raw = char.data;
+        const isTheme = raw?.blur_strength !== undefined || raw?.main_text_color !== undefined || raw?.chat_display !== undefined;
+        const isQR = Array.isArray(raw) ? raw.length > 0 && raw[0]?.label !== undefined : (raw?.quick_replies !== undefined || raw?.qrList !== undefined) && raw?.spec !== "chara_card_v2" && raw?.spec !== "chara_card_v3" && raw?.first_mes === undefined && raw?.personality === undefined;
+        const isScript = raw?.type === 'script' && raw?.content !== undefined && raw?.name !== undefined;
+        if (isTheme || isQR || isScript) {
+            setActiveTab('data_viewer');
+        } else if (raw.entries !== undefined && !raw.name && !raw.char_name) {
+            setActiveTab('worldbook');
+        } else {
+            setActiveTab('profile');
+        }
+
         setEditNameValue(char.name);
-        if (char.localFilePath) {
-            const { getLocalImageUrl } = await import('../lib/appBridge');
-            setAvatarUrl(getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt));
-        } else if (char.avatarBlob) {
+        if (char.avatarBlob) {
           const url = URL.createObjectURL(char.avatarBlob);
           setAvatarUrl(url);
+        } else if (char.localFilePath && char.localFilePath.match(/\.(png|jpe?g|webp|gif|bmp)$/i)) {
+            const { getLocalImageUrl } = await import('../lib/appBridge');
+            setAvatarUrl(getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt));
         } else {
           const defaultFallback = getFallbackAvatar(char.name || char.id);
           setAvatarUrl((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
@@ -73,10 +89,6 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
   const handleNameSave = async () => {
     if (!editNameValue.trim() || !character) return;
-    if (editNameValue.trim() === character.name) {
-      setIsEditingName(false);
-      return;
-    }
     
     // Deep clone data to avoid reference mutation bugs
     const updatedData = JSON.parse(JSON.stringify(character.data));
@@ -107,10 +119,6 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     setIsEditingTags(false);
     if (!character) return;
     const newTags = tagsStr.split(',').map(t => t.trim()).filter(t => t);
-    const currentTags = (character.data.data ? character.data.data.tags : character.data.tags) || [];
-    if (JSON.stringify(currentTags) === JSON.stringify(newTags)) {
-      return;
-    }
     
     let updatedData = { ...character.data };
     if (updatedData.data) {
@@ -132,8 +140,6 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const handleUpdateSource = async (sourceStr: string) => {
     setIsEditingSource(false);
     if (!character) return;
-    const currentSource = character.data?.data?.creator_notes || character.data?.creator_notes || '';
-    if (sourceStr === currentSource) return;
     
     let updatedData = { ...character.data };
     if (updatedData.data) {
@@ -158,13 +164,6 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
 
   const updateField = async (field: string, value: any) => {
     if (!character) return;
-    
-    // Check if changed
-    let currentVal = character.data?.data ? character.data.data[field] : character.data[field];
-    if (JSON.stringify(currentVal) === JSON.stringify(value)) {
-      return;
-    }
-
     const updatedChar = { ...character };
     let targetData = updatedChar.data.data ? updatedChar.data.data : updatedChar.data;
     targetData[field] = value;
@@ -211,22 +210,24 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
   const rawData = character.data;
   const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
   const isStandaloneWorldbook = rawData.entries !== undefined;
-  const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
-  const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : rawData.quick_replies !== undefined || rawData.qrList !== undefined;
-  const isScript = rawData.run !== undefined || rawData.type === 'tool' || (rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined);
-  const isSpecialType = isPreset || isTheme || isQR || isScript;
+  const isTheme = rawData?.blur_strength !== undefined || rawData?.main_text_color !== undefined || rawData?.chat_display !== undefined;
+  const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0]?.label !== undefined : (rawData?.quick_replies !== undefined || rawData?.qrList !== undefined) && rawData?.spec !== "chara_card_v2" && rawData?.spec !== "chara_card_v3" && rawData?.first_mes === undefined && rawData?.personality === undefined;
+  const isScript = rawData?.type === 'script' && rawData?.content !== undefined && rawData?.name !== undefined;
+  const isSpecialData = isTheme || isQR || isScript;
 
   const getSafeFilename = (name: string) => {
-    return name.replace(/[\\/:*?"<>|]/g, '_') || 'character';
+    return name.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5\-]/g, '_') || 'character';
   };
 
   const getNormalizedExportData = () => {
-    const exportData = JSON.parse(JSON.stringify(character.data));
-    
+    let exportData = JSON.parse(JSON.stringify(character.data || {}));
+
     // Remove avatar fields so importing clients don't get stuck on old avatar
-    if (exportData.avatar) delete exportData.avatar;
-    if (exportData.data && exportData.data.avatar) delete exportData.data.avatar;
-    
+    if (exportData && typeof exportData === 'object') {
+      if (exportData.avatar) delete exportData.avatar;
+      if (exportData.data && exportData.data.avatar) delete exportData.data.avatar;
+    }
+
     if (exportData.entries) {
       exportData.entries = normalizeWorldbookEntries(exportData.entries);
     } else if (exportData.data && exportData.data.entries) {
@@ -244,20 +245,90 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     if (exportData.data?.extensions?.character_book?.entries) {
       exportData.data.extensions.character_book.entries = normalizeWorldbookEntries(exportData.data.extensions.character_book.entries);
     }
+
+    // 保证酒馆能识别：普通角色卡若无 data 包装则补 V2 信封；标签统一放进 data.tags。
+    // 世界书/美化/预设/QR/脚本等特殊数据不套角色卡信封，保持原样。
+    const isCharacterLike =
+      !Array.isArray(exportData) &&
+      typeof exportData === 'object' &&
+      exportData !== null &&
+      exportData.type !== 'script' &&
+      exportData.entries === undefined &&
+      exportData.blur_strength === undefined &&
+      exportData.main_text_color === undefined &&
+      exportData.temperature === undefined &&
+      exportData.prompts === undefined &&
+      exportData.quick_replies === undefined &&
+      exportData.qrList === undefined &&
+      (
+        exportData.spec === 'chara_card_v2' ||
+        exportData.spec === 'chara_card_v3' ||
+        !!exportData.data ||
+        !!exportData.name ||
+        !!exportData.char_name ||
+        !!exportData.character_name
+      );
+    if (isCharacterLike) {
+      if (!exportData.data || typeof exportData.data !== 'object' || Array.isArray(exportData.data)) {
+        exportData = { spec: 'chara_card_v2', spec_version: '2.0', data: exportData };
+      }
+      const inner = exportData.data;
+      if (!Array.isArray(inner.tags)) {
+        inner.tags = Array.isArray(exportData.tags) ? exportData.tags : [];
+      }
+      if (exportData.tags && exportData.data !== exportData) {
+        delete exportData.tags;
+      }
+    }
+
     return exportData;
   };
 
-  const handleExportJson = async () => {
-    const jsonStr = JSON.stringify(getNormalizedExportData(), null, 2);
-    const safeName = getSafeFilename(character.name);
-    const exportFileName = `${safeName}.json`;
+  const getExportBaseName = async () => {
+      const importedName =
+        character.autoImportFilename
+          ?.split("/")
+          .pop()
+          ?.replace(/\.[^.]+$/, "") || "";
+      if (importedName) return importedName;
 
+      const allMeta = await getCachedMeta();
+      const sameNameChars = allMeta
+        .filter(
+          (meta) =>
+            !meta.deletedAt &&
+            meta.name?.trim() === character.name?.trim(),
+        )
+        .sort(
+          (a, b) =>
+            a.createdAt - b.createdAt ||
+            a.id.localeCompare(b.id),
+        );
+      const duplicateIndex = sameNameChars.findIndex(
+        (meta) => meta.id === character.id,
+      );
+      const baseName = getSafeFilename(character.name);
+      return duplicateIndex > 0
+        ? `${baseName}_${duplicateIndex}`
+        : baseName;
+    };
+
+    const handleExportJson = async (share: boolean = false) => {
+    const jsonStr = JSON.stringify(getNormalizedExportData(), null, 2);
+    const safeName = await getExportBaseName();
+    const exportFileName = `${safeName}.json`;
     if (isAndroid()) {
         const bytes = new TextEncoder().encode(jsonStr);
-        await shareFileOnAndroid(exportFileName, bytes.buffer, 'application/json');
+        if (share) {
+            await shareFileOnAndroid(exportFileName, bytes.buffer, 'application/json');
+        } else {
+            const savedPath = await exportFileToMIU(exportFileName, bytes.buffer, 'application/json', false);
+            if (savedPath) {
+                alert(`导出成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+            }
+        }
         return;
     }
-
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -267,9 +338,9 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportPng = async () => {
+  const handleExportPng = async (share: boolean = false) => {
     if (isPreset || isStandaloneWorldbook || isTheme || isQR || isScript) {
-      handleExportJson();
+      handleExportJson(share);
       return;
     }
 
@@ -286,11 +357,18 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
         const buffer = localBuffer || await baseBlob!.arrayBuffer();
         const newBuffer = injectTavernData(buffer, getNormalizedExportData());
         
-        const safeName = getSafeFilename(character.name);
+        const safeName = await getExportBaseName();
         const exportFileName = `${safeName}.png`;
         
         if (isAndroid()) {
-            await shareFileOnAndroid(exportFileName, newBuffer, 'image/png');
+            if (share) {
+                await shareFileOnAndroid(exportFileName, newBuffer, 'image/png');
+            } else {
+                const savedPath = await exportFileToMIU(exportFileName, newBuffer, 'image/png', false);
+                if (savedPath) {
+                    alert(`导出成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+                }
+            }
         } else {
             const blob = new Blob([newBuffer], { type: 'image/png' });
             const url = URL.createObjectURL(blob);
@@ -303,11 +381,11 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
       } catch (e) {
         console.error("Failed to export PNG", e);
         if (!isPreset && !isStandaloneWorldbook) setShowExportAlert(true);
-        handleExportJson();
+        handleExportJson(share);
       }
     } else {
       if (!isPreset && !isStandaloneWorldbook) setShowExportAlert(true);
-      handleExportJson();
+      handleExportJson(share);
     }
   };
 
@@ -428,7 +506,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                 {isSendingToST ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 text-blue-400 group-hover:text-blue-300" />}
               </button>
             )}
-            <button onClick={handleExportPng} className="p-2 rounded-full hover:bg-white/10 transition" title="导出">
+                        
+            <button onClick={() => handleExportPng(false)} className="p-2 rounded-full hover:bg-white/10 transition" title={isAndroid() ? "导出到MIU目录" : "下载"}>
               <Download className="w-5 h-5" />
             </button>
             <button onClick={() => setShowDeleteConfirm(true)} className="p-2 rounded-full hover:bg-red-500/20 text-red-400 transition" title="删除">
@@ -506,6 +585,22 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
             src={avatarUrl}
             alt={character.name}
             onClick={() => setShowAvatarViewer(true)}
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              if (character.avatarBlob) {
+                  const blobUrl = URL.createObjectURL(character.avatarBlob);
+                  if (target.src !== blobUrl && !target.src.startsWith('blob:')) {
+                      target.src = blobUrl;
+                      setAvatarUrl(blobUrl);
+                      return;
+                  }
+              }
+              const fallback = getFallbackAvatar(character.name || character.id);
+              if (target.src !== fallback) {
+                 target.src = fallback;
+                 setAvatarUrl(fallback);
+              }
+            }}
             className="w-32 h-32 rounded-full object-cover border-4 border-white/20 shadow-2xl cursor-pointer hover:scale-105 transition-transform"
           />
           {isEditingName ? (
@@ -678,7 +773,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                           if (isEditingTags) {
                             handleUpdateTags(tempTags);
                           } else {
-                            setTempTags(((data.tags || (data.data && data.data.tags)) || []).join(', '));
+                            setTempTags((data.tags || []).join(', '));
                             setIsEditingTags(true);
                           }
                         }}>
@@ -712,8 +807,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                         </div>
                       ) : (
                         <div className="bg-white/5 rounded-xl px-3 py-2 text-sm text-white/80 min-h-[36px] flex flex-wrap gap-1">
-                          {(data.tags || (data.data && data.data.tags)) && (data.tags || (data.data && data.data.tags)).length > 0 ? (
-                            (data.tags || (data.data && data.data.tags)).map((tag: string, i: number) => (
+                          {data.tags && data.tags.length > 0 ? (
+                            data.tags.map((tag: string, i: number) => (
                               <span key={i} className="bg-white/10 px-2 py-0.5 rounded-md text-xs">{tag}</span>
                             ))
                           ) : (
@@ -783,27 +878,30 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-4 gap-2 py-3 mb-2 overflow-x-auto hide-scrollbar sticky top-16 z-20">
-          {[
+        <div className="sticky top-[72px] z-20 -mx-4 px-4 py-3 mb-4">
+          <div className="flex gap-2 overflow-x-auto hide-scrollbar">
+          {(isSpecialData ? [
+             { id: 'data_viewer', icon: User, label: '数据详情' },
+          ] : [
             ...(!isStandaloneWorldbook ? [
-              { id: 'profile', icon: User, label: isSpecialType ? '数据详情' : '档案' },
+              { id: 'profile', icon: User, label: isPreset ? '预设条目' : '档案' },
             ] : []),
-            ...(!isSpecialType && !isStandaloneWorldbook ? [
+            ...(!isPreset && !isStandaloneWorldbook ? [
               { id: 'greetings', icon: MessageSquare, label: '开场白' },
             ] : []),
-            ...(!isSpecialType ? [
+            ...(!isPreset ? [
               { id: 'worldbook', icon: Book, label: '世界书' },
             ] : []),
-            ...(!isSpecialType && !isStandaloneWorldbook ? [
+            ...(!isPreset && !isStandaloneWorldbook ? [
               { id: 'regex', icon: Edit2, label: '正则替换' },
             ] : []),
-            ...(!isSpecialType && !isStandaloneWorldbook ? [
+            ...(!isPreset && !isStandaloneWorldbook ? [
               { id: 'chats', icon: MessageSquare, label: '聊天记录' },
             ] : []),
-            ...(!isSpecialType && !isStandaloneWorldbook ? [
+            ...(!isPreset && !isStandaloneWorldbook ? [
               { id: 'memos', icon: StickyNote, label: '备忘录' },
             ] : []),
-          ].map((tab) => (
+          ]).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
@@ -817,12 +915,35 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
               {tab.label}
             </button>
           ))}
+          </div>
         </div>
 
         {/* Content Area - Glassmorphism Card */}
         <div className="flex-1 px-2 sm:px-4 pb-32">
           <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl min-h-[50vh] [.light-theme_&]:bg-[#FCFCFC]/70 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5 [.light-theme_&]:shadow-xl">
             <AnimatePresence mode="wait">
+
+              {activeTab === 'data_viewer' && (
+                <motion.div
+                  key="data_viewer"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="space-y-6"
+                >
+                  <div className="bg-[#0f111a] rounded-xl overflow-hidden border border-white/5">
+                      <div className="p-4 border-b border-white/5 bg-black/20 flex items-center justify-between">
+                          <h3 className="text-[15px] font-medium text-white/90">原生数据 (JSON)</h3>
+                      </div>
+                      <div className="p-4 overflow-auto max-h-[70vh] custom-scrollbar">
+                          <pre className="text-[13px] text-slate-300 font-mono whitespace-pre-wrap break-all">
+                              {JSON.stringify(rawData, null, 2)}
+                          </pre>
+                      </div>
+                  </div>
+                </motion.div>
+              )}
+
               {activeTab === 'profile' && (
                 <motion.div
                   key="profile"
@@ -831,9 +952,9 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                   exit={{ opacity: 0, x: 20 }}
                   className="space-y-6"
                 >
-                  {isSpecialType ? (
+                  {isPreset ? (
                     <div className="space-y-6">
-                      {isPreset && rawData.prompts && rawData.prompts.length > 0 && (
+                      {rawData.prompts && rawData.prompts.length > 0 && (
                         <div className="space-y-4">
                           <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">提示词条目 (Prompts)</h3>
                           {rawData.prompts.map((prompt: any, i: number) => (
@@ -844,45 +965,30 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                         </div>
                       )}
                       
-                      {isPreset && rawData.system_prompt && <Section title="系统提示词 (System Prompt)" content={rawData.system_prompt} />}
-                      {isPreset && rawData.post_history_instructions && <Section title="历史后提示词 (Post History Instructions)" content={rawData.post_history_instructions} />}
+                      {rawData.system_prompt && <Section title="系统提示词 (System Prompt)" content={rawData.system_prompt} />}
+                      {rawData.post_history_instructions && <Section title="历史后提示词 (Post History Instructions)" content={rawData.post_history_instructions} />}
                       
-                      {isPreset && (rawData.temperature !== undefined || rawData.top_p !== undefined) && (
-                        <div className="space-y-4">
-                          <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">生成参数 (Generation Settings)</h3>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                            {rawData.temperature !== undefined && <div><span className="text-white/50">Temperature:</span> {rawData.temperature}</div>}
-                            {rawData.top_p !== undefined && <div><span className="text-white/50">Top P:</span> {rawData.top_p}</div>}
-                            {rawData.top_k !== undefined && <div><span className="text-white/50">Top K:</span> {rawData.top_k}</div>}
-                            {rawData.rep_pen !== undefined && <div><span className="text-white/50">Rep Pen:</span> {rawData.rep_pen}</div>}
-                            {rawData.presence_penalty !== undefined && <div><span className="text-white/50">Presence Pen:</span> {rawData.presence_penalty}</div>}
-                            {rawData.frequency_penalty !== undefined && <div><span className="text-white/50">Frequency Pen:</span> {rawData.frequency_penalty}</div>}
-                          </div>
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">生成参数 (Generation Settings)</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                          {rawData.temperature !== undefined && <div><span className="text-white/50">Temperature:</span> {rawData.temperature}</div>}
+                          {rawData.top_p !== undefined && <div><span className="text-white/50">Top P:</span> {rawData.top_p}</div>}
+                          {rawData.top_k !== undefined && <div><span className="text-white/50">Top K:</span> {rawData.top_k}</div>}
+                          {rawData.rep_pen !== undefined && <div><span className="text-white/50">Rep Pen:</span> {rawData.rep_pen}</div>}
+                          {rawData.presence_penalty !== undefined && <div><span className="text-white/50">Presence Pen:</span> {rawData.presence_penalty}</div>}
+                          {rawData.frequency_penalty !== undefined && <div><span className="text-white/50">Frequency Pen:</span> {rawData.frequency_penalty}</div>}
                         </div>
-                      )}
-
-                      {(!isPreset || isTheme || isQR || isScript) && (
-                         <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-white/90 border-b border-white/10 pb-2">
-                                {isTheme ? '主题美化配置 (Theme config)' : isQR ? '快速回复配置 (QR config)' : isScript ? '脚本配置 (Script config)' : '数据内容 (Raw Data)'}
-                            </h3>
-                            <div className="bg-black/30 p-4 rounded-xl overflow-x-auto">
-                                <pre className="text-xs sm:text-sm text-white/80 font-mono">
-                                    {JSON.stringify(rawData, null, 2)}
-                                </pre>
-                            </div>
-                         </div>
-                      )}
+                      </div>
                     </div>
                   ) : (
                     <>
-                      <Section title="描述 (Description)" content={data.description || (data.data && data.data.description)} onSave={(val) => updateField('description', val)} />
-                      <Section title="性格 (Personality)" content={data.personality || (data.data && data.data.personality)} onSave={(val) => updateField('personality', val)} />
-                      <Section title="场景 (Scenario)" content={data.scenario || (data.data && data.data.scenario)} onSave={(val) => updateField('scenario', val)} />
-                      <Section title="示例对话 (Mes Example)" content={data.mes_example || (data.data && data.data.mes_example)} onSave={(val) => updateField('mes_example', val)} />
-                      <Section title="作者备注 (Creator's Notes)" content={data.creator_notes || (data.data && data.data.creator_notes)} onSave={(val) => updateField('creator_notes', val)} />
-                      <Section title="系统提示词 (System Prompt)" content={data.system_prompt || (data.data && data.data.system_prompt)} onSave={(val) => updateField('system_prompt', val)} />
-                      <Section title="历史后提示词 (Post History Instructions)" content={data.post_history_instructions || (data.data && data.data.post_history_instructions)} onSave={(val) => updateField('post_history_instructions', val)} />
+                      <Section title="描述 (Description)" content={data.description} onSave={(val) => updateField('description', val)} />
+                      <Section title="性格 (Personality)" content={data.personality} onSave={(val) => updateField('personality', val)} />
+                      <Section title="场景 (Scenario)" content={data.scenario} onSave={(val) => updateField('scenario', val)} />
+                      <Section title="示例对话 (Mes Example)" content={data.mes_example} onSave={(val) => updateField('mes_example', val)} />
+                      <Section title="作者备注 (Creator's Notes)" content={data.creator_notes} onSave={(val) => updateField('creator_notes', val)} />
+                      <Section title="系统提示词 (System Prompt)" content={data.system_prompt} onSave={(val) => updateField('system_prompt', val)} />
+                      <Section title="历史后提示词 (Post History Instructions)" content={data.post_history_instructions} onSave={(val) => updateField('post_history_instructions', val)} />
                       
                       {character && (
                         <QuickRepliesSection 
@@ -903,7 +1009,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                   exit={{ opacity: 0, x: 20 }}
                   className="space-y-6"
                 >
-                  <Section title="首条消息" content={data.first_mes || (data.data && data.data.first_mes)} onSave={(val) => updateField('first_mes', val)} />
+                  <Section title="首条消息" content={data.first_mes} onSave={(val) => updateField('first_mes', val)} />
                   
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2">
@@ -1028,7 +1134,12 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                               const file = e.target.files?.[0];
                               if (!file) return;
                               try {
-                                const text = await file.text();
+                                const text = await new Promise<string>((resolve, reject) => {
+                                  const reader = new FileReader();
+                                  reader.onload = (e) => resolve(e.target?.result as string);
+                                  reader.onerror = reject;
+                                  reader.readAsText(file, "utf-8");
+                                });
                                 const json = JSON.parse(text);
                                 
                                 // Handle both array format and object format (like the provided example)
@@ -1099,6 +1210,8 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
                    regexScripts={(character.data?.data?.extensions || character.data?.extensions || {}).regex_scripts || []} 
                    avatar={avatarUrl}
                    onOpenChat={onOpenChat}
+                   onOpenImport={onOpenImport}
+                   refreshKey={refreshKey}
                 />
               )}
 
@@ -1130,7 +1243,7 @@ export function CharacterDetail({ id, onBack, onOpenChat }: Props) {
       )}
     </motion.div>
   );
-}
+});
 
 function FullScreenTextModal({ 
   isOpen,
@@ -1292,7 +1405,7 @@ function TextPreview({ title, content, onSave, initialEditMode }: { title: strin
 
       <button 
         onClick={() => { setIsExpanded(false); setIsEditing(false); }}
-        className="mt-4 flex items-center justify-center gap-1 text-purple-400 text-sm font-medium py-2 hover:bg-white/10 bg-white/5 rounded-lg transition w-full cursor-pointer"
+        className="mt-3 flex items-center justify-center gap-1 text-purple-400 text-sm font-medium py-1.5 hover:bg-white/5 rounded-lg transition w-full cursor-pointer"
       >
         <ChevronUp className="w-4 h-4" /> 收起 
       </button>
@@ -1384,6 +1497,7 @@ function AlternateGreetingCard({ index, content, onSave, onDelete }: { key?: str
   );
 }
 
+
 function Section({ title, content, onSave }: { title: string; content?: string; onSave?: (val: string) => void }) {
   const [isAdding, setIsAdding] = useState(false);
 
@@ -1418,234 +1532,144 @@ function Section({ title, content, onSave }: { title: string; content?: string; 
   );
 }
 
-export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpdate: (newBook: any) => void, onDelete: () => void }) {
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<any>(null);
+
+export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any; onUpdate: (newBook: any) => void; onDelete: () => void }) {
   const [showControls, setShowControls] = useState(false);
   const [viewingEntryIndex, setViewingEntryIndex] = useState<number | null>(null);
+  const [editingEntryIndex, setEditingEntryIndex] = useState<number | null>(null);
+  const [editingEntry, setEditingEntry] = useState<any>(null);
 
-  if (!book || (!book.entries && !(book.data && book.data.entries))) return null;
-  
-  // Always work with an array internally, handling V3 format (book.data.entries)
-  let entries: any[] = [];
-  if (Array.isArray(book.entries)) {
-    entries = book.entries;
-  } else if (typeof book.entries === 'object') {
-    entries = Object.values(book.entries);
-  } else if (book.data && book.data.entries) {
-    entries = Array.isArray(book.data.entries) ? book.data.entries : Object.values(book.data.entries);
-  }
-
-  // Helper to save entries in the format Tavern expects
-  const saveEntries = (newEntriesArray: any[]) => {
-    if (book.data && book.data.entries) {
-      // V3 format
-      onUpdate({ ...book, data: { ...book.data, entries: newEntriesArray } });
-    } else {
-      onUpdate({ ...book, entries: newEntriesArray });
-    }
-  };
-
-  const handleEdit = (index: number) => {
-    const entry = entries[index];
-    const keysArray = entry.key || entry.keys || [];
-    const keysStr = Array.isArray(keysArray) ? keysArray.join(', ') : keysArray;
-    const isEnabled = entry.disable !== undefined ? !entry.disable : entry.enabled !== false;
-    const order = entry.order !== undefined ? entry.order : (entry.insertion_order || 50);
-
-    setEditForm({
-      ...entry,
-      content: entry.content || entry.entry || '',
-      keys: keysStr,
-      enabled: isEnabled,
-      insertion_order: order
-    });
-    setEditingIndex(index);
-  };
+  const entries = book.entries ? (Array.isArray(book.entries) ? book.entries : Object.values(book.entries)) : [];
 
   const handleAdd = () => {
-    setEditForm({
-      comment: '',
-      keys: '',
-      content: '',
-      insertion_order: 50,
-      enabled: true
-    });
-    setEditingIndex(-1);
+    setEditingEntry({ keys: [], content: '', name: '', comment: '', order: 100, constant: false, selective: true, extensions: { position: 1 } });
+    setEditingEntryIndex(-1);
   };
 
-  const handleSave = () => {
+    const handleToggleEnable = (i: number) => {
     const newEntries = [...entries];
-    const keysArray = typeof editForm.keys === 'string' 
-      ? editForm.keys.split(',').map((k: string) => k.trim()).filter(Boolean) 
-      : editForm.keys;
-    
-    const formattedForm = {
-      ...editForm,
-      key: keysArray, // Tavern uses 'key'
-      keys: keysArray, // Keep 'keys' for compatibility
-      content: editForm.content, // Ensure content is saved
-      entry: editForm.content, // Save to 'entry' for V3 compatibility
-      order: parseInt(editForm.insertion_order) || 50, // Tavern uses 'order'
-      insertion_order: parseInt(editForm.insertion_order) || 50,
-      disable: !editForm.enabled, // Tavern uses 'disable'
-      enabled: editForm.enabled
-    };
-
-    if (editingIndex === -1) {
-      newEntries.push(formattedForm);
-    } else if (editingIndex !== null) {
-      newEntries[editingIndex] = formattedForm;
+    if (newEntries[i].enabled !== undefined) {
+      newEntries[i].enabled = !newEntries[i].enabled;
+    } else {
+      newEntries[i].enabled = false; // default is true if undefined, so toggle makes it false
     }
-    saveEntries(newEntries);
-    setEditingIndex(null);
+    const newBook = { ...book };
+    if (Array.isArray(book.entries)) {
+       newBook.entries = newEntries;
+    } else {
+       const obj: any = {};
+       newEntries.forEach((e: any, idx: number) => { obj[String(idx)] = { ...e, uid: e.uid !== undefined ? e.uid : idx }; });
+       newBook.entries = obj;
+    }
+    onUpdate(newBook);
   };
 
-  const handleDelete = (index: number) => {
-    if (confirm('确定要删除这条世界书记录吗？')) {
+  const handleEdit = (i: number) => {
+    setEditingEntry({ ...entries[i] });
+    setEditingEntryIndex(i);
+  };
+
+  const handleDelete = (i: number) => {
+    if (confirm('确定要删除此世界书条目吗？')) {
       const newEntries = [...entries];
-      newEntries.splice(index, 1);
-      saveEntries(newEntries);
+      newEntries.splice(i, 1);
+      const newBook = { ...book };
+      if (Array.isArray(book.entries)) {
+         newBook.entries = newEntries;
+      } else {
+         const obj: any = {};
+         newEntries.forEach((e: any, idx: number) => { obj[String(idx)] = { ...e, uid: e.uid !== undefined ? e.uid : idx }; });
+         newBook.entries = obj;
+      }
+      onUpdate(newBook);
     }
   };
 
-  const handleToggleEnable = (index: number) => {
+  const saveEntry = () => {
     const newEntries = [...entries];
-    const entry = newEntries[index];
-    const currentEnabled = entry.disable !== undefined ? !entry.disable : entry.enabled !== false;
-    const newEnabled = !currentEnabled;
-    newEntries[index] = { 
-      ...entry, 
-      enabled: newEnabled,
-      disable: !newEnabled
-    };
-    saveEntries(newEntries);
+    if (editingEntryIndex === -1) {
+      newEntries.push(editingEntry);
+    } else {
+      newEntries[editingEntryIndex!] = editingEntry;
+    }
+    const newBook = { ...book };
+    if (Array.isArray(book.entries)) {
+       newBook.entries = newEntries;
+    } else {
+       const obj: any = {};
+       newEntries.forEach((e: any, idx: number) => { obj[String(idx)] = { ...e, uid: e.uid !== undefined ? e.uid : idx }; });
+       newBook.entries = obj;
+    }
+    onUpdate(newBook);
+    setEditingEntryIndex(null);
+    setEditingEntry(null);
   };
 
   const renderEditForm = () => {
-    return createPortal(
-      <AnimatePresence>
-        {editingIndex !== null && (
-            <motion.div 
-              key="worldbook-modal-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[120] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6" 
-              onClick={() => setEditingIndex(null)}
-            >
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.97, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.97, y: 20 }}
-                transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-                className="bg-slate-900 flex flex-col w-full h-full sm:h-auto sm:border border-white/10 sm:rounded-2xl shadow-2xl sm:max-w-4xl sm:max-h-[85vh] overflow-hidden"
-                onClick={e => e.stopPropagation()}
-              >
-          <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
-            <h3 className="text-lg font-semibold">{editingIndex === -1 ? '新增世界书条目' : '编辑世界书条目'}</h3>
-            <button onClick={() => setEditingIndex(null)} className="p-1 hover:bg-white/10 rounded-full">
+    if (editingEntryIndex === null) return null;
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-[#0f111a] border border-white/10 rounded-2xl p-5 sm:p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col gap-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold text-white">
+              {editingEntryIndex === -1 ? '添加世界书条目' : '编辑世界书条目'}
+            </h3>
+            <button onClick={() => setEditingEntryIndex(null)} className="p-2 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition">
               <XIcon className="w-5 h-5" />
             </button>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-5 sm:p-8 bg-slate-900 flex flex-col gap-6 custom-scrollbar">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left Column */}
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-xs font-medium text-white/70 mb-1.5 pl-1">标题 / 备注 (Comment)</label>
-                  <input 
-                    type="text" 
-                    value={editForm.comment || editForm.name || ''} 
-                    onChange={e => setEditForm({...editForm, comment: e.target.value})}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-purple-500/50 focus:bg-black/60 transition-all font-medium text-white placeholder-white/30"
-                    placeholder="例如: 角色背景、设定1"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-white/70 mb-1.5 pl-1">关键词 (用逗号分隔)</label>
-                  <input 
-                    type="text" 
-                    value={editForm.keys} 
-                    onChange={e => setEditForm({...editForm, keys: e.target.value})}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-purple-500/50 focus:bg-black/60 transition-all text-white placeholder-white/30"
-                    placeholder="例如: 酒馆, 老板, 饮料"
-                  />
-                </div>
-              </div>
-
-              {/* Right Column */}
-              <div className="space-y-5">
-                <div className="flex items-center justify-between bg-black/20 rounded-xl p-4 border border-white/5 h-[76px]">
-                  <div>
-                    <div className="text-sm font-medium text-white/90">条目状态 (Enabled)</div>
-                    <div className="text-[11px] text-white/40 mt-1">控制是否将此条目注入提示词</div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
-                    <input 
-                      type="checkbox" 
-                      checked={editForm.enabled} 
-                      onChange={e => setEditForm({...editForm, enabled: e.target.checked})}
-                      className="sr-only peer" 
-                    />
-                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500 shadow-inner"></div>
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-white/70 mb-1.5 pl-1">插入顺序 (Insertion Order)</label>
-                  <input 
-                    type="number" 
-                    value={editForm.insertion_order} 
-                    onChange={e => setEditForm({...editForm, insertion_order: e.target.value})}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-purple-500/50 focus:bg-black/60 transition-all font-mono text-white/90"
-                    placeholder="例如: 50"
-                  />
-                </div>
-              </div>
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-white/60 text-sm mb-1">关键词 (逗号分隔)</label>
+              <input 
+                type="text" 
+                value={(editingEntry.keys || []).join(', ')}
+                onChange={(e) => setEditingEntry({...editingEntry, keys: e.target.value.split(',').map((k: string)=>k.trim()).filter((k: string)=>k)})}
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+              />
             </div>
-
-            <div className="flex-1 flex flex-col min-h-0 pt-4 border-t border-white/5">
-              <label className="block text-xs font-medium text-white/70 mb-2 pl-1 flex items-center justify-between">
-                <span>条目内容 (Content)</span>
-                <span className="text-white/30 font-normal">{editForm.content?.length || 0} 字</span>
-              </label>
+            <div>
+              <label className="block text-white/60 text-sm mb-1">内容</label>
               <textarea 
-                value={editForm.content} 
-                onChange={e => setEditForm({...editForm, content: e.target.value})}
-                className="w-full flex-1 min-h-[200px] bg-black/20 border border-white/10 rounded-xl px-5 py-4 text-sm focus:outline-none focus:border-purple-500/50 focus:bg-black/40 transition-all resize-none shadow-inner leading-relaxed text-white/90 placeholder-white/20 custom-scrollbar"
-                placeholder="在此输入条目的详细内容..."
+                value={editingEntry.content || editingEntry.entry || ''}
+                onChange={(e) => setEditingEntry({...editingEntry, content: e.target.value, entry: e.target.value})}
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 min-h-[150px] resize-none"
               />
             </div>
           </div>
-
-            <div className="flex-none p-4 sm:p-6 border-t border-white/10 flex justify-end gap-2 bg-black/20">
-              <button onClick={() => setEditingIndex(null)} className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-medium text-sm transition">取消</button>
-              <button onClick={handleSave} className="px-5 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 text-white text-sm transition font-medium">保存</button>
-            </div>
-          </motion.div>
-        </motion.div>
-        )}
-      </AnimatePresence>,
-      document.body
+          
+          <div className="flex justify-end gap-2 mt-2">
+            <button onClick={() => setEditingEntryIndex(null)} className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white hover:bg-white/10 rounded-xl transition">
+              取消
+            </button>
+            <button onClick={saveEntry} className="px-4 py-2 text-sm font-medium bg-purple-500 hover:bg-purple-600 text-white rounded-xl transition shadow-lg shadow-purple-500/20">
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
     );
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center mb-4">
+    <div className="flex flex-col gap-4 w-full h-full relative">
+      <div className="flex items-center justify-between mb-2">
         <div>
-          <h3 className="text-xl font-bold">{book.name || (book.data && book.data.name) || '世界书'}</h3>
-          {(book.description || (book.data && book.data.description)) && <p className="text-white/60 text-sm mt-1">{book.description || book.data.description}</p>}
+          <h2 className="text-xl font-bold text-white mb-1">
+            {book.name || (book.data && book.data.name) || 'Worldbook'}
+          </h2>
+          <p className="text-sm text-white/60">
+            {book.description || (book.data && book.data.description) || '包含世界观、设定和背景信息'}
+          </p>
         </div>
-        <div className="flex gap-2">
-          <button
+        <div className="flex items-center gap-2">
+
+          
+          <button 
             onClick={() => {
               let exportData = book;
-              // If it's an embedded worldbook and entries is an array, convert to object for standalone export
-              if (Array.isArray(book.entries)) {
+              if (book.entries && Array.isArray(book.entries)) {
                 exportData = { ...book, entries: {} };
                 const normalizedEntries = normalizeWorldbookEntries(book.entries);
                 normalizedEntries.forEach((e: any, i: number) => {
@@ -1658,17 +1682,16 @@ export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpd
                   exportData.entries[String(i)] = { ...e, uid: e.uid !== undefined ? e.uid : i };
                 });
               }
-              
               const jsonStr = JSON.stringify(exportData, null, 2);
-              const safeName = (book.name || (book.data && book.data.name) || 'worldbook').replace(/[\\/:*?"<>|]/g, '_');
+              const safeName = (book.name || (book.data && book.data.name) || 'worldbook').replace(/[^a-zA-Z0-9_\u4e00-\u9fa5\-]/g, '_');
               const exportFileName = `${safeName}.json`;
-
               if (typeof window !== 'undefined' && !!(window as any).Android) {
-                  Promise.all([
-                      import('../lib/appBridge')
-                  ]).then(async ([{ shareFileOnAndroid }]) => {
+                  Promise.all([import('../lib/appBridge')]).then(async ([{ exportFileToMIU }]) => {
                       const bytes = new TextEncoder().encode(jsonStr);
-                      await shareFileOnAndroid(exportFileName, bytes.buffer, 'application/json');
+                      const savedPath = await exportFileToMIU(exportFileName, bytes.buffer, 'application/json', false);
+                      if (savedPath) {
+                          alert(`世界书导出成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+                      }
                   });
               } else {
                   const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -1681,7 +1704,7 @@ export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any, onUpd
               }
             }}
             className="p-2 rounded-full bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 transition"
-            title="导出世界书"
+            title={isAndroid() ? "导出到MIU目录" : "导出世界书"}
           >
             <Download className="w-5 h-5" />
           </button>

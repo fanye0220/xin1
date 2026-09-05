@@ -17,7 +17,7 @@ export function SelectQRModal({ isOpen, onClose, onSelect }: Props) {
   useEffect(() => {
     if (isOpen) {
       // Get all characters to find QRs
-      getCharacters(1, 9999).then(res => setCharacters(res.characters));
+      getCharacters(1, 99999, undefined, "", [], "newest_import", false, true).then(res => setCharacters(res.characters));
       setSelectedIds(new Set());
     }
   }, [isOpen]);
@@ -25,7 +25,7 @@ export function SelectQRModal({ isOpen, onClose, onSelect }: Props) {
   const validQRs = useMemo(() => {
     return characters.filter(c => {
       const data = c.data || {};
-      const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined : (data.quick_replies !== undefined || data.qrList !== undefined);
+      const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined && data[0].message !== undefined : (data.quick_replies !== undefined || data.qrList !== undefined);
       return isQR;
     });
   }, [characters]);

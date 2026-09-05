@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   Download,
   Copy,
+  Share2,
 } from "lucide-react";
 import { MessageContent } from "./MessageContent";
 import { ChatCleanerModal } from "./ChatCleanerModal";
@@ -62,10 +63,14 @@ export function ChatViewer({
   onClose,
   initialChatId,
   singleMode,
+  onOpenImport,
+  refreshKey,
 }: {
   onClose: () => void;
   initialChatId?: string | null;
   singleMode?: boolean;
+  onOpenImport?: (files?: FileList | File[]) => void;
+  refreshKey?: number;
 }) {
   const [savedChats, setSavedChats] = useState<
     (Omit<ChatLog, "messages"> & {
@@ -101,14 +106,31 @@ export function ChatViewer({
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
 
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
-  const [bindSearchQuery, setBindSearchQuery] = useState("");
-  const [isBindDropdownOpen, setIsBindDropdownOpen] = useState(false);
   const [isMainHeaderExpanded, setIsMainHeaderExpanded] = useState(true);
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
+  // 记录 onError 兜底逻辑里给某个角色创建过的 blob URL, 换新的之前先把旧的释放掉,
+  // 避免每次头像加载失败都新建一个却不释放。
+  const fallbackAvatarUrlsRef = useRef<Record<string, string>>({});
+  const setFallbackAvatarBlobUrl = (charId: string, blob: Blob): string => {
+    const prev = fallbackAvatarUrlsRef.current[charId];
+    if (prev) URL.revokeObjectURL(prev);
+    const newUrl = URL.createObjectURL(blob);
+    fallbackAvatarUrlsRef.current[charId] = newUrl;
+    return newUrl;
+  };
+  useEffect(() => {
+    return () => {
+      Object.values(fallbackAvatarUrlsRef.current).forEach((u) =>
+        URL.revokeObjectURL(u),
+      );
+      fallbackAvatarUrlsRef.current = {};
+    };
+  }, []);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
     {},
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [characterSearchQuery, setCharacterSearchQuery] = useState("");
 
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
@@ -412,7 +434,7 @@ export function ChatViewer({
   };
 
   const loadData = async () => {
-    const chars = await getCharacters(1, 9999);
+    const chars = await getCharacters(1, 99999, undefined, "", [], "newest_import", false, false);
     setCharacters(chars.characters);
     const { getAllChatsMetadata } = await import("../lib/db");
     const chats = await getAllChatsMetadata();
@@ -422,6 +444,12 @@ export function ChatViewer({
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (refreshKey !== undefined) {
+      loadData();
+    }
+  }, [refreshKey]);
 
   useEffect(() => {
     let active = true;
@@ -478,133 +506,17 @@ export function ChatViewer({
       const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith(".zip")) {
-          if (isAndroid() && (window as any).Android?.startTempFile) {
-            const { startAndroidTempFile, appendAndroidTempFile, unzipAndroidTempFile, readLocalFileBuffer, deleteLocalGalleryFile } = await import('../lib/appBridge');
-            const tempFilename = `upload_chats_${Date.now()}.zip`;
-            await startAndroidTempFile(tempFilename);
-
-            const chunkSize = 1 * 1024 * 1024;
-            const totalChunks = Math.ceil(file.size / chunkSize);
-            for (let c = 0; c < totalChunks; c++) {
-               const chunk = file.slice(c * chunkSize, (c + 1) * chunkSize);
-               const buffer = await chunk.arrayBuffer();
-               await appendAndroidTempFile(tempFilename, buffer);
-               setImportProgress({ show: true, current: c + 1, total: totalChunks, message: `上传 ZIP 进度: ${Math.round(((c + 1)/totalChunks)*100)}%` });
-            }
-
-            setImportProgress({ show: true, current: 0, total: 100, message: '原生引擎解压聊天记录中...' });
-            const extractedRoot = `Imported_Chats_${Date.now()}`;
-            const extractedPaths = await unzipAndroidTempFile(tempFilename, extractedRoot);
-            
-            const filesToProcess = extractedPaths.filter(p => p.toLowerCase().endsWith('.json') || p.toLowerCase().endsWith('.jsonl'));
-
-            for (let j = 0; j < filesToProcess.length; j++) {
-              const absPath = filesToProcess[j];
-              const fileName = absPath.split('/').pop() || '';
-              const lowerName = fileName.toLowerCase();
-
-              if (j % 10 === 0) {
-                setImportProgress({
-                  show: true,
-                  current: j + 1,
-                  total: filesToProcess.length,
-                  message: `正在解析原生文件: ${fileName}`,
-                });
-                await new Promise((r) => setTimeout(r, 0));
-              }
-
-              try {
-                const buf = await readLocalFileBuffer(absPath);
-                if (!buf) continue;
-                const text = new TextDecoder().decode(buf);
-                deleteLocalGalleryFile(absPath).catch(console.error);
-
-                let parsedMessages = [];
-
-                if (lowerName.endsWith(".jsonl")) {
-                  const lines = text.trim().split("\n");
-                  for (let k = 0; k < lines.length; k++) {
-                    try {
-                      const parsed = JSON.parse(lines[k]);
-                      if (parsed) parsedMessages.push(parsed);
-                    } catch (e) {}
-                    if (k % 500 === 0) await new Promise((r) => setTimeout(r, 0));
-                  }
-                } else {
-                  try {
-                    const data = JSON.parse(text);
-                    if (Array.isArray(data)) parsedMessages = data;
-                    else if (data.chat && Array.isArray(data.chat))
-                      parsedMessages = data.chat;
-                    else parsedMessages = [data];
-                  } catch (err) {
-                    if (text.trim().split("\n").length > 1) {
-                      const lines = text.trim().split("\n");
-                      for (let k = 0; k < lines.length; k++) {
-                        try {
-                          const parsed = JSON.parse(lines[k]);
-                          if (parsed) parsedMessages.push(parsed);
-                        } catch (e) {}
-                        if (k % 500 === 0)
-                          await new Promise((r) => setTimeout(r, 0));
-                      }
-                    }
-                  }
-                }
-
-                if (parsedMessages.length === 0) continue;
-
-                let charId = "";
-                const pathParts = absPath.split("/");
-                if (pathParts.length > 1) {
-                  let charNameIndex = pathParts.length - 2;
-                  if (
-                    pathParts[charNameIndex] === "聊天记录" &&
-                    pathParts.length > 2
-                  ) {
-                    charNameIndex = pathParts.length - 3;
-                  }
-                  const parentFolderName = pathParts[charNameIndex];
-                  const folderMatch = characters.find(
-                    (c) =>
-                      c.name.toLowerCase() === parentFolderName.toLowerCase(),
-                  );
-                  if (folderMatch) charId = folderMatch.id;
-                }
-
-                if (!charId) {
-                  const aiMessage = parsedMessages.find(
-                    (m) => !m.is_user && m.name,
-                  );
-                  if (aiMessage && aiMessage.name) {
-                    const match = characters.find(
-                      (c) =>
-                        c.name.toLowerCase() === aiMessage.name?.toLowerCase(),
-                    );
-                    if (match) charId = match.id;
-                  }
-                }
-
-                pendingChats.push({
-                  id: crypto.randomUUID(),
-                  characterId: charId,
-                  name: fileName,
-                  messages: parsedMessages as any,
-                  createdAt: Date.now(),
-                });
-                imported++;
-              } catch (e) {
-                console.error(`Failed to parse native file: ${absPath}`, e);
-              }
-            }
-            if (isAndroid()) {
-              const { deleteLocalGalleryFile } = await import('../lib/appBridge');
-              await deleteLocalGalleryFile(extractedRoot);
-            }
-          } else {
           const { default: JSZip } = await import("jszip");
           const zip = new JSZip();
-          const loadedZip = await zip.loadAsync(file);
+          const loadedZip = await zip.loadAsync(file, {
+            decodeFileName: function (bytes: any) {
+              try {
+                return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+              } catch (e) {
+                return new TextDecoder("gbk").decode(new Uint8Array(bytes));
+              }
+            }
+          });
 
           const filesToProcess = [];
           for (const relativePath in loadedZip.files) {
@@ -640,8 +552,15 @@ export function ChatViewer({
             }
 
             try {
-              const text = await zipEntry.async("text");
-              let parsedMessages: ChatMessage[] = [];
+              const arrayBuffer = await zipEntry.async("arraybuffer");
+              const blob = new Blob([arrayBuffer]);
+              const text = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target?.result as string);
+                reader.onerror = reject;
+                reader.readAsText(blob, "utf-8");
+              });
+              let parsedMessages: any[] = [];
 
               if (lowerName.endsWith(".jsonl")) {
                 const lines = text.trim().split("\n");
@@ -650,7 +569,8 @@ export function ChatViewer({
                     const parsed = JSON.parse(lines[k]);
                     if (parsed) parsedMessages.push(parsed);
                   } catch (e) {}
-                  if (k % 500 === 0) await new Promise((r) => setTimeout(r, 0));
+                  if (k % 500 === 0)
+                    await new Promise((r) => setTimeout(r, 0));
                 }
               } else {
                 try {
@@ -707,12 +627,20 @@ export function ChatViewer({
                 }
               }
 
+              const chatName = zipEntry.name.split("/").pop() || zipEntry.name;
+              const finalMessages = parsedMessages.map((m: any) => ({
+                ...m,
+                is_user: m.is_user !== undefined ? m.is_user : m.is_name !== chatName,
+                send_date: m.send_date || Date.now(),
+                mes: m.mes || m.text || "",
+              }));
+
               pendingChats.push({
                 id: crypto.randomUUID(),
                 characterId: charId,
-                name: zipEntry.name.split("/").pop() || zipEntry.name,
-                messages: parsedMessages,
-                createdAt: Date.now(),
+                name: chatName.replace(/\.[^/.]+$/, ""),
+                messages: finalMessages,
+                createdAt: zipEntry.date ? zipEntry.date.getTime() : Date.now(),
               });
               imported++;
             } catch (e) {
@@ -722,7 +650,6 @@ export function ChatViewer({
               );
             }
           }
-          }
         } else {
           setImportProgress({
             show: true,
@@ -731,8 +658,13 @@ export function ChatViewer({
             message: `正在解析文件 ${file.name}...`,
           });
 
-          const text = await file.text();
-          let parsedMessages: ChatMessage[] = [];
+          const text = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsText(file, "utf-8");
+          });
+          let parsedMessages: any[] = [];
 
           if (file.name.toLowerCase().endsWith(".jsonl")) {
             const lines = text.trim().split("\n");
@@ -775,12 +707,20 @@ export function ChatViewer({
             if (match) charId = match.id;
           }
 
+          const chatName = file.name.replace(/\.[^/.]+$/, "");
+          const finalMessages = parsedMessages.map((m: any) => ({
+            ...m,
+            is_user: m.is_user !== undefined ? m.is_user : m.is_name !== chatName,
+            send_date: m.send_date || Date.now(),
+            mes: m.mes || m.text || "",
+          }));
+
           pendingChats.push({
             id: crypto.randomUUID(),
             characterId: charId,
-            name: file.name,
-            messages: parsedMessages,
-            createdAt: Date.now(),
+            name: chatName,
+            messages: finalMessages,
+            createdAt: file.lastModified || Date.now(),
           });
           imported++;
         }
@@ -1002,7 +942,11 @@ export function ChatViewer({
     setIsDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFileUpload(e.dataTransfer.files);
+      if (onOpenImport) {
+        onOpenImport(e.dataTransfer.files);
+      } else {
+        handleFileUpload(e.dataTransfer.files);
+      }
     }
   };
 
@@ -1025,7 +969,7 @@ export function ChatViewer({
     setDeleteChatId(id);
   };
 
-  const handleBatchExport = async () => {
+  const handleBatchExport = async (share: boolean = false) => {
     if (selectedChatIds.size === 1) {
       const chatId = Array.from(selectedChatIds)[0];
       const { getChatById } = await import("../lib/db");
@@ -1048,13 +992,16 @@ export function ChatViewer({
         if (!safeChatName.endsWith(".jsonl")) safeChatName += ".jsonl";
 
         if (isAndroid()) {
-          const { shareFileOnAndroid } = await import("../lib/appBridge");
+          const { shareFileOnAndroid, exportFileToMIU } = await import("../lib/appBridge");
           const bytes = new TextEncoder().encode(jsonlString);
-          await shareFileOnAndroid(
-            safeChatName,
-            bytes.buffer,
-            "application/jsonl",
-          );
+          if (share) {
+            await shareFileOnAndroid(safeChatName, bytes.buffer, "application/jsonl");
+          } else {
+            const savedPath = await exportFileToMIU(safeChatName, bytes.buffer, "application/jsonl", false);
+            if (savedPath) {
+                alert(`导出聊天记录成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+            }
+          }
         } else {
           const blob = new Blob([jsonlString], { type: "application/jsonl" });
           const url = URL.createObjectURL(blob);
@@ -1118,8 +1065,15 @@ export function ChatViewer({
 
     if (isAndroid()) {
       const buffer = await content.arrayBuffer();
-      const { shareFileOnAndroid } = await import("../lib/appBridge");
-      await shareFileOnAndroid(zipName, buffer, "application/zip");
+      const { shareFileOnAndroid, exportFileToMIU } = await import("../lib/appBridge");
+      if (share) {
+        await shareFileOnAndroid(zipName, buffer, "application/zip");
+      } else {
+        const savedPath = await exportFileToMIU(zipName, buffer, "application/zip", false);
+        if (savedPath) {
+            alert(`批量导出聊天记录成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+        }
+      }
     } else {
       const url = URL.createObjectURL(content);
       const a = document.createElement("a");
@@ -1155,8 +1109,27 @@ export function ChatViewer({
         else setActiveChatId(null);
       }
 
-      const { deleteChatsBulk } = await import("../lib/db");
-      await deleteChatsBulk(idsToDelete);
+      // Background deletion
+      (async () => {
+        setImportProgress({
+          show: true,
+          current: 0,
+          total: idsToDelete.length,
+          message: "正在后台删除...",
+        });
+
+        const { deleteChatsBulk } = await import("../lib/db");
+        await deleteChatsBulk(idsToDelete, (c, t, msg) => {
+          setImportProgress({
+            show: true,
+            current: c,
+            total: t,
+            message: msg + ` ${c}/${t}`,
+          });
+        });
+
+        setImportProgress({ show: false, current: 0, total: 0, message: "" });
+      })();
     }
   };
 
@@ -1181,6 +1154,41 @@ export function ChatViewer({
                 查看酒馆(Tavern)导出的 JSONL
                 聊天记录（已支持读取角色卡内的世界书和CSS正则进行渲染）
               </p>
+              <AnimatePresence>
+                {importProgress.show && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -50, x: '-50%' }}
+                    animate={{ opacity: 1, y: 0, x: '-50%' }}
+                    exit={{ opacity: 0, y: -50, x: '-50%' }}
+                    className="fixed top-12 sm:top-20 left-1/2 z-[100] bg-slate-800/90 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl p-3 sm:p-4 w-[90%] max-w-[16rem] sm:w-72 pointer-events-auto"
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <Download className="w-5 h-5 text-blue-400 animate-bounce shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-white truncate">
+                          正在导入记录
+                        </h4>
+                        <p className="text-xs text-white/50 truncate">
+                          {importProgress.message}
+                        </p>
+                      </div>
+                      <span className="text-xs font-medium text-blue-400/80 shrink-0">
+                        {importProgress.total > 0
+                          ? Math.round((importProgress.current / importProgress.total) * 100)
+                          : 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden relative">
+                      <div 
+                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300 relative"
+                        style={{ width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%` }}
+                      >
+                        <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1252,71 +1260,37 @@ export function ChatViewer({
                       className="absolute top-full right-0 mt-3 bg-slate-900 border border-white/10 rounded-2xl shadow-2xl w-64 p-4 z-40 overflow-hidden"
                     >
                       <div className="flex flex-col gap-4">
-                        <div className="flex flex-col gap-2">
-                          <label className="text-xs text-white/50 font-medium">
+                        <div className="flex flex-col gap-2 flex-1 min-h-0">
+                          <label className="text-xs text-white/50 font-medium shrink-0">
                             绑定角色获得正则效果
                           </label>
-                          {isBindDropdownOpen ? (
-                            <div className="flex flex-col bg-black/40 border border-white/20 rounded-lg overflow-hidden">
-                              <div className="flex items-center px-3 py-2 border-b border-white/10 bg-black/40">
-                                <Search className="w-4 h-4 text-white/50 mr-2 shrink-0" />
-                                <input
-                                  autoFocus
-                                  placeholder="搜索角色..."
-                                  value={bindSearchQuery}
-                                  onChange={(e) => setBindSearchQuery(e.target.value)}
-                                  className="bg-transparent border-none text-sm text-white focus:outline-none w-full"
-                                />
-                                <button onClick={() => setIsBindDropdownOpen(false)} className="text-white/50 hover:text-white p-1 rounded-md hover:bg-white/10 transition shrink-0 ml-1">
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </div>
-                              <div className="max-h-48 overflow-y-auto custom-scrollbar flex flex-col p-1">
+                          <div className="relative shrink-0 mb-2">
+                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                             <input
+                                type="text"
+                                placeholder="搜索角色..."
+                                value={characterSearchQuery}
+                                onChange={(e) => setCharacterSearchQuery(e.target.value)}
+                                className="w-full bg-black/30 border border-white/10 text-sm text-white focus:outline-none rounded-lg pl-9 pr-3 py-2"
+                             />
+                          </div>
+                          <div className="flex-1 overflow-y-auto space-y-1 max-h-48 pr-1 hide-scrollbar">
+                             <button
+                                onClick={() => handleUpdateBinding("")}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${(!activeChat.characterId && !activeCharacter?.id) ? 'bg-blue-500/20 text-blue-400' : 'text-white hover:bg-white/5'}`}
+                             >
+                                暂不绑定
+                             </button>
+                             {characters.filter(c => c.name.toLowerCase().includes(characterSearchQuery.toLowerCase())).map(c => (
                                 <button
-                                  className="w-full text-left px-3 py-2 text-sm rounded-md transition flex items-center justify-between hover:bg-white/10 text-white/70"
-                                  onClick={() => {
-                                    handleUpdateBinding("");
-                                    setIsBindDropdownOpen(false);
-                                  }}
+                                   key={c.id}
+                                   onClick={() => handleUpdateBinding(c.id)}
+                                   className={`w-full text-left px-3 py-2 rounded-lg text-sm transition truncate ${activeChat.characterId === c.id || activeCharacter?.id === c.id ? 'bg-blue-500/20 text-blue-400' : 'text-white hover:bg-white/5'}`}
                                 >
-                                  <span>暂不绑定</span>
-                                  {!(activeChat.characterId || activeCharacter?.id) && <CheckCircle2 className="w-4 h-4 text-blue-400" />}
+                                   {c.name}
                                 </button>
-                                {characters
-                                  .filter(c => c.name.toLowerCase().includes(bindSearchQuery.toLowerCase()))
-                                  .map((c) => {
-                                    const isSelected = (activeChat.characterId || activeCharacter?.id) === c.id;
-                                    return (
-                                      <button
-                                        key={c.id}
-                                        className={`w-full text-left px-3 py-2 text-sm rounded-md transition flex items-center justify-between ${isSelected ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/10 text-white/90'}`}
-                                        onClick={() => {
-                                          handleUpdateBinding(c.id);
-                                          setIsBindDropdownOpen(false);
-                                          setBindSearchQuery("");
-                                        }}
-                                      >
-                                        <span className="truncate pr-2">{c.name}</span>
-                                        {isSelected && <CheckCircle2 className="w-4 h-4 shrink-0 text-blue-400" />}
-                                      </button>
-                                    );
-                                  })}
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setIsBindDropdownOpen(true)}
-                              className="bg-black/30 hover:bg-black/50 border border-white/10 text-sm text-white focus:outline-none rounded-lg px-3 py-2.5 w-full flex items-center justify-between transition"
-                            >
-                              <span className="truncate">
-                                {activeChat.characterId || activeCharacter?.id
-                                  ? characters.find(c => c.id === (activeChat.characterId || activeCharacter?.id))?.name || "未知角色"
-                                  : "暂不绑定"}
-                              </span>
-                              <ChevronDown className="w-4 h-4 opacity-50" />
-                            </button>
-                          )}
+                             ))}
+                          </div>
                         </div>
                         {activeCharacter && (
                           <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
@@ -1363,49 +1337,6 @@ export function ChatViewer({
                 松开鼠标导入文件
               </h3>
             </div>
-          </div>
-        )}
-
-        {importProgress.show && (
-          <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-xl flex flex-col items-center justify-center pointer-events-auto">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="w-80 bg-white/10 backdrop-blur-3xl border border-white/20 p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-6"
-            >
-              <div className="w-16 h-16 bg-blue-500/20 rounded-2xl flex items-center justify-center border border-blue-500/30">
-                <Download className="w-8 h-8 text-blue-400 animate-bounce" />
-              </div>
-              <div className="text-center space-y-2 w-full">
-                <h3 className="text-white font-medium text-lg">正在导入记录</h3>
-                <p className="text-white/60 text-sm truncate max-w-full px-4">
-                  {importProgress.message}
-                </p>
-              </div>
-              <div className="w-full space-y-2">
-                <div className="flex justify-between items-center text-xs text-white/50 px-1">
-                  <span>进度</span>
-                  <span>
-                    {importProgress.total > 0
-                      ? Math.round(
-                          (importProgress.current / importProgress.total) * 100,
-                        )
-                      : 0}
-                    %
-                  </span>
-                </div>
-                <div className="h-3 w-full bg-black/40 rounded-full overflow-hidden border border-white/10 p-0.5">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300 ease-out relative"
-                    style={{
-                      width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%`,
-                    }}
-                  >
-                    <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                  </div>
-                </div>
-              </div>
-            </motion.div>
           </div>
         )}
 
@@ -1484,7 +1415,13 @@ export function ChatViewer({
                     <Trash2 className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      if (onOpenImport) {
+                        onOpenImport();
+                      } else {
+                        fileInputRef.current?.click();
+                      }
+                    }}
                     className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full text-sm transition flex items-center justify-center gap-2 shrink-0"
                   >
                     <UploadCloud className="w-4 h-4" />
@@ -1498,8 +1435,13 @@ export function ChatViewer({
                   accept=".json,.jsonl,.zip"
                   className="hidden"
                   onChange={(e) => {
-                    if (e.target.files?.length)
-                      handleFileUpload(e.target.files);
+                    if (e.target.files?.length) {
+                      if (onOpenImport) {
+                        onOpenImport(e.target.files);
+                      } else {
+                        handleFileUpload(e.target.files);
+                      }
+                    }
                   }}
                 />
               </motion.div>
@@ -1606,15 +1548,13 @@ export function ChatViewer({
                                     if (c) {
                                       if (c.avatarBlob)
                                         e.currentTarget.src =
-                                          URL.createObjectURL(c.avatarBlob);
+                                          setFallbackAvatarBlobUrl(c.id, c.avatarBlob);
                                       else if (c.hasBlobsSeparated) {
                                         import("../lib/db").then((m) =>
                                           m.getCharacterBlob(c.id).then((b) => {
                                             if (b && b.avatarBlob)
                                               e.currentTarget.src =
-                                                URL.createObjectURL(
-                                                  b.avatarBlob,
-                                                );
+                                                setFallbackAvatarBlobUrl(c.id, b.avatarBlob);
                                           }),
                                         );
                                       }
@@ -1864,15 +1804,13 @@ export function ChatViewer({
                                   const c = activeCharacter;
                                   if (c) {
                                     if (c.avatarBlob)
-                                      e.currentTarget.src = URL.createObjectURL(
-                                        c.avatarBlob,
-                                      );
+                                      e.currentTarget.src = setFallbackAvatarBlobUrl(c.id, c.avatarBlob);
                                     else if (c.hasBlobsSeparated) {
                                       import("../lib/db").then((m) =>
                                         m.getCharacterBlob(c.id).then((b) => {
                                           if (b && b.avatarBlob)
                                             e.currentTarget.src =
-                                              URL.createObjectURL(b.avatarBlob);
+                                              setFallbackAvatarBlobUrl(c.id, b.avatarBlob);
                                         }),
                                       );
                                     }
@@ -2033,7 +1971,7 @@ export function ChatViewer({
                       type="file"
                       ref={userAvatarInputRef}
                       onChange={handleUserAvatarUpload}
-                      accept="image/*"
+                      accept="image/png, image/jpeg, image/webp, image/gif"
                       className="hidden"
                     />
                   </div>
@@ -2195,8 +2133,9 @@ export function ChatViewer({
             exit={{ y: 100, opacity: 0 }}
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-black/60 backdrop-blur-xl border border-white/10 rounded-full px-4 sm:px-6 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2 sm:gap-6 w-auto max-w-[90vw] overflow-x-auto hide-scrollbar"
           >
+            
             <button
-              onClick={handleBatchExport}
+              onClick={() => handleBatchExport(false)}
               disabled={selectedChatIds.size === 0}
               className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-white/10 text-white/70 hover:text-green-400 transition disabled:opacity-50 group shrink-0"
             >

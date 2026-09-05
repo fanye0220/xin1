@@ -36,6 +36,8 @@ interface Props {
   regexScripts: any[];
   avatar?: string;
   onOpenChat?: (chatId: string) => void;
+  onOpenImport?: (files?: FileList | File[]) => void;
+  refreshKey?: number;
 }
 
 export function CharacterChatsSection({
@@ -44,6 +46,8 @@ export function CharacterChatsSection({
   regexScripts,
   avatar,
   onOpenChat,
+  onOpenImport,
+  refreshKey,
 }: Props) {
   const [chats, setChats] = useState<any[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatLog | null>(null);
@@ -67,20 +71,8 @@ export function CharacterChatsSection({
   }, []);
 
   const loadChats = async () => {
-    const { getAllChatsMetadata } = await import("../lib/db");
-    const all = await getAllChatsMetadata();
-    const list = all.filter((c) => {
-      if (c.characterId === characterId) return true;
-      if (!c.characterId) {
-        if (
-          c.firstAiName &&
-          c.firstAiName.toLowerCase() === characterName.toLowerCase()
-        ) {
-          return true;
-        }
-      }
-      return false;
-    });
+    const { getChatsMetadataForCharacter } = await import("../lib/db");
+    const list = await getChatsMetadataForCharacter(characterId, characterName);
     setChats(list.sort((a, b) => b.createdAt - a.createdAt));
   };
 
@@ -97,6 +89,12 @@ export function CharacterChatsSection({
       setUserAvatar(savedAvatar);
     }
   }, [characterId]);
+
+  useEffect(() => {
+    if (refreshKey !== undefined) {
+      loadChats();
+    }
+  }, [refreshKey]);
 
   const formatCustomTags = (text: string) => {
     if (!text) return "";
@@ -204,102 +202,17 @@ export function CharacterChatsSection({
       const file = files[i];
       try {
         if (file.name.toLowerCase().endsWith(".zip")) {
-          if (isAndroid() && (window as any).Android?.startTempFile) {
-            const { startAndroidTempFile, appendAndroidTempFile, unzipAndroidTempFile, readLocalFileBuffer, deleteLocalGalleryFile } = await import('../lib/appBridge');
-            const tempFilename = `upload_chats_${Date.now()}.zip`;
-            await startAndroidTempFile(tempFilename);
-
-            const chunkSize = 1 * 1024 * 1024;
-            const totalChunks = Math.ceil(file.size / chunkSize);
-            for (let c = 0; c < totalChunks; c++) {
-               const chunk = file.slice(c * chunkSize, (c + 1) * chunkSize);
-               const buffer = await chunk.arrayBuffer();
-               await appendAndroidTempFile(tempFilename, buffer);
-               setImportProgress({ show: true, current: c + 1, total: totalChunks, message: `上传 ZIP 进度: ${Math.round(((c + 1)/totalChunks)*100)}%` });
-            }
-
-            setImportProgress({ show: true, current: 0, total: 100, message: '原生引擎解压聊天记录中...' });
-            const extractedRoot = `Imported_Chats_${Date.now()}`;
-            const extractedPaths = await unzipAndroidTempFile(tempFilename, extractedRoot);
-            
-            const filesToProcess = extractedPaths.filter(p => p.toLowerCase().endsWith('.json') || p.toLowerCase().endsWith('.jsonl'));
-
-            for (let j = 0; j < filesToProcess.length; j++) {
-              const absPath = filesToProcess[j];
-              const fileName = absPath.split('/').pop() || '';
-              const lowerName = fileName.toLowerCase();
-
-              if (j % 10 === 0) {
-                setImportProgress({
-                  show: true,
-                  current: j + 1,
-                  total: filesToProcess.length,
-                  message: `正在解析原生文件: ${fileName}`,
-                });
-                await new Promise((r) => setTimeout(r, 0));
-              }
-
-              try {
-                const buf = await readLocalFileBuffer(absPath);
-                if (!buf) continue;
-                const text = new TextDecoder().decode(buf);
-                deleteLocalGalleryFile(absPath).catch(console.error);
-
-                let parsedMessages = [];
-
-                if (lowerName.endsWith(".jsonl")) {
-                  const lines = text.trim().split("\n");
-                  for (let k = 0; k < lines.length; k++) {
-                    try {
-                      const parsed = JSON.parse(lines[k]);
-                      if (parsed) parsedMessages.push(parsed);
-                    } catch (e) {}
-                    if (k % 500 === 0) await new Promise((r) => setTimeout(r, 0));
-                  }
-                } else {
-                  try {
-                    const data = JSON.parse(text);
-                    if (Array.isArray(data)) parsedMessages = data;
-                    else if (data.chat && Array.isArray(data.chat))
-                      parsedMessages = data.chat;
-                    else parsedMessages = [data];
-                  } catch (err) {
-                    if (text.trim().split("\n").length > 1) {
-                      const lines = text.trim().split("\n");
-                      for (let k = 0; k < lines.length; k++) {
-                        try {
-                          const parsed = JSON.parse(lines[k]);
-                          if (parsed) parsedMessages.push(parsed);
-                        } catch (e) {}
-                        if (k % 500 === 0)
-                          await new Promise((r) => setTimeout(r, 0));
-                      }
-                    }
-                  }
-                }
-
-                if (parsedMessages.length === 0) continue;
-
-                pendingChats.push({
-                  id: crypto.randomUUID(),
-                  characterId,
-                  name: fileName,
-                  messages: parsedMessages as any,
-                  createdAt: Date.now(),
-                });
-                imported++;
-              } catch (e) {
-                console.error(`Failed to parse native file: ${absPath}`, e);
-              }
-            }
-            if (isAndroid()) {
-              const { deleteLocalGalleryFile } = await import('../lib/appBridge');
-              await deleteLocalGalleryFile(extractedRoot);
-            }
-          } else {
           const { default: JSZip } = await import("jszip");
           const zip = new JSZip();
-          const loadedZip = await zip.loadAsync(file);
+          const loadedZip = await zip.loadAsync(file, {
+            decodeFileName: function (bytes: any) {
+              try {
+                return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+              } catch (e) {
+                return new TextDecoder("gbk").decode(new Uint8Array(bytes));
+              }
+            }
+          });
 
           const filesToProcess = [];
           for (const relativePath in loadedZip.files) {
@@ -334,7 +247,14 @@ export function CharacterChatsSection({
             }
 
             try {
-              const text = await zipEntry.async("text");
+              const arrayBuffer = await zipEntry.async("arraybuffer");
+              const blob = new Blob([arrayBuffer]);
+              const text = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target?.result as string);
+                reader.onerror = reject;
+                reader.readAsText(blob, "utf-8");
+              });
               let parsedMessages: any[] = [];
 
               if (lowerName.endsWith(".jsonl")) {
@@ -370,12 +290,44 @@ export function CharacterChatsSection({
 
               if (parsedMessages.length === 0) continue;
 
+              let charId = characterId;
+              try {
+                const { initDB } = await import("../lib/db");
+                const db = await initDB();
+                const allChars = await db.getAll("characters");
+                const pathParts = zipEntry.name.split("/");
+                if (pathParts.length > 1) {
+                  let charNameIndex = pathParts.length - 2;
+                  if (pathParts[charNameIndex] === "聊天记录" && pathParts.length > 2) {
+                    charNameIndex = pathParts.length - 3;
+                  }
+                  const parentFolderName = pathParts[charNameIndex];
+                  const folderMatch = allChars.find((c: any) => c.name.toLowerCase() === parentFolderName.toLowerCase());
+                  if (folderMatch) charId = folderMatch.id;
+                }
+                if (charId === characterId) {
+                  const aiMessage = parsedMessages.find((m: any) => !m.is_user && m.name);
+                  if (aiMessage && aiMessage.name) {
+                    const match = allChars.find((c: any) => c.name.toLowerCase() === aiMessage.name?.toLowerCase());
+                    if (match) charId = match.id;
+                  }
+                }
+              } catch (e) {}
+
+              const chatName = zipEntry.name.split("/").pop() || zipEntry.name;
+              const finalMessages = parsedMessages.map((m: any) => ({
+                ...m,
+                is_user: m.is_user !== undefined ? m.is_user : m.is_name !== chatName,
+                send_date: m.send_date || Date.now(),
+                mes: m.mes || m.text || "",
+              }));
+
               pendingChats.push({
                 id: crypto.randomUUID(),
-                characterId: characterId,
-                name: zipEntry.name.split("/").pop() || zipEntry.name,
-                messages: parsedMessages,
-                createdAt: Date.now(),
+                characterId: charId,
+                name: chatName.replace(/\.[^/.]+$/, ""),
+                messages: finalMessages,
+                createdAt: zipEntry.date ? zipEntry.date.getTime() : Date.now(),
               });
               imported++;
             } catch (e) {
@@ -385,7 +337,6 @@ export function CharacterChatsSection({
               );
             }
           }
-          }
         } else {
           setImportProgress({
             show: true,
@@ -394,7 +345,12 @@ export function CharacterChatsSection({
             message: `正在解析文件 ${file.name}...`,
           });
 
-          const text = await file.text();
+          const text = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsText(file, "utf-8");
+          });
           let parsedMessages: any[] = [];
 
           if (file.name.toLowerCase().endsWith(".jsonl")) {
@@ -429,12 +385,32 @@ export function CharacterChatsSection({
 
           if (parsedMessages.length === 0) continue;
 
+          let charId = characterId;
+          try {
+            const { initDB } = await import("../lib/db");
+            const db = await initDB();
+                const allChars = await db.getAll("characters");
+            const aiMessage = parsedMessages.find((m: any) => !m.is_user && m.name);
+            if (aiMessage && aiMessage.name) {
+              const match = allChars.find((c: any) => c.name.toLowerCase() === aiMessage.name?.toLowerCase());
+              if (match) charId = match.id;
+            }
+          } catch (e) {}
+
+          const chatName = file.name.replace(/\.[^/.]+$/, "");
+          const finalMessages = parsedMessages.map((m: any) => ({
+            ...m,
+            is_user: m.is_user !== undefined ? m.is_user : m.is_name !== chatName,
+            send_date: m.send_date || Date.now(),
+            mes: m.mes || m.text || "",
+          }));
+
           pendingChats.push({
             id: crypto.randomUUID(),
-            characterId: characterId,
-            name: file.name,
-            messages: parsedMessages,
-            createdAt: Date.now(),
+            characterId: charId,
+            name: chatName,
+            messages: finalMessages,
+            createdAt: file.lastModified || Date.now(),
           });
           imported++;
         }
@@ -517,48 +493,6 @@ export function CharacterChatsSection({
 
   return (
     <>
-      {importProgress.show && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-xl flex flex-col items-center justify-center pointer-events-auto">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-80 bg-white/10 backdrop-blur-3xl border border-white/20 p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-6"
-          >
-            <div className="w-16 h-16 bg-blue-500/20 rounded-2xl flex items-center justify-center border border-blue-500/30">
-              <UploadCloud className="w-8 h-8 text-blue-400 animate-bounce" />
-            </div>
-            <div className="text-center space-y-2 w-full">
-              <h3 className="text-white font-medium text-lg">正在导入记录</h3>
-              <p className="text-white/60 text-sm truncate max-w-full px-4">
-                {importProgress.message}
-              </p>
-            </div>
-            <div className="w-full space-y-2">
-              <div className="flex justify-between items-center text-xs text-white/50 px-1">
-                <span>进度</span>
-                <span>
-                  {importProgress.total > 0
-                    ? Math.round(
-                        (importProgress.current / importProgress.total) * 100,
-                      )
-                    : 0}
-                  %
-                </span>
-              </div>
-              <div className="h-3 w-full bg-black/40 rounded-full overflow-hidden border border-white/10 p-0.5">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300 ease-out relative"
-                  style={{
-                    width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%`,
-                  }}
-                >
-                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -566,16 +500,53 @@ export function CharacterChatsSection({
         className="space-y-6 relative"
       >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h3 className="text-xl font-bold text-white flex items-center gap-2">
-          <MessageSquare className="w-5 h-5 text-blue-400 shrink-0" />
-          <span className="truncate">
-            聊天记录{" "}
-            <span className="text-white/50 text-base font-normal">
-              ({chats.length})
+        <div className="flex flex-col flex-1 min-w-0">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-blue-400 shrink-0" />
+            <span className="truncate">
+              聊天记录{" "}
+              <span className="text-white/50 text-base font-normal">
+                ({chats.length})
+              </span>
             </span>
-          </span>
-        </h3>
-        <div className="flex gap-2 self-start sm:self-auto w-full sm:w-auto">
+          </h3>
+          <AnimatePresence>
+            {importProgress.show && (
+              <motion.div
+                initial={{ opacity: 0, y: -50, x: '-50%' }}
+                animate={{ opacity: 1, y: 0, x: '-50%' }}
+                exit={{ opacity: 0, y: -50, x: '-50%' }}
+                className="fixed top-12 sm:top-20 left-1/2 z-[100] bg-slate-800/90 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl p-3 sm:p-4 w-[90%] max-w-[16rem] sm:w-72 pointer-events-auto"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <UploadCloud className="w-5 h-5 text-blue-400 animate-bounce shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-white truncate">
+                      正在导入记录
+                    </h4>
+                    <p className="text-xs text-white/50 truncate">
+                      {importProgress.message}
+                    </p>
+                  </div>
+                  <span className="text-xs font-medium text-blue-400/80 shrink-0">
+                    {importProgress.total > 0
+                      ? Math.round((importProgress.current / importProgress.total) * 100)
+                      : 0}%
+                  </span>
+                </div>
+                <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden relative">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300 relative"
+                    style={{ width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%` }}
+                  >
+                    <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        <div className="flex gap-2 self-start sm:self-auto w-full sm:w-auto mt-2 sm:mt-0">
           <button
             onClick={() => setIsCleanerOpen(true)}
             className="flex-1 sm:flex-none justify-center px-3 py-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 rounded-lg text-sm transition flex items-center gap-1.5"
@@ -585,7 +556,13 @@ export function CharacterChatsSection({
             <span>清理</span>
           </button>
           <button
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => {
+              if (onOpenImport) {
+                onOpenImport();
+              } else {
+                fileInputRef.current?.click();
+              }
+            }}
             className="flex-1 sm:flex-none justify-center px-3 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg text-sm transition flex items-center gap-1.5"
           >
             <UploadCloud className="w-4 h-4 shrink-0" />
@@ -599,7 +576,13 @@ export function CharacterChatsSection({
             accept=".json,.jsonl,.zip"
             className="hidden"
             onChange={(e) => {
-              if (e.target.files?.length) handleFileUpload(e.target.files);
+              if (e.target.files?.length) {
+                if (onOpenImport) {
+                  onOpenImport(e.target.files);
+                } else {
+                  handleFileUpload(e.target.files);
+                }
+              }
             }}
           />
         </div>

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { X, Upload, Check, Trash2, Download } from 'lucide-react';
+import { X, Upload, Check, Trash2, Download, Share2 } from 'lucide-react';
 import { CharacterCard, saveCharacter, resolveFolderPath } from '../lib/db';
 import { isAndroid, getLocalImageUrl } from '../lib/appBridge';
 
@@ -19,6 +19,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [historyUrls, setHistoryUrls] = useState<{ blob: Blob, url: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     let objectUrl: string | null = null;
@@ -76,6 +77,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
+        URL.revokeObjectURL(img.src);
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
@@ -102,7 +104,10 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
           else reject(new Error('Canvas toBlob failed'));
         }, 'image/png');
       };
-      img.onerror = reject;
+      img.onerror = (e) => {
+        URL.revokeObjectURL(img.src);
+        reject(e);
+      };
       img.src = URL.createObjectURL(blob);
     });
   };
@@ -110,8 +115,8 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const newHistory = character.avatarHistory ? [...character.avatarHistory] : [];
+    setIsProcessing(true);
+      const newHistory = character.avatarHistory ? [...character.avatarHistory] : [];
     if (character.avatarBlob) {
       const isCurrentInHistory = newHistory.some(b => b === character.avatarBlob || (b.size === character.avatarBlob?.size && b.type === character.avatarBlob?.type));
       if (!isCurrentInHistory) {
@@ -141,18 +146,29 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     
     try {
       let pngBlob: Blob = file;
-      if (file.type !== 'image/png') {
+      if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
         pngBlob = await convertToPng(file);
       }
       
       const { injectTavernData } = await import('../lib/png');
-      const buffer = await pngBlob.arrayBuffer();
+      let buffer = await pngBlob.arrayBuffer();
       
       const charData = JSON.parse(JSON.stringify(character.data));
       if (charData.avatar) delete charData.avatar;
       if (charData.data && charData.data.avatar) delete charData.data.avatar;
       
-      const newBuffer = injectTavernData(buffer, charData);
+      let newBuffer: ArrayBuffer;
+      try {
+        newBuffer = injectTavernData(buffer, charData);
+      } catch (err) {
+        if (pngBlob === file) {
+          pngBlob = await convertToPng(file);
+          buffer = await pngBlob.arrayBuffer();
+          newBuffer = injectTavernData(buffer, charData);
+        } else {
+          throw err;
+        }
+      }
       
       const fileName = (file.name || 'avatar').replace(/\.[^/.]+$/, "") + ".png";
       try {
@@ -163,6 +179,9 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       }
     } catch (err) {
       console.error("Failed to inject data into new avatar", err);
+      alert("无法处理该图片。如果问题持续存在，请尝试另一张图片。");
+      setIsProcessing(false);
+      return;
     }
     
     newHistory.unshift(finalFile);
@@ -176,9 +195,9 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     };
     
     delete updatedCharacter.localFilePath;
-
     await saveCharacter(updatedCharacter);
     onUpdate(updatedCharacter);
+    setIsProcessing(false);
   };
 
   const handleSelectHistory = (blob: Blob) => {
@@ -188,7 +207,8 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
   const handleSetAsAvatar = async () => {
     if (!previewBlob || previewBlob === character.avatarBlob) return;
 
-    let finalFile: File;
+    setIsProcessing(true);
+      let finalFile: File;
     if (typeof File !== 'undefined' && previewBlob instanceof File) {
       finalFile = previewBlob;
     } else {
@@ -202,18 +222,29 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     
     try {
       let pngBlob: Blob = previewBlob;
-      if (previewBlob.type !== 'image/png') {
+      if (previewBlob.type !== 'image/png' && !(previewBlob as any).name?.toLowerCase().endsWith('.png')) {
         pngBlob = await convertToPng(previewBlob);
       }
       
       const { injectTavernData } = await import('../lib/png');
-      const buffer = await pngBlob.arrayBuffer();
+      let buffer = await pngBlob.arrayBuffer();
       
       const charData = JSON.parse(JSON.stringify(character.data));
       if (charData.avatar) delete charData.avatar;
       if (charData.data && charData.data.avatar) delete charData.data.avatar;
       
-      const newBuffer = injectTavernData(buffer, charData);
+      let newBuffer: ArrayBuffer;
+      try {
+        newBuffer = injectTavernData(buffer, charData);
+      } catch (err) {
+        if (pngBlob === previewBlob) {
+          pngBlob = await convertToPng(previewBlob);
+          buffer = await pngBlob.arrayBuffer();
+          newBuffer = injectTavernData(buffer, charData);
+        } else {
+          throw err;
+        }
+      }
       
       try {
         finalFile = new File([newBuffer], 'avatar.png', { type: 'image/png' });
@@ -223,6 +254,9 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
       }
     } catch (err) {
       console.error("Failed to inject data into history avatar", err);
+      alert("处理头像失败，可能该头像已损坏。");
+      setIsProcessing(false);
+      return;
     }
 
     const newHistory = (character.avatarHistory || []).map(b => b === previewBlob ? finalFile : b);
@@ -236,10 +270,10 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     };
     
     delete updatedCharacter.localFilePath;
-
     await saveCharacter(updatedCharacter);
     onUpdate(updatedCharacter);
     setPreviewBlob(null); // Reset preview so it matches current
+    setIsProcessing(false);
   };
 
   const handleDeleteHistory = async (e: React.MouseEvent, blobToDelete: Blob) => {
@@ -258,9 +292,12 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
 
     await saveCharacter(updatedCharacter);
     onUpdate(updatedCharacter);
+    
+      
+
   };
 
-  const handleExportAvatar = async () => {
+  const handleExportAvatar = async (share: boolean = false) => {
     let blobToExport = previewBlob || character.avatarBlob;
     let fallbackBuffer: ArrayBuffer | null = null;
     let isLocalFile = false;
@@ -288,10 +325,17 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
 
     if (isAndroid()) {
         try {
-            const { shareFileOnAndroid } = await import('../lib/appBridge');
+            const { shareFileOnAndroid, exportFileToMIU } = await import('../lib/appBridge');
             const buffer = blobToExport ? await blobToExport.arrayBuffer() : fallbackBuffer;
             if (!buffer) return;
-            await shareFileOnAndroid(exportName, buffer, blobToExport ? blobToExport.type : 'image/png');
+            if (share) {
+                await shareFileOnAndroid(exportName, buffer, blobToExport ? blobToExport.type : 'image/png');
+            } else {
+                const savedPath = await exportFileToMIU(exportName, buffer, blobToExport ? blobToExport.type : 'image/png', false);
+                if (savedPath) {
+                    alert(`导出图片成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+                }
+            }
         } catch(e) {
             alert('导出图片失败');
         }
@@ -330,10 +374,11 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
           {previewBlob && previewBlob !== character.avatarBlob ? '预览历史头像' : '当前头像'}
         </div>
         <div className="flex gap-2">
+          
           <button 
-            onClick={handleExportAvatar}
+            onClick={() => handleExportAvatar(false)}
             className="p-2 rounded-full bg-black/40 text-white hover:bg-white/20 transition"
-            title="导出图片"
+            title={typeof window !== 'undefined' && !!(window as any).Android ? "导出到MIU目录" : "导出图片"}
           >
             <Download className="w-6 h-6" />
           </button>
@@ -371,6 +416,14 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
               alt="Current Avatar"
               draggable={false}
               className="w-full h-full object-contain cursor-grab active:cursor-grabbing"
+              onError={(e) => {
+                 const target = e.target as HTMLImageElement;
+                 const fallback = getFallbackAvatar(character.name || character.id);
+                 if (target.src !== fallback && !target.src.startsWith("blob:")) {
+                     target.src = fallback;
+                     setCurrentAvatarUrl(fallback);
+                 }
+              }}
               
             />
           </TransformComponent>

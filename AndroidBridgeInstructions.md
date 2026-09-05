@@ -146,6 +146,15 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = WebChromeClient()
     }
 
+    // 支持通过手势返回上一级网页或关闭弹窗
+    override fun onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     inner class WebAppInterface {
 
         private val openZips = java.util.concurrent.ConcurrentHashMap<String, java.util.zip.ZipOutputStream>()
@@ -287,17 +296,24 @@ class MainActivity : AppCompatActivity() {
             return null
         }
 
-        // 调用 Android 文件选择器选图（可以用在高级相册集成上）
+        // 递归扫描目录下所有图片文件
+        private fun scanDirForPng(dir: File, paths: JSONArray) {
+            val files = dir.listFiles()
+            files?.forEach {
+                if (it.isDirectory) {
+                    scanDirForPng(it, paths)
+                } else if (it.absolutePath.endsWith(".png", true)) {
+                    paths.put(it.absolutePath)
+                }
+            }
+        }
+
+        // 调用 Android 文件扫描，返回所有图片（支持递归，实现免导入自动加载）
         @JavascriptInterface
         fun pickFiles(): String {
             try {
-                val files = saveDirectory.listFiles()
                 val paths = JSONArray()
-                files?.forEach {
-                    if (it.absolutePath.endsWith(".png", true)) {
-                        paths.put(it.absolutePath)
-                    }
-                }
+                scanDirForPng(saveDirectory, paths)
                 return paths.toString()
             } catch (e: Exception) {
                 e.printStackTrace()

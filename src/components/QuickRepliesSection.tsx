@@ -1,6 +1,6 @@
 import { getFallbackAvatar } from '../lib/avatar';
 import React, { useRef, useState } from 'react';
-import { Upload, FileJson, QrCode, Trash2, Download, Library } from 'lucide-react';
+import { Upload, FileJson, QrCode, Trash2, Download, Library, Share2 } from 'lucide-react';
 import { CharacterCard, saveCharacter, saveCharacters, getOrCreateNestedFolder, resolveFolderPath } from '../lib/db';
 import { SelectQRModal } from './SelectQRModal';
 import { ExportQRModal } from './ExportQRModal';
@@ -199,16 +199,16 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
     onUpdate(updatedChar);
   };
 
-  const handleDownloadClick = () => {
+  const handleDownloadClick = (share: boolean = false) => {
     if (qrSets.length === 0) return;
     if (qrSets.length === 1) {
-      exportSets([qrSets[0]]);
+      exportSets([qrSets[0]], share);
     } else {
       setIsExportModalOpen(true);
     }
   };
 
-  const exportSets = async (setsToExport: QRSet[]) => {
+  const exportSets = async (setsToExport: QRSet[], share = false) => {
     if (setsToExport.length === 0) return;
 
     if (setsToExport.length === 1) {
@@ -234,9 +234,16 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
         filename += '.json';
       }
       if (typeof window !== 'undefined' && !!(window as any).Android) {
-          import('../lib/appBridge').then(async ({ shareFileOnAndroid }) => {
+          import('../lib/appBridge').then(async ({ shareFileOnAndroid, exportFileToMIU }) => {
               const buffer = blob.arrayBuffer ? await blob.arrayBuffer() : await new Response(blob).arrayBuffer();
-              await shareFileOnAndroid(filename, buffer, 'application/json');
+              if (share) {
+                  await shareFileOnAndroid(filename, buffer, 'application/json');
+              } else {
+                  const savedPath = await exportFileToMIU(filename, buffer, 'application/json', false);
+                  if (savedPath) {
+                      alert(`导出成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+                  }
+              }
           });
       } else {
           const url = URL.createObjectURL(blob);
@@ -286,9 +293,16 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
       const content = await zip.generateAsync({ type: 'blob' });
       const zipFileName = `${character.name}_QRs.zip`;
       if (typeof window !== 'undefined' && !!(window as any).Android) {
-          import('../lib/appBridge').then(async ({ shareFileOnAndroid }) => {
+          import('../lib/appBridge').then(async ({ shareFileOnAndroid, exportFileToMIU }) => {
               const buffer = await content.arrayBuffer();
-              await shareFileOnAndroid(zipFileName, buffer, 'application/zip');
+              if (share) {
+                  await shareFileOnAndroid(zipFileName, buffer, 'application/zip');
+              } else {
+                  const savedPath = await exportFileToMIU(zipFileName, buffer, 'application/zip', false);
+                  if (savedPath) {
+                      alert(`批量导出成功！共导出 ${setsToExport.length} 个快速回复集。\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+                  }
+              }
           });
       } else {
           const url = URL.createObjectURL(content);
@@ -354,7 +368,7 @@ export function QuickRepliesSection({ character, onUpdate }: Props) {
 
             <div className="flex flex-col sm:flex-row gap-2 mt-2">
               <button 
-                onClick={handleDownloadClick}
+                onClick={() => handleDownloadClick()}
                 className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition flex items-center justify-center gap-2"
               >
                 <Download className="w-4 h-4" /> 导出快速回复 

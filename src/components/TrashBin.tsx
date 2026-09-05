@@ -207,9 +207,11 @@ export function TrashBin({ onClose }: Props) {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要将选中的 ${selectedIds.size} 个角色永久删除吗？此操作不可撤销！`)) {
       setLoading(true);
-      for (const id of selectedIds) {
-        await deleteCharacter(id);
-      }
+      // 批量操作保留 miu 这边的批量原生接口(只查一次全部角色、只调一次
+      // 原生批量接口, 而不是安卓那边一个个 deleteCharacter(id) 循环删),
+      // 但不再"乐观更新": 老实等它真正删完, 用数据库真实结果刷新列表。
+      const { deleteCharactersBulk } = await import('../lib/db');
+      await deleteCharactersBulk(Array.from(selectedIds));
       setSelectedIds(new Set());
       setSelectionMode(false);
       await loadTrash();

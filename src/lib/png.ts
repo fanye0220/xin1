@@ -17,6 +17,9 @@ export async function extractTavernData(buffer: ArrayBuffer): Promise<any | null
   }
 
   let offset = 8;
+  let charaData: any | null = null;
+  let ccv3Data: any | null = null;
+
   while (offset < buffer.byteLength) {
     const length = dataView.getUint32(offset);
     const type = String.fromCharCode(
@@ -33,10 +36,10 @@ export async function extractTavernData(buffer: ArrayBuffer): Promise<any | null
       const text = new TextDecoder('utf-8').decode(data);
       if (text.startsWith('chara\0')) {
         const payload = text.substring(6);
-        return parsePayload(payload);
+        if (charaData === null) charaData = parsePayload(payload);
       } else if (text.startsWith('ccv3\0')) {
         const payload = text.substring(5);
-        return parsePayload(payload);
+        if (ccv3Data === null) ccv3Data = parsePayload(payload);
       }
     } else if (type === 'iTXt') {
       let nullIdx = 0;
@@ -58,7 +61,11 @@ export async function extractTavernData(buffer: ArrayBuffer): Promise<any | null
         
         if (compressionFlag === 0) {
           const payload = new TextDecoder('utf-8').decode(textData);
-          return parsePayload(payload);
+          if (keyword === 'ccv3' && ccv3Data === null) {
+            ccv3Data = parsePayload(payload);
+          } else if (keyword === 'chara' && charaData === null) {
+            charaData = parsePayload(payload);
+          }
         } else if (compressionFlag === 1) {
           try {
             const ds = new DecompressionStream('deflate');
@@ -83,7 +90,11 @@ export async function extractTavernData(buffer: ArrayBuffer): Promise<any | null
             }
             
             const payload = new TextDecoder('utf-8').decode(decompressed);
-            return parsePayload(payload);
+            if (keyword === 'ccv3' && ccv3Data === null) {
+              ccv3Data = parsePayload(payload);
+            } else if (keyword === 'chara' && charaData === null) {
+              charaData = parsePayload(payload);
+            }
           } catch (e) {
             console.error("Failed to decompress iTXt chunk", e);
           }
@@ -94,7 +105,8 @@ export async function extractTavernData(buffer: ArrayBuffer): Promise<any | null
     offset += 8 + length + 4; // length + type + data + crc
   }
 
-  return null;
+  // CCV3 优先：避免文件里同时存在 V2/V3 时被 V2 覆盖，导致 V3 卡片降级、AI 标签丢失。
+  return ccv3Data ?? charaData;
 }
 
 function parsePayload(payload: string): any | null {
@@ -161,25 +173,40 @@ export function injectTavernData(originalBuffer: ArrayBuffer, data: any): ArrayB
     throw new Error("Not a valid PNG file");
   }
 
-  const jsonString = JSON.stringify(data);
-  const base64 = btoa(unescape(encodeURIComponent(jsonString)));
-  const textData = new TextEncoder().encode(`chara\0${base64}`);
+  const buildChunk = (chunkData: any, prefix: 'chara' | 'ccv3'): Uint8Array => {
+    const jsonString = JSON.stringify(chunkData);
+    const base64 = btoa(unescape(encodeURIComponent(jsonString)));
+    const textData = new TextEncoder().encode(`${prefix}\0${base64}`);
 
-  const chunkLength = textData.length;
-  const chunkType = new TextEncoder().encode('tEXt');
-  
-  const chunkData = new Uint8Array(4 + chunkLength);
-  chunkData.set(chunkType, 0);
-  chunkData.set(textData, 4);
-  
-  const crc = crc32(chunkData);
-  
-  const newChunk = new Uint8Array(4 + 4 + chunkLength + 4);
-  const view = new DataView(newChunk.buffer);
-  view.setUint32(0, chunkLength);
-  newChunk.set(chunkType, 4);
-  newChunk.set(textData, 8);
-  view.setUint32(8 + chunkLength, crc);
+    const chunkLength = textData.length;
+    const chunkType = new TextEncoder().encode('tEXt');
+
+    const crcInput = new Uint8Array(4 + chunkLength);
+    crcInput.set(chunkType, 0);
+    crcInput.set(textData, 4);
+
+    const crc = crc32(crcInput);
+
+    const chunk = new Uint8Array(4 + 4 + chunkLength + 4);
+    const view = new DataView(chunk.buffer);
+    view.setUint32(0, chunkLength);
+    chunk.set(chunkType, 4);
+    chunk.set(textData, 8);
+    view.setUint32(8 + chunkLength, crc);
+    return chunk;
+  };
+
+  const isV3 = data?.spec === 'chara_card_v3' || data?.data?.spec === 'chara_card_v3';
+  const injectedChunks: Uint8Array[] = [];
+  injectedChunks.push(buildChunk(data, isV3 ? 'ccv3' : 'chara'));
+
+  if (isV3) {
+    // 酒馆向后兼容：V3 卡片也必须保留一份 V2 chara 数据块，否则导入会直接拒绝读取。
+    const compatData = JSON.parse(JSON.stringify(data));
+    compatData.spec = 'chara_card_v2';
+    compatData.spec_version = '2.0';
+    injectedChunks.push(buildChunk(compatData, 'chara'));
+  }
 
   // Reconstruct PNG
   const chunks: Uint8Array[] = [];
@@ -217,7 +244,7 @@ export function injectTavernData(originalBuffer: ArrayBuffer, data: any): ArrayB
     }
 
     if (type === 'IEND' && !charaInjected) {
-      chunks.push(newChunk);
+      injectedChunks.forEach((chunk) => chunks.push(chunk));
       charaInjected = true;
     }
 

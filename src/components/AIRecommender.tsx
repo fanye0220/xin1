@@ -2,9 +2,41 @@ import { getFallbackAvatar } from '../lib/avatar';
 import { getLocalImageUrl } from '../lib/appBridge';
 import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Sparkles, Loader2, AlertCircle, Play, Terminal, Dices } from 'lucide-react';
-import { getCharacters, CharacterCard, getCharacter } from '../lib/db';
+import { getCharacters, CharacterCard, getCharacter, isActualCharacterCard } from '../lib/db';
 import { callAI } from '../lib/ai';
 import { motion } from 'framer-motion';
+import { useObjectUrl, useManagedObjectUrl } from '../lib/useObjectUrl';
+
+// 单独拆出来的头像组件: 用 useObjectUrl 管理 blob URL 的创建/释放生命周期,
+// 避免直接在 results.map() 渲染逻辑里裸调 createObjectURL(每次父组件重渲染
+// 都会创建新 URL 却从不释放,是最容易被忽略的一种泄漏)。
+function RecommendResultAvatar({ char, name }: { char: CharacterCard; name: string }) {
+  const objectUrl = useObjectUrl(char.avatarBlob);
+  const fallback = char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com')
+    ? char.avatarUrlFallback
+    : getFallbackAvatar(char.name || char.id);
+  const staticUrl = !char.avatarBlob && char.localFilePath
+    ? getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt)
+    : fallback;
+  const url = objectUrl || staticUrl;
+  const { url: fallbackUrl, setBlobUrl } = useManagedObjectUrl();
+
+  if (!url && !fallbackUrl) return null;
+  return (
+    <img
+      src={fallbackUrl || url}
+      alt={name}
+      className="w-full h-full object-cover"
+      onError={() => {
+        import('../lib/db').then((m) =>
+          m.getCharacterBlob(char.id).then((b) => {
+            if (b && b.avatarBlob) setBlobUrl(b.avatarBlob);
+          }),
+        );
+      }}
+    />
+  );
+}
 
 export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClose: () => void, onSelectChar: (id: string) => void, onOpenSettings: () => void }) {
   const [prompt, setPrompt] = useState('');
@@ -35,7 +67,7 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
     
     try {
       const { getCachedMeta, initDB } = await import('../lib/db');
-      const allMeta = (await getCachedMeta()).filter(c => !c.deletedAt);
+      const allMeta = (await getCachedMeta()).filter(c => !c.deletedAt && !c.isTool && !c.isQR);
       
       if (allMeta.length === 0) {
         addLog('没有找到角色卡。', 'error');
@@ -56,13 +88,13 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
         const char = await db.get('characters', meta.id);
         if (!char) continue;
         
-        const rawData = char.data;
+        const rawData = char.data?.data || char.data || {};
         const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
-        const isStandaloneWorldbook = rawData.entries !== undefined;
+        const isStandaloneWorldbook = rawData.entries !== undefined || rawData.data?.entries !== undefined;
         const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
         const tags = char.data?.tags || char.data?.data?.tags || [];
         const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
-        const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
+        const isQR = Array.isArray(rawData) ? (rawData.length > 0 && rawData[0].label !== undefined && rawData[0].message !== undefined) : ((rawData.quick_replies !== undefined || rawData.qrList !== undefined) && rawData.spec !== "chara_card_v2" && rawData.spec !== "chara_card_v3" && rawData.description === undefined && rawData.first_mes === undefined && rawData.personality === undefined && rawData.mes_example === undefined && rawData.char_name === undefined && rawData.character_name === undefined && rawData.name === undefined && rawData.data?.name === undefined);
         const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
         
         if (!isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript) {
@@ -106,21 +138,19 @@ export function AIRecommender({ onClose, onSelectChar, onOpenSettings }: { onClo
 
     try {
       addLog('开始分析您的需求...');
+      const { getCachedMeta } = await import('../lib/db');
+      const allowedMeta = (await getCachedMeta()).filter(c => !c.deletedAt && !c.isTool && !c.isQR);
+      const allowedIds = new Set(allowedMeta.map(c => c.id));
+
       const response = await getCharacters(1, 10000, 'all', '', [], 'newest_import', false);
       let allChars = response.characters;
 
-      // 过滤掉预设、美化卡和独立世界书
-      allChars = allChars.filter(c => {
-        const rawData = c.data;
-        const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
-        const isStandaloneWorldbook = rawData.entries !== undefined;
-        const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
-        const tags = c.data?.tags || c.data?.data?.tags || [];
-        const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
-        const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
-        const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
-        return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript;
-      });
+      // 先用 char_meta 的分类标记排除工具/美化/预设/世界书/快捷回复等非角色卡，
+      // 避免这些卡因为也带有 name + description + tags 而被下面的角色结构判断漏掉。
+      allChars = allChars.filter(c => allowedIds.has(c.id));
+
+      // 过滤掉非角色卡
+      allChars = allChars.filter(c => isActualCharacterCard(c.data));
 
       if (allChars.length === 0) {
         addLog('本地角色库为空或没有符合条件的角色，无法进行推荐。', 'error');
@@ -341,11 +371,6 @@ ${candidateInfo}
                 {results.map((result, i) => {
                   const char = result.char;
                   const data = char.data?.data || char.data;
-                  const fallbackObj = char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : getFallbackAvatar(char.name || char.id);
-                  let url = char.avatarBlob ? URL.createObjectURL(char.avatarBlob) : fallbackObj;
-                  if (!char.avatarBlob && char.localFilePath) {
-                      url = getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt);
-                  }
 
                   return (
                     <motion.div
@@ -356,11 +381,7 @@ ${candidateInfo}
                       className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 hover:bg-white/10 transition group"
                     >
                       <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 rounded-xl overflow-hidden bg-black/40">
-                        {url ? <img src={url} alt={data.name} className="w-full h-full object-cover" onError={(e) => {
-                             import('../lib/db').then(m => m.getCharacterBlob(char.id).then(b => {
-                                if (b && b.avatarBlob) e.currentTarget.src = URL.createObjectURL(b.avatarBlob);
-                             }));
-                        }} /> : null}
+                        <RecommendResultAvatar char={char} name={data.name} />
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col">
                         <div className="flex items-start justify-between gap-4">

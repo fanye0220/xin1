@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type Callback = (isIntersecting: boolean) => void;
+
 let observer: IntersectionObserver | null = null;
 const callbacks = new WeakMap<Element, Callback>();
 
@@ -10,8 +11,10 @@ function getObserver() {
       (entries) => {
         entries.forEach((entry) => {
           const callback = callbacks.get(entry.target);
-          if (callback) {
-            callback(entry.isIntersecting);
+          if (callback && entry.isIntersecting) {
+            callback(true);
+            observer?.unobserve(entry.target);
+            callbacks.delete(entry.target);
           }
         });
       },
@@ -21,7 +24,7 @@ function getObserver() {
   return observer;
 }
 
-export function useInView(ref: React.RefObject<Element | null>) {
+export function useInView(ref: React.RefObject<Element>) {
   const [isInView, setIsInView] = useState(false);
 
   useEffect(() => {

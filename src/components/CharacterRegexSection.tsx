@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Download, Trash2, Edit2, Check, X as XIcon, ChevronDown, ChevronUp, Plus, Save } from 'lucide-react';
+import { Upload, Download, Share2, Trash2, Edit2, Check, X as XIcon, ChevronDown, ChevronUp, Plus, Save } from 'lucide-react';
 import { CharacterCard, saveCharacter } from '../lib/db';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -23,7 +23,12 @@ export function CharacterRegexSection({ character, onUpdate }: Props) {
     if (!file) return;
 
     try {
-      const text = await file.text();
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsText(file, "utf-8");
+      });
       const parsed = JSON.parse(text);
       
       let importedScripts: any[] = [];
@@ -57,19 +62,35 @@ export function CharacterRegexSection({ character, onUpdate }: Props) {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async (share: boolean = false) => {
     if (regexScripts.length === 0) {
       alert('没有可以导出的正则。');
       return;
     }
     
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(regexScripts, null, 2));
-    const a = document.createElement('a');
-    a.href = dataStr;
-    a.download = `${character.name}_regex_scripts.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const jsonStr = JSON.stringify(regexScripts, null, 2);
+    const filename = `${character.name}_regex_scripts.json`;
+    
+    if (typeof window !== 'undefined' && !!(window as any).Android) {
+        const { exportFileToMIU, shareFileOnAndroid } = await import('../lib/appBridge');
+        const bytes = new TextEncoder().encode(jsonStr);
+        if (share) {
+            await shareFileOnAndroid(filename, bytes.buffer, 'application/json');
+        } else {
+            const savedPath = await exportFileToMIU(filename, bytes.buffer, 'application/json', false);
+            if (savedPath) {
+                alert(`导出正则成功！\n文件已存至：${savedPath.split('Download/')[1] || savedPath}`);
+            }
+        }
+    } else {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(jsonStr);
+        const a = document.createElement('a');
+        a.href = dataStr;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
   };
 
   const saveRegexScripts = (newScripts: any[]) => {
@@ -139,7 +160,7 @@ export function CharacterRegexSection({ character, onUpdate }: Props) {
           </button>
           {regexScripts.length > 0 && (
             <button
-              onClick={handleExport}
+              onClick={() => handleExport(false)}
               className="p-2 rounded-full bg-green-500/20 text-green-300 hover:bg-green-500/30 transition"
               title="导出全部正则"
             >

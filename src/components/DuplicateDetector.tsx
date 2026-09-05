@@ -44,8 +44,6 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
   const [page, setPage] = useState(1);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processMessage, setProcessMessage] = useState('');
   const pageSize = 10;
   
   const longPressRef = useRef<{ timer: NodeJS.Timeout | null, triggered: boolean, startY?: number }>({ timer: null, triggered: false });
@@ -64,7 +62,7 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
       const isTheme = rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined;
       const tags = c.data?.tags || c.data?.data?.tags || [];
       const isBeautify = tags.some((t: string) => t.includes('美化') || t.includes('预设') || t.includes('UI') || t.includes('主题') || t.includes('工具') || t.includes('插件') || t.includes('正则') || t.includes('组件') || t.includes('工作流'));
-      const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined);
+      const isQR = Array.isArray(rawData) ? (rawData.length > 0 && rawData[0].label !== undefined && rawData[0].message !== undefined) : ((rawData.quick_replies !== undefined || rawData.qrList !== undefined) && rawData.spec !== "chara_card_v2" && rawData.spec !== "chara_card_v3" && rawData.description === undefined && rawData.first_mes === undefined && rawData.personality === undefined && rawData.mes_example === undefined && rawData.char_name === undefined && rawData.character_name === undefined && rawData.name === undefined && rawData.data?.name === undefined);
       const isScript = rawData.type === 'script' && rawData.content !== undefined && rawData.name !== undefined;
       return !isPreset && !isBeautify && !isStandaloneWorldbook && !isTheme && !isQR && !isScript;
     });
@@ -79,25 +77,8 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
 
   const handleDelete = async (id: string) => {
     if (confirm('确定要删除此重复角色吗？')) {
-      // Optimistic update
-      const newGroups = duplicateGroups
-        .map(g => ({ ...g, characters: g.characters.filter(c => c.char.id !== id) }))
-        .filter(g => g.characters.length > 1);
-      setDuplicateGroups(newGroups);
-      
-      setIsProcessing(true);
-      setProcessMessage('正在删除...');
-      
-      (async () => {
-        try {
-          await deleteCharacter(id);
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setIsProcessing(false);
-          setProcessMessage('');
-        }
-      })();
+      await deleteCharacter(id);
+      loadDuplicates();
     }
   };
 
@@ -166,11 +147,8 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
         }
       }
 
-      // If other has a different avatar, add it to history
-      if (other.avatarBlob && !seenBlobSizes.has(other.avatarBlob.size)) {
-        mergedHistory.push(other.avatarBlob);
-        seenBlobSizes.add(other.avatarBlob.size);
-      }
+      // Removed: Do not force the duplicate's main avatar as a replacement avatar for the winner
+      // to prevent "1 became 1_1's avatar replacement" issue.
     }
 
     targetData.extensions.quick_replies = mergedQRs;
@@ -197,26 +175,20 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
   const handleMergeAndKeep = async (keptChar: CharacterCard, group: DuplicateGroup) => {
     if (!confirm('确定要保留此卡，合并其他卡片的快捷回复(QR)、替换头像、来源链接和标签，并删除其他卡片吗？')) return;
 
-    // Optimistic update
-    const newGroups = duplicateGroups.filter(g => g !== group);
-    setDuplicateGroups(newGroups);
-
-    setIsProcessing(true);
-    setProcessMessage('正在合并并删除...');
-
     const otherChars = group.characters.map(c => c.char).filter(c => c.id !== keptChar.id);
-    
-    (async () => {
-      try {
-        await mergeAndSave(keptChar, otherChars);
-        await import('../lib/db').then(({ deleteCharactersBulk }) => deleteCharactersBulk(otherChars.map(c => c.id)));
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setIsProcessing(false);
-        setProcessMessage('');
-      }
-    })();
+    await mergeAndSave(keptChar, otherChars);
+
+    const { deleteCharactersBulk, getChatsForCharacter, saveChat } = await import('../lib/db');
+    for (const charToDel of otherChars) {
+       const chats = await getChatsForCharacter(charToDel.id);
+       for (const chat of chats) {
+          chat.characterId = keptChar.id;
+          await saveChat(chat);
+       }
+    }
+    await deleteCharactersBulk(otherChars.map(c => c.id));
+
+    loadDuplicates();
   };
 
   const toggleSelection = (id: string) => {
@@ -266,44 +238,42 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要删除选中的 ${selectedIds.size} 张重复卡片吗？\n（删除过程中会自动合并快捷回复(QR)、替换头像、来源和标签到保留的卡片中）`)) {
-      const idsToProcess = Array.from(selectedIds);
+      setLoading(true);
+
+      // 批量操作保留 miu 这边效率更高的写法(一次性合并/批量删,而不是安卓
+      // 那边一个个查一个个调原生接口的老写法),但不再"乐观更新": 老实等
+      // 合并+删除都做完, 用数据库的真实结果刷新界面, 避免界面显示"已经没
+      // 了"但数据库其实还没删完的中间状态。
+      for (const group of duplicateGroups) {
+        const charsToDelete = group.characters.map(c => c.char).filter(c => selectedIds.has(c.id));
+        const charsToKeep = group.characters.map(c => c.char).filter(c => !selectedIds.has(c.id));
+
+        if (charsToDelete.length > 0) {
+          let winnerId = charsToKeep.length > 0 ? charsToKeep[0].id : undefined;
+          if (charsToKeep.length > 0) {
+            // Pick a winner to receive merged data
+            const winner = charsToKeep[0];
+            await mergeAndSave(winner, charsToDelete);
+          }
+
+          // Reassign chats to winner
+          const { deleteCharactersBulk, getChatsForCharacter, saveChat } = await import('../lib/db');
+          if (winnerId) {
+             for (const charToDel of charsToDelete) {
+                const chats = await getChatsForCharacter(charToDel.id);
+                for (const chat of chats) {
+                   chat.characterId = winnerId;
+                   await saveChat(chat);
+                }
+             }
+          }
+          await deleteCharactersBulk(charsToDelete.map(c => c.id));
+        }
+      }
+
       setSelectedIds(new Set());
       setSelectionMode(false);
-
-      // Optimistic update
-      const newGroups = duplicateGroups.map(group => ({
-         ...group,
-         characters: group.characters.filter(c => !idsToProcess.includes(c.char.id))
-      })).filter(g => g.characters.length > 1);
-      setDuplicateGroups(newGroups);
-
-      setIsProcessing(true);
-      setProcessMessage('正在批量合并和删除...');
-      
-      (async () => {
-        try {
-          for (let i = 0; i < duplicateGroups.length; i++) {
-            const group = duplicateGroups[i];
-            const charsToDelete = group.characters.map(c => c.char).filter(c => idsToProcess.includes(c.id));
-            const charsToKeep = group.characters.map(c => c.char).filter(c => !idsToProcess.includes(c.id));
-            
-            if (charsToDelete.length > 0) {
-              if (charsToKeep.length > 0) {
-                // Pick a winner to receive merged data
-                const winner = charsToKeep[0];
-                await mergeAndSave(winner, charsToDelete);
-              }
-              // Delete all selected from this group
-              await import('../lib/db').then(({ deleteCharactersBulk }) => deleteCharactersBulk(charsToDelete.map(c => c.id)));
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setIsProcessing(false);
-          setProcessMessage('');
-        }
-      })();
+      await loadDuplicates();
     }
   };
 
@@ -407,20 +377,6 @@ export function DuplicateDetector({ onClose, onSelectChar }: Props) {
             </button>
           </div>
         )}
-
-        <AnimatePresence>
-          {isProcessing && (
-            <motion.div
-              initial={{ opacity: 0, y: 50, x: '-50%' }}
-              animate={{ opacity: 1, y: 0, x: '-50%' }}
-              exit={{ opacity: 0, y: 50, x: '-50%' }}
-              className="fixed bottom-24 left-1/2 z-50 flex items-center gap-3 bg-slate-800/95 backdrop-blur border border-purple-500/30 text-white px-6 py-3 rounded-2xl shadow-2xl"
-            >
-              <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-              <span className="font-medium text-sm">{processMessage}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
           {loading ? (
