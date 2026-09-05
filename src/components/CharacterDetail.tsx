@@ -50,6 +50,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
 
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const savePromiseRef = useRef<Promise<void> | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     getCharacter(id).then(async (char) => {
@@ -201,6 +202,26 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
       await savePromiseRef.current;
     }
     onBack();
+  };
+  const handleDetailTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (touch) {
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    }
+  };
+
+  const handleDetailTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current;
+    const touch = e.changedTouches[0];
+    if (!start || !touch) return;
+    touchStartRef.current = null;
+
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+
+    if (dx > 90 && start.x < 80 && Math.abs(dy) < 70) {
+      handleBack();
+    }
   };
 
   if (!character) return null;
@@ -481,6 +502,8 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
       id="character-detail-scroll-container"
+      onTouchStart={handleDetailTouchStart}
+      onTouchEnd={handleDetailTouchEnd}
       className="fixed inset-0 bg-black text-white overflow-y-auto z-50"
     >
       {/* Blurred Background */}

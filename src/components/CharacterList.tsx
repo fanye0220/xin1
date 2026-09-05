@@ -303,6 +303,7 @@ export function CharacterList({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -413,34 +414,29 @@ export function CharacterList({
 
 
         if (foldersToSave.length > 0) {
-          await Promise.all(foldersToSave.map(f => saveFolder(f)));
+          await Promise.all(foldersToSave.map((f) => saveFolder(f)));
+          setFolders((prev) =>
+            prev.map((folder) => {
+              const updated = foldersToSave.find((f) => f.id === folder.id);
+              return updated
+                ? { ...folder, avatarBlob: updated.avatarBlob }
+                : folder;
+            }),
+          );
         }
         if (charIdsToCover.length > 0) {
+          const coverUpdatedAt = Date.now();
           await Promise.all(
             charIdsToCover.map((id) => updateCharacterCover(id, croppedBlob)),
           );
+          setCharacters((prev) =>
+            prev.map((char) =>
+              charIdsToCover.includes(char.id)
+                ? { ...char, updatedAt: coverUpdatedAt }
+                : char,
+            ),
+          );
         }
-
-        // reload
-        loadData();
-        getFolders().then((data) => {
-          let currentFolders: Folder[] = [];
-          if (folderId === null) {
-            currentFolders = data.filter((f) => !f.parentId);
-          } else {
-            currentFolders = data.filter((f) => f.parentId === folderId);
-          }
-          currentFolders.sort((a, b) => {
-            if (sortBy === "custom") {
-              if (a.sortOrder !== undefined && b.sortOrder !== undefined)
-                return a.sortOrder - b.sortOrder;
-              if (a.sortOrder !== undefined) return -1;
-              if (b.sortOrder !== undefined) return 1;
-            }
-            return b.createdAt - a.createdAt;
-          });
-          setFolders(currentFolders);
-        });
       } catch (err) {
         console.error("Error saving cropped image:", err);
         alert("封面更换失败");
@@ -533,6 +529,31 @@ export function CharacterList({
     const allFolders = await getFolders();
     const current = allFolders.find((f) => f.id === folderId);
     onSelectFolder?.(current?.parentId || null);
+  };
+  const handleRootTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (touch) {
+      touchStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        time: Date.now(),
+      };
+    }
+  };
+
+  const handleRootTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current;
+    const touch = e.changedTouches[0];
+    if (!start || !touch) return;
+    touchStartRef.current = null;
+
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+
+    // 进入子文件夹后, 从屏幕左边缘向右轻扫即可返回上一级。
+    if (!selectionMode && folderId && dx > 90 && start.x < 80 && Math.abs(dy) < 70) {
+      handleBack();
+    }
   };
 
   const handleCreateFolder = async () => {
@@ -661,6 +682,12 @@ export function CharacterList({
       false,
       false
     ).then(({ characters, total }) => {
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      if (page > totalPages) {
+        setTotalCharacters(total);
+        setPage(totalPages);
+        return;
+      }
       setCharacters(characters);
       setTotalCharacters(total);
     });
@@ -1753,7 +1780,7 @@ export function CharacterList({
   };
 
   return (
-    <div className="pb-32 min-h-full bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+    <div className="pb-32 min-h-full bg-gradient-to-br from-slate-900 to-slate-800 text-white" onTouchStart={handleRootTouchStart} onTouchEnd={handleRootTouchEnd}>
       <input
         type="file"
         ref={coverInputRef}
