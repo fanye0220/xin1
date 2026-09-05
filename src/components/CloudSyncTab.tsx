@@ -278,9 +278,11 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
 
   const formatSize = (bytes: string | number) => {
     const b = Number(bytes);
-    if (!b || isNaN(b)) return '0 B';
-    const mb = b / (1024 * 1024);
-    return mb.toFixed(2) + ' MB';
+    if (!b || isNaN(b)) return '未知大小';
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(2)} MB`;
+    return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
   };
 
   if (needsAuth) {
@@ -625,7 +627,7 @@ const handleDeleteCloudChar = async (fileId: string, name: string) => {
                         <div>
                            <h4 className="font-medium text-xs sm:text-sm text-white/90 truncate">{charName}</h4>
                            <p className="text-[10px] sm:text-xs text-white/50 mt-0.5 truncate">
-                             {char.size ? (parseInt(char.size) / 1024 / 1024).toFixed(2) + ' MB' : '未知大小'}
+                              {char.size ? formatSize(char.size) : '未知大小'}
                              {char.createdTime ? ` · ${new Date(char.createdTime).toLocaleDateString()}` : ''}
                            </p>
                         </div>

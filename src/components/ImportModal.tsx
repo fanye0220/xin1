@@ -1226,16 +1226,18 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
                   </div>
                 </div>
 
-                <div className="mt-4 w-full flex justify-center">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); fetchTavernList(); }}
-                    disabled={isPulling}
-                    className="flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-purple-500/10 to-pink-500/10 hover:from-purple-500/20 hover:to-pink-500/20 text-purple-400 rounded-xl font-medium transition-all duration-300 disabled:opacity-50 w-full justify-center border border-purple-500/30 hover:border-purple-400/50 shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20"
-                  >
-                    {isPulling ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" /> : <Cloud className="w-5 h-5 shrink-0" />}
-                    <span className="truncate">拉取酒馆卡片</span>
-                  </button>
-                </div>
+                {isAndroid() && (
+                  <div className="mt-4 w-full flex justify-center">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); fetchTavernList(); }}
+                      disabled={isPulling}
+                      className="flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-purple-500/10 to-pink-500/10 hover:from-purple-500/20 hover:to-pink-500/20 text-purple-400 rounded-xl font-medium transition-all duration-300 disabled:opacity-50 w-full justify-center border border-purple-500/30 hover:border-purple-400/50 shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20"
+                    >
+                      {isPulling ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" /> : <Cloud className="w-5 h-5 shrink-0" />}
+                      <span className="truncate">拉取酒馆卡片</span>
+                    </button>
+                  </div>
+                )}
 
                 {error && (
                   <motion.div
