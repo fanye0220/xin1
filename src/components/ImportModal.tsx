@@ -399,12 +399,10 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
               (data.data && data.data.entries !== undefined);
             const isQR = Array.isArray(data) ? (data.length > 0 && data[0]?.label !== undefined && data[0]?.message !== undefined) : ((data?.quick_replies !== undefined || data?.qrList !== undefined) && data?.spec !== "chara_card_v2" && data?.spec !== "chara_card_v3" && data?.first_mes === undefined && data?.personality === undefined);
             const isScript = data?.type === "script" && data?.content !== undefined && data?.name !== undefined;
-            const isChatLogFile = file.name.toLowerCase().endsWith(".jsonl") || file.name.toLowerCase().endsWith(".json");
 
-            
-            const isChatData = isChatLogFile || (Array.isArray(data) 
-              ? (data.length > 0 && (data[0].mes || data[0].text !== undefined)) 
-              : !!(data.chat && Array.isArray(data.chat) && !data.name && !data.char_name && !data.character_name && !data.data?.name && !data.data?.char_name && !data.data?.character_name));
+            const isChatData = Array.isArray(data)
+              ? (data.length > 0 && (data[0].mes || data[0].text !== undefined))
+              : !!(data.chat && Array.isArray(data.chat) && !data.name && !data.char_name && !data.character_name && !data.data?.name && !data.data?.char_name && !data.data?.character_name);
 
             const isCharacter =
               !isTheme &&
@@ -639,7 +637,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
           (data.data && data.data.entries !== undefined);
         const isQR = Array.isArray(data) ? (data.length > 0 && data[0]?.label !== undefined && data[0]?.message !== undefined) : ((data?.quick_replies !== undefined || data?.qrList !== undefined) && data?.spec !== "chara_card_v2" && data?.spec !== "chara_card_v3" && data?.first_mes === undefined && data?.personality === undefined);
             const isScript = data?.type === "script" && data?.content !== undefined && data?.name !== undefined;
-            const isChatLogFile = file.name.toLowerCase().endsWith(".jsonl") || file.name.toLowerCase().endsWith(".json");
         const isCharacter = !isTheme && !isAIPreset && !isWorldbook && !isQR && !isScript && !!(data.name || data.char_name || data.character_name || data.data?.name || data.data?.char_name || data.data?.character_name);
 
 
