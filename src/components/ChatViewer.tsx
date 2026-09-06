@@ -453,15 +453,20 @@ export function ChatViewer({
 
   useEffect(() => {
     let active = true;
-    const urls: Record<string, string> = {};
+    const localObjectUrls: string[] = [];
 
     const loadUrls = async () => {
-      let hasLocalFiles = false;
       let getLocalImageUrl: any;
       if (characters.some((c) => c.localFilePath)) {
         const m = await import("../lib/appBridge");
         getLocalImageUrl = m.getLocalImageUrl;
       }
+
+      const { getCharacterThumb } = await import("../lib/db");
+      const { peekCachedUrl, putCachedBlobUrl } = await import("../lib/thumbCache");
+
+      const urls: Record<string, string> = {};
+      const pendingThumbFetches: Promise<void>[] = [];
 
       characters.forEach((char) => {
         if (char.localFilePath && getLocalImageUrl) {
@@ -469,13 +474,37 @@ export function ChatViewer({
             char.localFilePath,
             char.updatedAt || char.createdAt,
           );
-        } else {
-          urls[char.id] = char.avatarBlob
-            ? URL.createObjectURL(char.avatarBlob)
-            : char.avatarUrlFallback &&
+        } else if (char.avatarBlob) {
+          const objectUrl = URL.createObjectURL(char.avatarBlob);
+          localObjectUrls.push(objectUrl);
+          urls[char.id] = objectUrl;
+        } else if (char.hasBlobsSeparated) {
+          // getCharacters() 这里是拿去做列表用的, 没带 avatarBlob(性能考虑),
+          // 真正的头像要么从共享的缩略图 LRU 缓存里拿, 要么现场去数据库按需取一次
+          // ——不能直接当成"没有头像"退回占位图, 参考 CharacterList 的做法。
+          const thumbCacheKey = `${char.id}:${char.updatedAt || 0}`;
+          const cached = peekCachedUrl(thumbCacheKey);
+          if (cached) {
+            urls[char.id] = cached;
+          } else {
+            urls[char.id] = char.avatarUrlFallback &&
                 !char.avatarUrlFallback.includes("api.dicebear.com")
               ? char.avatarUrlFallback
               : getFallbackAvatar(char.name || char.id);
+            pendingThumbFetches.push(
+              getCharacterThumb(char.id).then((thumbBlob: Blob | null) => {
+                if (thumbBlob && active) {
+                  const url = putCachedBlobUrl(thumbCacheKey, thumbBlob);
+                  setAvatarUrls((prev) => ({ ...prev, [char.id]: url }));
+                }
+              })
+            );
+          }
+        } else {
+          urls[char.id] = char.avatarUrlFallback &&
+              !char.avatarUrlFallback.includes("api.dicebear.com")
+            ? char.avatarUrlFallback
+            : getFallbackAvatar(char.name || char.id);
         }
       });
       if (active) setAvatarUrls(urls);
@@ -485,9 +514,7 @@ export function ChatViewer({
 
     return () => {
       active = false;
-      Object.values(urls).forEach((url) => {
-        if (url && url.startsWith("blob:")) URL.revokeObjectURL(url);
-      });
+      localObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [characters]);
 

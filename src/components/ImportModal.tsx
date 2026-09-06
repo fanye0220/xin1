@@ -48,51 +48,44 @@ interface ParsedItem {
   errorMsg?: string;
 }
 
-export function TavernAvatar({ char, aiSettings }: { char: any; aiSettings: any }) {
+export function TavernAvatar({ char, aiSettings }: { char: any, aiSettings: any }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     let url: string | null = null;
-
     const fetchImg = async () => {
       let stUrl = aiSettings.sillyTavernUrl?.trim().replace(/\/$/, '');
       if (!stUrl) return;
-      if (!stUrl.startsWith('http://') && !stUrl.startsWith('https://')) {
-        stUrl = 'http://' + stUrl;
-      }
-
+      if (!stUrl.startsWith('http://') && !stUrl.startsWith('https://')) stUrl = 'http://' + stUrl;
       const headers: Record<string, string> = {};
       if (aiSettings.sillyTavernUsername && aiSettings.sillyTavernPassword) {
-        headers['Authorization'] = `Basic ${btoa(`${aiSettings.sillyTavernUsername}:${aiSettings.sillyTavernPassword}`)}`;
+         headers['Authorization'] = `Basic ${btoa(`${aiSettings.sillyTavernUsername}:${aiSettings.sillyTavernPassword}`)}`;
       }
-
       try {
         const targetUrl = `${stUrl}/characters/${encodeURIComponent(char.avatar)}`;
         const res = await fetch(targetUrl, { headers });
         if (res.ok && isMounted) {
-          const blob = await res.blob();
-          url = URL.createObjectURL(blob);
-          setBlobUrl(url);
-        } else if (isMounted) {
-          setError(true);
+            const blob = await res.blob();
+            url = URL.createObjectURL(blob);
+            setBlobUrl(url);
+        } else {
+            if (isMounted) setError(true);
         }
-      } catch {
+      } catch (e) {
         if (isMounted) setError(true);
       }
     };
-
     fetchImg();
-
-    return () => {
-      isMounted = false;
-      if (url) URL.revokeObjectURL(url);
+    return () => { 
+        isMounted = false; 
+        if (url) URL.revokeObjectURL(url); 
     };
   }, [char.avatar, aiSettings]);
 
   if (error || !blobUrl) {
-    return <img src={getFallbackAvatar(char.name)} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover shrink-0" />;
+     return <img src={getFallbackAvatar(char.name)} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover shrink-0" />;
   }
   return <img src={blobUrl} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover shrink-0" />;
 }
@@ -117,7 +110,6 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
   const [selectedTavernChars, setSelectedTavernChars] = useState<Set<string>>(new Set());
   const [isPulling, setIsPulling] = useState(false);
   const [tavernSearchQuery, setTavernSearchQuery] = useState("");
-  const [tavernAiSettings] = useState(() => getAISettings());
 
   const fetchTavernList = async () => {
     const aiSettings = getAISettings();
@@ -1084,10 +1076,10 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
               return (
               <div className="py-2 flex flex-col flex-1 min-h-[50vh] overflow-hidden">
                 <div className="flex justify-between items-center mb-3 shrink-0 gap-2">
-                   <h3 className="font-bold text-sm sm:text-base truncate">拉取角色 ({selectedTavernChars.size}/{tavernChars.length})</h3>
+                   <h3 className="font-bold text-sm sm:text-base truncate">选择要拉取的角色 ({selectedTavernChars.size}/{tavernChars.length})</h3>
                    <div className="flex gap-2">
-                     <button onClick={() => setSelectedTavernChars(new Set([...selectedTavernChars, ...filteredTavernChars.map(c => c.avatar)]))} className="text-xs bg-white/5 hover:bg-white/15 border border-white/10 text-white/80 hover:text-white px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg shrink-0 transition-colors">全选筛选</button>
-                     <button onClick={() => setSelectedTavernChars(new Set())} className="text-xs bg-white/5 hover:bg-white/15 border border-white/10 text-white/80 hover:text-white px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg shrink-0 transition-colors">清空</button>
+                     <button onClick={() => setSelectedTavernChars(new Set([...selectedTavernChars, ...filteredTavernChars.map(c => c.avatar)]))} className="text-xs bg-white/5 hover:bg-white/15 border border-white/10 text-white/80 hover:text-white px-3 py-1.5 rounded-lg shrink-0 transition-colors">全选筛选</button>
+                     <button onClick={() => setSelectedTavernChars(new Set())} className="text-xs bg-white/5 hover:bg-white/15 border border-white/10 text-white/80 hover:text-white px-3 py-1.5 rounded-lg shrink-0 transition-colors">清空</button>
                    </div>
                 </div>
                 <div className="relative mb-3 shrink-0">
@@ -1112,7 +1104,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
                               setSelectedTavernChars(newSet);
                            }}
                            className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-xl cursor-pointer transition-all duration-200 ${selectedTavernChars.has(char.avatar) ? 'bg-purple-500/20 border border-purple-500/50 shadow-[inset_0_0_15px_rgba(168,85,247,0.15)]' : 'bg-white/5 border border-transparent hover:border-white/10 hover:bg-white/10'}`}>
-                         <TavernAvatar char={char} aiSettings={tavernAiSettings} />
+                         <TavernAvatar char={char} aiSettings={getAISettings()} />
                          <div className="flex-1 min-w-0">
                            <div className="font-medium text-sm sm:text-base truncate">{char.name}</div>
                            <div className="text-xs text-white/50 truncate">{char.creator_notes || char.description?.substring(0, 50) || '无简介'}</div>

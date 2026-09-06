@@ -16,10 +16,79 @@ export async function extractTavernData(buffer: ArrayBuffer): Promise<any | null
     return null;
   }
 
-  let offset = 8;
-  let charaData: any | null = null;
-  let ccv3Data: any | null = null;
+  // A V3 card PNG typically embeds BOTH a legacy 'chara' chunk (v2-compatible
+  // fallback, may omit newer fields like tags) AND a 'ccv3' chunk (full v3
+  // data). We must scan every chunk and prefer 'ccv3' over 'chara' rather
+  // than returning on whichever keyword happens to appear first.
+  const rawPayloads: { chara?: string; ccv3?: string } = {};
 
+  const decodeChunkPayload = async (
+    type: string,
+    data: Uint8Array
+  ): Promise<{ keyword: string; payload: string } | null> => {
+    if (type === 'tEXt') {
+      const text = new TextDecoder('utf-8').decode(data);
+      if (text.startsWith('chara\0')) {
+        return { keyword: 'chara', payload: text.substring(6) };
+      } else if (text.startsWith('ccv3\0')) {
+        return { keyword: 'ccv3', payload: text.substring(5) };
+      }
+      return null;
+    } else if (type === 'iTXt') {
+      let nullIdx = 0;
+      while (nullIdx < data.length && data[nullIdx] !== 0) {
+        nullIdx++;
+      }
+      const keyword = new TextDecoder('utf-8').decode(data.slice(0, nullIdx));
+
+      if (keyword === 'chara' || keyword === 'ccv3') {
+        const compressionFlag = data[nullIdx + 1];
+        let currentIdx = nullIdx + 3;
+        let nullsFound = 0;
+        while (currentIdx < data.length && nullsFound < 2) {
+          if (data[currentIdx] === 0) nullsFound++;
+          currentIdx++;
+        }
+
+        const textData = data.slice(currentIdx);
+
+        if (compressionFlag === 0) {
+          return { keyword, payload: new TextDecoder('utf-8').decode(textData) };
+        } else if (compressionFlag === 1) {
+          try {
+            const ds = new DecompressionStream('deflate');
+            const writer = ds.writable.getWriter();
+            writer.write(textData);
+            writer.close();
+
+            const reader = ds.readable.getReader();
+            const chunks: Uint8Array[] = [];
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value) chunks.push(value);
+            }
+
+            const totalLength = chunks.reduce((acc, val) => acc + val.length, 0);
+            const decompressed = new Uint8Array(totalLength);
+            let off = 0;
+            for (const chunk of chunks) {
+              decompressed.set(chunk, off);
+              off += chunk.length;
+            }
+
+            return { keyword, payload: new TextDecoder('utf-8').decode(decompressed) };
+          } catch (e) {
+            console.error('Failed to decompress iTXt chunk', e);
+          }
+        }
+      }
+      return null;
+    }
+    return null;
+  };
+
+  let offset = 8;
   while (offset < buffer.byteLength) {
     const length = dataView.getUint32(offset);
     const type = String.fromCharCode(
@@ -32,81 +101,26 @@ export async function extractTavernData(buffer: ArrayBuffer): Promise<any | null
     const dataOffset = offset + 8;
     const data = uint8.slice(dataOffset, dataOffset + length);
 
-    if (type === 'tEXt') {
-      const text = new TextDecoder('utf-8').decode(data);
-      if (text.startsWith('chara\0')) {
-        const payload = text.substring(6);
-        if (charaData === null) charaData = parsePayload(payload);
-      } else if (text.startsWith('ccv3\0')) {
-        const payload = text.substring(5);
-        if (ccv3Data === null) ccv3Data = parsePayload(payload);
-      }
-    } else if (type === 'iTXt') {
-      let nullIdx = 0;
-      while (nullIdx < data.length && data[nullIdx] !== 0) {
-        nullIdx++;
-      }
-      const keyword = new TextDecoder('utf-8').decode(data.slice(0, nullIdx));
-      
-      if (keyword === 'chara' || keyword === 'ccv3') {
-        const compressionFlag = data[nullIdx + 1];
-        let currentIdx = nullIdx + 3;
-        let nullsFound = 0;
-        while (currentIdx < data.length && nullsFound < 2) {
-          if (data[currentIdx] === 0) nullsFound++;
-          currentIdx++;
-        }
-        
-        const textData = data.slice(currentIdx);
-        
-        if (compressionFlag === 0) {
-          const payload = new TextDecoder('utf-8').decode(textData);
-          if (keyword === 'ccv3' && ccv3Data === null) {
-            ccv3Data = parsePayload(payload);
-          } else if (keyword === 'chara' && charaData === null) {
-            charaData = parsePayload(payload);
-          }
-        } else if (compressionFlag === 1) {
-          try {
-            const ds = new DecompressionStream('deflate');
-            const writer = ds.writable.getWriter();
-            writer.write(textData);
-            writer.close();
-            
-            const reader = ds.readable.getReader();
-            const chunks: Uint8Array[] = [];
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              if (value) chunks.push(value);
-            }
-            
-            const totalLength = chunks.reduce((acc, val) => acc + val.length, 0);
-            const decompressed = new Uint8Array(totalLength);
-            let offset = 0;
-            for (const chunk of chunks) {
-              decompressed.set(chunk, offset);
-              offset += chunk.length;
-            }
-            
-            const payload = new TextDecoder('utf-8').decode(decompressed);
-            if (keyword === 'ccv3' && ccv3Data === null) {
-              ccv3Data = parsePayload(payload);
-            } else if (keyword === 'chara' && charaData === null) {
-              charaData = parsePayload(payload);
-            }
-          } catch (e) {
-            console.error("Failed to decompress iTXt chunk", e);
-          }
-        }
+    if (type === 'tEXt' || type === 'iTXt') {
+      const result = await decodeChunkPayload(type, data);
+      if (result && !rawPayloads[result.keyword as 'chara' | 'ccv3']) {
+        rawPayloads[result.keyword as 'chara' | 'ccv3'] = result.payload;
       }
     }
 
     offset += 8 + length + 4; // length + type + data + crc
   }
 
-  // CCV3 优先：避免文件里同时存在 V2/V3 时被 V2 覆盖，导致 V3 卡片降级、AI 标签丢失。
-  return ccv3Data ?? charaData;
+  // Prefer the full v3 payload; fall back to the legacy v2-compatible one.
+  if (rawPayloads.ccv3) {
+    const parsed = parsePayload(rawPayloads.ccv3);
+    if (parsed) return parsed;
+  }
+  if (rawPayloads.chara) {
+    return parsePayload(rawPayloads.chara);
+  }
+
+  return null;
 }
 
 function parsePayload(payload: string): any | null {
@@ -173,39 +187,48 @@ export function injectTavernData(originalBuffer: ArrayBuffer, data: any): ArrayB
     throw new Error("Not a valid PNG file");
   }
 
-  const buildChunk = (chunkData: any, prefix: 'chara' | 'ccv3'): Uint8Array => {
-    const jsonString = JSON.stringify(chunkData);
+  const isV3 = data.spec === 'chara_card_v3';
+
+  // For v3 cards we write BOTH chunks: 'ccv3' with the full v3 payload, and
+  // a 'chara' fallback so tools that only understand the legacy v2 keyword
+  // (still common) don't end up with an unreadable card. The v2 envelope
+  // reuses the same inner `data` object — v2 already supports the fields
+  // that matter for compatibility (name, description, tags, etc.); any
+  // v3-only extras are simply ignored by v2-only readers.
+  const buildChunk = (keyword: 'chara' | 'ccv3', payloadObj: any): Uint8Array => {
+    const jsonString = JSON.stringify(payloadObj);
     const base64 = btoa(unescape(encodeURIComponent(jsonString)));
-    const textData = new TextEncoder().encode(`${prefix}\0${base64}`);
+    const textData = new TextEncoder().encode(`${keyword}\0${base64}`);
 
     const chunkLength = textData.length;
     const chunkType = new TextEncoder().encode('tEXt');
 
-    const crcInput = new Uint8Array(4 + chunkLength);
-    crcInput.set(chunkType, 0);
-    crcInput.set(textData, 4);
+    const chunkData = new Uint8Array(4 + chunkLength);
+    chunkData.set(chunkType, 0);
+    chunkData.set(textData, 4);
 
-    const crc = crc32(crcInput);
+    const crc = crc32(chunkData);
 
-    const chunk = new Uint8Array(4 + 4 + chunkLength + 4);
-    const view = new DataView(chunk.buffer);
+    const newChunk = new Uint8Array(4 + 4 + chunkLength + 4);
+    const view = new DataView(newChunk.buffer);
     view.setUint32(0, chunkLength);
-    chunk.set(chunkType, 4);
-    chunk.set(textData, 8);
+    newChunk.set(chunkType, 4);
+    newChunk.set(textData, 8);
     view.setUint32(8 + chunkLength, crc);
-    return chunk;
+    return newChunk;
   };
 
-  const isV3 = data?.spec === 'chara_card_v3' || data?.data?.spec === 'chara_card_v3';
-  const injectedChunks: Uint8Array[] = [];
-  injectedChunks.push(buildChunk(data, isV3 ? 'ccv3' : 'chara'));
-
+  const newChunks: Uint8Array[] = [];
   if (isV3) {
-    // 酒馆向后兼容：V3 卡片也必须保留一份 V2 chara 数据块，否则导入会直接拒绝读取。
-    const compatData = JSON.parse(JSON.stringify(data));
-    compatData.spec = 'chara_card_v2';
-    compatData.spec_version = '2.0';
-    injectedChunks.push(buildChunk(compatData, 'chara'));
+    const v2Envelope = {
+      spec: 'chara_card_v2',
+      spec_version: '2.0',
+      data: data.data,
+    };
+    newChunks.push(buildChunk('chara', v2Envelope));
+    newChunks.push(buildChunk('ccv3', data));
+  } else {
+    newChunks.push(buildChunk('chara', data));
   }
 
   // Reconstruct PNG
@@ -237,14 +260,14 @@ export function injectTavernData(originalBuffer: ArrayBuffer, data: any): ArrayB
       const keyword = new TextDecoder('utf-8').decode(dataSlice.slice(0, nullIdx));
       
       if (keyword === 'chara' || keyword === 'ccv3') {
-        // Skip existing chara/ccv3 chunk, we will inject ours
+        // Skip existing chara/ccv3 chunk(s), we will inject our own
         offset = chunkEnd;
         continue;
       }
     }
 
     if (type === 'IEND' && !charaInjected) {
-      injectedChunks.forEach((chunk) => chunks.push(chunk));
+      for (const c of newChunks) chunks.push(c);
       charaInjected = true;
     }
 

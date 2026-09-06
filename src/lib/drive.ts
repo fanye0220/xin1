@@ -4,6 +4,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { getFolders, getCachedMeta, getCharacter, getAllChatsMetadata, getChatById, saveFolder, saveCharacter, saveChatsBulk, invalidateCache, initDB } from './db';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { createDriveFileWithContent } from './driveUpload';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -199,6 +200,17 @@ export const logout = async () => {
 // Base folder name
 const FOLDER_NAME = 'AITavern_Backups';
 
+const BACKUP_SETTING_KEYS = [
+  'tavern_theme',
+  'tavern_viewMode',
+  'tavern_sortBy',
+  'tavern_pageSize',
+  'tavern_foldersExpanded',
+  'tavern_sidebarFoldersExpanded',
+  'chatViewer_customTags',
+  'auto_backup_enabled',
+];
+
 async function getOrCreateBackupFolder(accessToken: string): Promise<string> {
   // Check if folder exists
   let res = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, {
@@ -247,6 +259,17 @@ export async function exportAllDataForBackup(onProgress: (msg: string) => void):
       return m;
   });
   zip.file("memos.json", JSON.stringify(processedMemos));
+
+  // Settings
+  onProgress("正在导出系统配置...");
+  const appSettings: any = {};
+  for (const key of BACKUP_SETTING_KEYS) {
+    const val = localStorage.getItem(key);
+    if (val !== null && val !== undefined) {
+      appSettings[key] = val;
+    }
+  }
+  zip.file("settings.json", JSON.stringify(appSettings));
 
   // Compatible Export layout inside the same Backup Zip
   const chars = await getCachedMeta();
@@ -344,39 +367,12 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
     ? `MIU_AutoBackup_${timestamp}.zip`
     : `MIU_Backup_${timestamp}.zip`;
 
-  onProgress("正在创建云端备份文件...");
-  const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: filename,
-      parents: [folderId],
-      mimeType: "application/zip",
-    }),
-  });
-  if (!createRes.ok) {
-    throw new Error(`创建云端备份失败: HTTP ${createRes.status}`);
-  }
-  const created = await createRes.json();
-  const fileId = created.id;
-  if (!fileId) {
-    throw new Error("云端返回的备份文件 ID 无效");
-  }
-
   onProgress("正在上传完整备份...");
-  const uploadRes = await fetch(
-    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/zip",
-      },
-      body: zipBlob,
-    },
+  const uploadRes = await createDriveFileWithContent(
+    accessToken,
+    { name: filename, parents: [folderId], mimeType: "application/zip" },
+    zipBlob,
+    "application/zip",
   );
   if (!uploadRes.ok) {
     const errText = await uploadRes.text().catch(() => "");
