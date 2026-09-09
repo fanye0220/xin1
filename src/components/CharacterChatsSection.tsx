@@ -28,7 +28,7 @@ import { ChatCleanerModal } from "./ChatCleanerModal";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { Virtuoso, VirtuosoGrid } from "react-virtuoso";
+import { Virtuoso } from "react-virtuoso";
 
 interface Props {
   characterId: string;
@@ -55,7 +55,8 @@ export function CharacterChatsSection({
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
   const [editNoteContent, setEditNoteContent] = useState("");
   const [customTags, setCustomTags] = useState<string[]>([]);
-  const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null);
+  const [visibleCount, setVisibleCount] = useState(30);
+  const observerTarget = useRef<HTMLDivElement>(null);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [importProgress, setImportProgress] = useState<{
     show: boolean;
@@ -65,10 +66,17 @@ export function CharacterChatsSection({
   }>({ show: false, current: 0, total: 0, message: "" });
 
   useEffect(() => {
-    setScrollParent(
-      document.getElementById("character-detail-scroll-container"),
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 30, chats.length));
+        }
+      },
+      { rootMargin: "400px" },
     );
-  }, []);
+    if (observerTarget.current) observer.observe(observerTarget.current);
+    return () => observer.disconnect();
+  }, [chats.length]);
 
   const loadChats = async () => {
     const { getChatsMetadataForCharacter } = await import("../lib/db");
@@ -600,92 +608,92 @@ export function CharacterChatsSection({
               </p>
             </div>
           </div>
-        ) : scrollParent ? (
-          <VirtuosoGrid
-            customScrollParent={scrollParent}
-            listClassName="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-            data={chats}
-            itemContent={(index, chat) => (
-              <div
-                key={chat.id}
-                onClick={() => handleChatClick(chat)}
-                className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] relative h-full flex flex-col"
-              >
-                <div className="flex justify-between items-start mb-2 gap-3">
-                  <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
-                    <MessageSquare className="w-5 h-5 text-blue-400" />
-                  </div>
-
-                  <div className="flex-1 min-w-0 pt-0.5">
-                    {editingNoteFor === chat.id ? (
-                      <div
-                        className="w-full"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          autoFocus
-                          className="w-full bg-black/40 border border-blue-500/50 rounded flex px-2 py-1 text-sm text-blue-300 focus:outline-none placeholder-blue-300/30"
-                          value={editNoteContent}
-                          onChange={(e) => setEditNoteContent(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveNote(chat);
-                          }}
-                          onBlur={() => handleSaveNote(chat)}
-                          placeholder="添加故事备注..."
-                        />
-                      </div>
-                    ) : (
-                      <div
-                        className="text-sm font-medium text-blue-300 cursor-pointer hover:text-blue-200 transition flex items-center gap-2"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingNoteFor(chat.id);
-                          setEditNoteContent(chat.note || "");
-                        }}
-                        title="点击编辑备注"
-                      >
-                        {chat.note ? (
-                          <>
-                            <span className="truncate">{chat.note}</span>
-                            <span className="text-xs text-blue-300/50 shrink-0 flex items-center gap-1 leading-none pt-0.5">
-                              <Edit2 className="w-3 h-3" />
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-blue-300/50 flex items-center gap-1 font-normal">
-                            <Plus className="w-3.5 h-3.5" /> 添加内容备注...
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={(e) => handleDelete(chat.id, e)}
-                    className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <h4
-                  className="font-medium text-white mb-2 truncate text-sm flex-1"
-                  title={chat.name}
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {chats.slice(0, visibleCount).map((chat) => (
+                <div
+                  key={chat.id}
+                  onClick={() => handleChatClick(chat)}
+                  className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] relative h-full flex flex-col"
                 >
-                  {chat.name}
-                </h4>
+                  <div className="flex justify-between items-start mb-2 gap-3">
+                    <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
+                      <MessageSquare className="w-5 h-5 text-blue-400" />
+                    </div>
 
-                <div className="flex justify-between items-center text-xs text-white/40 mt-auto">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(chat.createdAt).toLocaleDateString()}
-                  </span>
-                  <span>{chat.messageCount} 条消息</span>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      {editingNoteFor === chat.id ? (
+                        <div
+                          className="w-full"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            autoFocus
+                            className="w-full bg-black/40 border border-blue-500/50 rounded flex px-2 py-1 text-sm text-blue-300 focus:outline-none placeholder-blue-300/30"
+                            value={editNoteContent}
+                            onChange={(e) => setEditNoteContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveNote(chat);
+                            }}
+                            onBlur={() => handleSaveNote(chat)}
+                            placeholder="添加故事备注..."
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="text-sm font-medium text-blue-300 cursor-pointer hover:text-blue-200 transition flex items-center gap-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingNoteFor(chat.id);
+                            setEditNoteContent(chat.note || "");
+                          }}
+                          title="点击编辑备注"
+                        >
+                          {chat.note ? (
+                            <>
+                              <span className="truncate">{chat.note}</span>
+                              <span className="text-xs text-blue-300/50 shrink-0 flex items-center gap-1 leading-none pt-0.5">
+                                <Edit2 className="w-3 h-3" />
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-blue-300/50 flex items-center gap-1 font-normal">
+                              <Plus className="w-3.5 h-3.5" /> 添加内容备注...
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => handleDelete(chat.id, e)}
+                      className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <h4
+                    className="font-medium text-white mb-2 truncate text-sm flex-1"
+                    title={chat.name}
+                  >
+                    {chat.name}
+                  </h4>
+                  <div className="flex justify-between items-center text-xs text-white/40 mt-auto">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(chat.createdAt).toLocaleDateString()}
+                    </span>
+                    <span>{chat.messageCount} 条消息</span>
+                  </div>
                 </div>
-              </div>
+              ))}
+            </div>
+            {visibleCount < chats.length && (
+              <div ref={observerTarget} className="h-10 w-full" />
             )}
-          />
-        ) : null}
+          </>
+        )}
       </motion.div>
 
       <AnimatePresence>

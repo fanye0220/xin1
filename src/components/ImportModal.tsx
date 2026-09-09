@@ -26,8 +26,12 @@ import {
 import { normalizeWorldbookEntries } from "../lib/worldbook";
 import { parseTavernCard } from "../types/tavern";
 import { isAndroid, saveToGallery } from "../lib/appBridge";
-import { getAISettings } from "../lib/ai";
+import { getAISettings, normalizeSillyTavernUrl, getSillyTavernAuthHeaders } from "../lib/ai";
 import JSZip from "jszip";
+import { useInView } from "../lib/useInView";
+import { withReadSlot } from "../lib/thumbCache";
+
+const tavernAvatarCache = new Map<string, string>();
 
 interface Props {
   isOpen: boolean;
@@ -49,45 +53,84 @@ interface ParsedItem {
 }
 
 export function TavernAvatar({ char, aiSettings }: { char: any, aiSettings: any }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(() =>
+    tavernAvatarCache.get(char.avatar) || null
+  );
   const [error, setError] = useState(false);
+  const containerRef = useRef<HTMLImageElement>(null);
+  const inView = useInView(containerRef);
 
   useEffect(() => {
-    let isMounted = true;
-    let url: string | null = null;
-    const fetchImg = async () => {
-      let stUrl = aiSettings.sillyTavernUrl?.trim().replace(/\/$/, '');
-      if (!stUrl) return;
-      if (!stUrl.startsWith('http://') && !stUrl.startsWith('https://')) stUrl = 'http://' + stUrl;
-      const headers: Record<string, string> = {};
-      if (aiSettings.sillyTavernUsername && aiSettings.sillyTavernPassword) {
-         headers['Authorization'] = `Basic ${btoa(`${aiSettings.sillyTavernUsername}:${aiSettings.sillyTavernPassword}`)}`;
-      }
-      try {
-        const targetUrl = `${stUrl}/characters/${encodeURIComponent(char.avatar)}`;
-        const res = await fetch(targetUrl, { headers });
-        if (res.ok && isMounted) {
-            const blob = await res.blob();
-            url = URL.createObjectURL(blob);
-            setBlobUrl(url);
-        } else {
-            if (isMounted) setError(true);
-        }
-      } catch (e) {
-        if (isMounted) setError(true);
-      }
-    };
-    fetchImg();
-    return () => { 
-        isMounted = false; 
-        if (url) URL.revokeObjectURL(url); 
-    };
-  }, [char.avatar, aiSettings]);
+    if (!inView) return;
+    if (tavernAvatarCache.has(char.avatar)) {
+      setBlobUrl(tavernAvatarCache.get(char.avatar)!);
+      return;
+    }
 
-  if (error || !blobUrl) {
-     return <img src={getFallbackAvatar(char.name)} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover shrink-0" />;
-  }
-  return <img src={blobUrl} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover shrink-0" />;
+    let cancelled = false;
+    const androidBridge = (window as any).Android;
+
+    const fetchImg = () =>
+      withReadSlot(async () => {
+        if (cancelled) return;
+
+        const stUrl = normalizeSillyTavernUrl(aiSettings.sillyTavernUrl);
+        if (!stUrl) return;
+
+        if (isAndroid() && androidBridge && typeof androidBridge.fetchTavernAvatarAsDataUrl === 'function') {
+          const dataUrl = androidBridge.fetchTavernAvatarAsDataUrl(
+            stUrl,
+            char.avatar,
+            aiSettings.sillyTavernUsername || "",
+            aiSettings.sillyTavernPassword || "",
+          );
+          if (cancelled) return;
+          if (dataUrl && dataUrl.startsWith("data:")) {
+            tavernAvatarCache.set(char.avatar, dataUrl);
+            setBlobUrl(dataUrl);
+          } else {
+            setError(true);
+          }
+          return;
+        }
+
+        const headers = getSillyTavernAuthHeaders(aiSettings);
+
+        try {
+          const thumbUrl = `${stUrl}/thumbnail?type=avatar&file=${encodeURIComponent(char.avatar)}`;
+          let res = await fetch(thumbUrl, { headers });
+
+          if (!res.ok) {
+            res = await fetch(
+              `${stUrl}/characters/${encodeURIComponent(char.avatar)}`,
+              { headers }
+            );
+          }
+
+          if (res.ok && !cancelled) {
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            tavernAvatarCache.set(char.avatar, url);
+            setBlobUrl(url);
+          } else {
+            if (!cancelled) setError(true);
+          }
+        } catch {
+          if (!cancelled) setError(true);
+        }
+      });
+
+    fetchImg();
+    return () => { cancelled = true; };
+  }, [char.avatar, aiSettings, inView]);
+
+  return (
+    <img
+      ref={containerRef}
+      src={error || !blobUrl ? getFallbackAvatar(char.name) : blobUrl}
+      className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover shrink-0"
+    />
+  );
 }
 
 export function ImportModal({ isOpen, onClose, onImported, folderId, initialFiles }: Props) {
@@ -113,49 +156,112 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
 
   const fetchTavernList = async () => {
     const aiSettings = getAISettings();
-    let stUrl = aiSettings.sillyTavernUrl?.trim();
+    const stUrl = normalizeSillyTavernUrl(aiSettings.sillyTavernUrl);
     if (!stUrl) {
-      setError('请先在"设置"中配置酒馆 API 地址');
+      setError('请先在"设置"中配置酒馆 API 地址。Termux 本地通常是 http://127.0.0.1:8000');
       return;
     }
-    if (stUrl.endsWith('/')) stUrl = stUrl.slice(0, -1);
 
     setIsPulling(true);
     setTavernMode(true);
     setError(null);
-    setProgress({ current: 0, total: 0, message: "正在获取酒馆角色列表..." });
+    setProgress({ current: 0, total: 0, message: "正在连接酒馆并获取角色列表..." });
 
     try {
-      const headers: Record<string, string> = {};
-      if (aiSettings.sillyTavernUsername && aiSettings.sillyTavernPassword) {
-         headers['Authorization'] = `Basic ${btoa(`${aiSettings.sillyTavernUsername}:${aiSettings.sillyTavernPassword}`)}`;
+      const headers = getSillyTavernAuthHeaders(aiSettings);
+
+      // Android 真机优先走 MainActivity 的 Java 桥接：原生流式解析
+      // /api/characters/all，只回传 name/avatar/description，避免几十 MB
+      // 大 JSON 进 WebView 后卡在 JSON.parse，导致一直转圈。
+      const androidBridge = (window as any).Android;
+      if (isAndroid() && androidBridge && typeof androidBridge.fetchTavernCharListLite === 'function') {
+        try {
+          const raw = androidBridge.fetchTavernCharListLite(
+            stUrl,
+            aiSettings.sillyTavernUsername || '',
+            aiSettings.sillyTavernPassword || '',
+          );
+          if (raw) {
+            const meta = JSON.parse(raw);
+            if (meta && (meta.status === 200 || meta.status === 201)) {
+              const nativeList = Array.isArray(meta.list)
+                ? meta.list.filter((c: any) => c && c.avatar && c.name)
+                : [];
+              if (nativeList.length > 0) {
+                setTavernChars(nativeList);
+                setSelectedTavernChars(new Set(nativeList.map((c: any) => c.avatar)));
+                setProgress(null);
+                return;
+              }
+            } else {
+              console.warn('native tavern list returned', meta?.status, meta?.error || '');
+            }
+          }
+        } catch (e) {
+          console.warn('native tavern list failed, falling back to fetch', e);
+        }
+      }
+
+      const fetchWithTimeout = (url: string, init: RequestInit, timeoutMs: number) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+      };
+
+      // 先做连通性检查，这样“地址填错/没启动/缺 http://”会显示明确原因。
+      let reachable = false;
+      let connectError = "";
+      for (const testUrl of [`${stUrl}/csrf-token`, `${stUrl}/version`, `${stUrl}/`]) {
+        try {
+          const testRes = await fetchWithTimeout(testUrl, { headers }, 8000);
+          reachable = Boolean(testRes);
+          break;
+        } catch (e: any) {
+          connectError = e?.message || String(e);
+        }
+      }
+      if (!reachable) {
+        throw new Error(`无法连接酒馆 ${stUrl}（${connectError || "网络请求失败"}）。请确认 Termux 中酒馆已启动、端口正确，并且地址以 http:// 开头`);
       }
 
       let csrf = "";
-      try {
-        const csrfRes = await fetch(`${stUrl}/csrf-token`, { headers });
-        if (csrfRes.ok) {
-          const csrfData = await csrfRes.json().catch(() => ({}));
-          csrf = csrfData.token || "";
-        }
-      } catch {}
+      const refreshCsrf = async () => {
+        try {
+          const csrfRes = await fetchWithTimeout(`${stUrl}/csrf-token`, { headers }, 8000);
+          if (csrfRes.ok) {
+            const csrfData = await csrfRes.json().catch(() => ({}));
+            csrf = csrfData.token || "";
+          }
+        } catch {}
+      };
+      await refreshCsrf();
 
       const requestList = async (url: string, method: 'GET' | 'POST', body?: string) => {
         try {
           const reqHeaders: Record<string, string> = { ...headers };
           if (csrf) reqHeaders['X-CSRF-Token'] = csrf;
           if (body !== undefined) reqHeaders['Content-Type'] = 'application/json';
-          const res = await fetch(url, { method, headers: reqHeaders, body });
-          if (!res.ok) return { ok: false as const, status: res.status, arr: [] as any[] };
+          const res = await fetchWithTimeout(url, { method, headers: reqHeaders, body }, 90000);
+          if (!res.ok) {
+            let detail = `HTTP ${res.status}`;
+            try {
+              const text = (await res.text()).trim();
+              if (text) detail = text.length > 220 ? `${text.slice(0, 220)}...` : text;
+            } catch {}
+            return { ok: false as const, status: res.status, arr: [] as any[], error: detail };
+          }
+
           const data = await res.json();
           const arr = Array.isArray(data)
             ? data
             : Array.isArray(data?.characters)
               ? data.characters
-              : data
-                ? Object.values(data)
-                : [];
-          return { ok: true as const, status: res.status, arr };
+              : Array.isArray(data?.data)
+                ? data.data
+                : data && typeof data === 'object'
+                  ? Object.values(data)
+                  : [];
+          return { ok: true as const, status: res.status, arr, error: arr.length === 0 ? "返回列表为空" : "" };
         } catch (e: any) {
           return { ok: false as const, status: -1, arr: [] as any[], error: e?.message || "网络错误" };
         }
@@ -163,37 +269,24 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
 
       let validChars: any[] = [];
       let lastError = "";
+      const attempts: { url: string; method: 'GET' | 'POST'; body?: string }[] = [
+        { url: `${stUrl}/api/characters/all`, method: 'POST', body: JSON.stringify({ shallow: true }) },
+        { url: `${stUrl}/api/characters/all`, method: 'GET' },
+        { url: `${stUrl}/api/characters`, method: 'GET' },
+      ];
 
-      // 新版/标准酒馆：POST /api/characters/all + shallow，并带 CSRF Token
-      const r1 = await requestList(`${stUrl}/api/characters/all`, 'POST', JSON.stringify({ shallow: true }));
-      if (r1.ok) {
-        validChars = r1.arr.filter((c: any) => c && c.avatar && c.name);
-        if (validChars.length === 0) lastError = "返回列表为空";
-      } else if (r1.status === 403) {
-        // CSRF token 过期/无效，刷新一次再试
-        try {
-          const csrfRes = await fetch(`${stUrl}/csrf-token`, { headers });
-          if (csrfRes.ok) {
-            const csrfData = await csrfRes.json().catch(() => ({}));
-            csrf = csrfData.token || "";
-          }
-        } catch {}
-        const r1b = await requestList(`${stUrl}/api/characters/all`, 'POST', JSON.stringify({ shallow: true }));
-        if (r1b.ok) validChars = r1b.arr.filter((c: any) => c && c.avatar && c.name);
-        else lastError = r1b.status < 0 ? "网络错误" : `HTTP ${r1b.status}`;
-      } else {
-        lastError = r1.status < 0 ? "网络错误" : `HTTP ${r1.status}`;
-      }
-
-      // 老版本/部分配置回退：GET /api/characters
-      if (validChars.length === 0) {
-        const r2 = await requestList(`${stUrl}/api/characters`, 'GET');
-        if (r2.ok) {
-          validChars = r2.arr.filter((c: any) => c && c.avatar && c.name);
-          if (validChars.length === 0) lastError = "返回列表为空";
-        } else {
-          lastError = r2.status < 0 ? "网络错误" : `HTTP ${r2.status}`;
+      for (const attempt of attempts) {
+        let result = await requestList(attempt.url, attempt.method, attempt.body);
+        if (result.status === 403 && attempt.method === 'POST') {
+          await refreshCsrf();
+          result = await requestList(attempt.url, attempt.method, attempt.body);
         }
+        if (result.ok && result.arr.length) {
+          validChars = result.arr.filter((c: any) => c && c.avatar && c.name);
+          lastError = "";
+          break;
+        }
+        lastError = result.error || `HTTP ${result.status}`;
       }
 
       if (validChars.length === 0) {
@@ -213,9 +306,8 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
 
   const pullSelectedTavernChars = async () => {
     const aiSettings = getAISettings();
-    let stUrl = aiSettings.sillyTavernUrl?.trim();
+    const stUrl = normalizeSillyTavernUrl(aiSettings.sillyTavernUrl);
     if (!stUrl) return;
-    if (stUrl.endsWith('/')) stUrl = stUrl.slice(0, -1);
 
     const charsToFetch = tavernChars.filter(c => selectedTavernChars.has(c.avatar));
     if (charsToFetch.length === 0) return;
@@ -225,10 +317,8 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
     setTavernSearchQuery("");
 
     const files: File[] = [];
-    const headers: Record<string, string> = {};
-    if (aiSettings.sillyTavernUsername && aiSettings.sillyTavernPassword) {
-       headers['Authorization'] = `Basic ${btoa(`${aiSettings.sillyTavernUsername}:${aiSettings.sillyTavernPassword}`)}`;
-    }
+    const headers = getSillyTavernAuthHeaders(aiSettings);
+    let lastDownloadError = "";
 
     let completed = 0;
     let currentIndex = 0;
@@ -245,9 +335,11 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
             const file = new File([blob], char.avatar, { type: blob.type || 'image/png' });
             files[index] = file;
           } else {
+            lastDownloadError = `HTTP ${res.status}`;
             console.error("Failed to fetch avatar", char.avatar);
           }
         } catch (e) {
+          lastDownloadError = e?.message || String(e);
           console.error("Error fetching", char.avatar, e);
         } finally {
           completed++;
@@ -271,7 +363,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
     if (downloadedFiles.length > 0) {
       handleFiles(downloadedFiles);
     } else {
-      setError("下载失败，未获取到任何卡片。");
+      setError(`下载失败，未获取到任何卡片。${lastDownloadError ? `（${lastDownloadError}）` : ""}`);
     }
   };
 
@@ -1048,9 +1140,9 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-md bg-slate-900/80 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-2xl z-[80] text-white"
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-md bg-slate-900/80 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-2xl z-[80] text-white max-h-[85vh] flex flex-col"
           >
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-6 shrink-0">
               <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
                 导入角色卡
               </h2>
@@ -1071,7 +1163,7 @@ export function ImportModal({ isOpen, onClose, onImported, folderId, initialFile
     (char.description && char.description.toLowerCase().includes(tavernSearchQuery.toLowerCase()))
   );
               return (
-              <div className="py-2 flex flex-col flex-1 min-h-[50vh] overflow-hidden">
+              <div className="py-2 flex flex-col flex-1 min-h-0 overflow-hidden">
                 <div className="flex justify-between items-center mb-3 shrink-0 gap-2">
                    <h3 className="font-bold text-sm sm:text-base truncate">选择要拉取的角色 ({selectedTavernChars.size}/{tavernChars.length})</h3>
                    <div className="flex gap-2">

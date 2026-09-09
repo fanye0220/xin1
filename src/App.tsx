@@ -164,7 +164,7 @@ export default function App() {
   }, []);
   const handleCloseCharacterDetail = useCallback(() => {
     setSelectedCharId(null);
-    setRefreshKey(prev => prev + 1);
+    setTimeout(() => setRefreshKey(prev => prev + 1), 400);
   }, []);
   useEffect(() => {
     const handleTriggerImport = (e: any) => {
@@ -188,6 +188,8 @@ export default function App() {
   
   const [isMigrating, setIsMigrating] = useState(true);
   const [migrationProgress, setMigrationProgress] = useState({ current: 0, total: 0 });
+  const [chatViewerBackSignal, setChatViewerBackSignal] = useState(0);
+  const chatViewerHasInnerRef = useRef(false);
 
   // Refs for back button handling
   const stateRefs = useRef({
@@ -232,7 +234,9 @@ export default function App() {
         setIsSidebarOpen(false); closedSomething = true;
       } else if (state.selectedFolderId) {
         closedSomething = true;
-        if (['trash', 'duplicates', 'autotagger', 'recommender', 'chatviewer'].includes(state.selectedFolderId)) {
+        if (state.selectedFolderId === 'chatviewer' && chatViewerHasInnerRef.current) {
+          setChatViewerBackSignal((v) => v + 1);
+        } else if (['trash', 'duplicates', 'autotagger', 'recommender', 'chatviewer'].includes(state.selectedFolderId)) {
           setSelectedFolderId(null);
         } else {
           import('./lib/db').then(({ getFolders }) => {
@@ -306,7 +310,9 @@ export default function App() {
               setIsSidebarOpen(false); closedSomething = true;
             } else if (state.selectedFolderId) {
               closedSomething = true;
-              if (['trash', 'duplicates', 'autotagger', 'recommender', 'chatviewer'].includes(state.selectedFolderId)) {
+              if (state.selectedFolderId === 'chatviewer' && chatViewerHasInnerRef.current) {
+                setChatViewerBackSignal((v) => v + 1);
+              } else if (['trash', 'duplicates', 'autotagger', 'recommender', 'chatviewer'].includes(state.selectedFolderId)) {
                 setSelectedFolderId(null);
               } else {
                 import('./lib/db').then(({ getFolders }) => {
@@ -407,6 +413,8 @@ export default function App() {
             onClose={() => { setSelectedFolderId(null); setRefreshKey(prev => prev + 1); }} 
             onOpenImport={handleOpenImportModal}
             refreshKey={refreshKey}
+            onActiveViewChange={(hasInner) => { chatViewerHasInnerRef.current = hasInner; }}
+            backSignal={chatViewerBackSignal}
           />
         ) : (
           <CharacterList
@@ -425,15 +433,14 @@ export default function App() {
 
         <AnimatePresence>
           {selectedCharId && (
-            <div className="absolute inset-0 z-50 bg-slate-900">
-              <CharacterDetail
-                id={selectedCharId}
-                onBack={handleCloseCharacterDetail}
-                onOpenChat={setGlobalChatViewerId}
-                onOpenImport={handleOpenImportModal}
-                refreshKey={refreshKey}
-              />
-            </div>
+            <CharacterDetail
+              key={selectedCharId}
+              id={selectedCharId}
+              onBack={handleCloseCharacterDetail}
+              onOpenChat={setGlobalChatViewerId}
+              onOpenImport={handleOpenImportModal}
+              refreshKey={refreshKey}
+            />
           )}
         </AnimatePresence>
       </div>

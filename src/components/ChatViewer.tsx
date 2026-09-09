@@ -65,12 +65,16 @@ export function ChatViewer({
   singleMode,
   onOpenImport,
   refreshKey,
+  onActiveViewChange,
+  backSignal,
 }: {
   onClose: () => void;
   initialChatId?: string | null;
   singleMode?: boolean;
   onOpenImport?: (files?: FileList | File[]) => void;
   refreshKey?: number;
+  onActiveViewChange?: (hasInnerView: boolean) => void;
+  backSignal?: number;
 }) {
   const [savedChats, setSavedChats] = useState<
     (Omit<ChatLog, "messages"> & {
@@ -81,6 +85,23 @@ export function ChatViewer({
   >([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeChat, setActiveChat] = useState<ChatLog | null>(null);
+
+  // 全局的返回手势/物理返回键(App.tsx 那边)不知道这个工具内部还有"列表 -> 具体
+  // 聊天"这一层导航, 之前会直接把整个聊天记录查看器关掉, 而不是先退回列表。
+  // 这里把"当前是否深入到某条聊天里"同步给外层, 外层想让我们退一层时就把
+  // backSignal 加一, 我们收到变化就退回列表。
+  useEffect(() => {
+    onActiveViewChange?.(!!activeChatId);
+  }, [activeChatId]);
+
+  const isFirstBackSignal = useRef(true);
+  useEffect(() => {
+    if (isFirstBackSignal.current) {
+      isFirstBackSignal.current = false;
+      return;
+    }
+    if (activeChatId) setActiveChatId(null);
+  }, [backSignal]);
 
   useEffect(() => {
     if (initialChatId) {
@@ -201,15 +222,17 @@ export function ChatViewer({
     }[] = [];
     const map = new Map<string, number>();
 
+    const charById = new Map<string, typeof characters[0]>();
+    const charByName = new Map<string, typeof characters[0]>();
+    characters.forEach(c => {
+      charById.set(c.id, c);
+      charByName.set(c.name.toLowerCase(), c);
+    });
+
     savedChats.forEach((chat) => {
-      let matchedChar = chat.characterId
-        ? characters.find((c) => c.id === chat.characterId)
-        : null;
+      let matchedChar = chat.characterId ? charById.get(chat.characterId) : null;
       if (!matchedChar && chat.firstAiName) {
-        matchedChar =
-          characters.find(
-            (c) => c.name.toLowerCase() === chat.firstAiName?.toLowerCase(),
-          ) || null;
+        matchedChar = charByName.get(chat.firstAiName.toLowerCase()) || null;
       }
 
       const groupName = matchedChar?.name || chat.firstAiName || "未归类聊天";

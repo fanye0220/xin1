@@ -7,7 +7,7 @@ import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
-import { getAISettings } from '../lib/ai';
+import { getAISettings, normalizeSillyTavernUrl, getSillyTavernAuthHeaders } from '../lib/ai';
 import { AvatarViewer } from './AvatarViewer';
 import { QuickRepliesSection } from './QuickRepliesSection';
 import { CharacterRegexSection } from './CharacterRegexSection';
@@ -15,6 +15,7 @@ import { CharacterChatsSection } from './CharacterChatsSection';
 import { CharacterMemosSection } from './CharacterMemosSection';
 import JSZip from 'jszip';
 import { isAndroid, saveToGallery, shareFileOnAndroid, exportFileToMIU, readLocalFileBuffer } from '../lib/appBridge';
+import { multipartPost } from '../lib/multipart';
 
 interface Props {
   id: string;
@@ -60,7 +61,9 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
         const isTheme = raw?.blur_strength !== undefined || raw?.main_text_color !== undefined || raw?.chat_display !== undefined;
         const isQR = Array.isArray(raw) ? raw.length > 0 && raw[0]?.label !== undefined : (raw?.quick_replies !== undefined || raw?.qrList !== undefined) && raw?.spec !== "chara_card_v2" && raw?.spec !== "chara_card_v3" && raw?.first_mes === undefined && raw?.personality === undefined;
         const isScript = raw?.type === 'script' && raw?.content !== undefined && raw?.name !== undefined;
-        if (isTheme || isQR || isScript) {
+        const hasCharIdentity = !!(raw?.name || raw?.char_name || raw?.character_name || raw?.data?.name || raw?.data?.char_name || raw?.data?.character_name);
+        const isPreset = !hasCharIdentity && !!(raw?.prompts || raw?.temperature !== undefined || raw?.top_p !== undefined || raw?.system_prompt !== undefined);
+        if (isTheme || isQR || isScript || isPreset) {
             setActiveTab('data_viewer');
         } else if (raw.entries !== undefined && !raw.name && !raw.char_name) {
             setActiveTab('worldbook');
@@ -229,12 +232,13 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
   const card = parseTavernCard(character.data);
   const data = card.data;
   const rawData = character.data;
-  const isPreset = !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined);
+  const hasCharIdentity = !!(rawData?.name || rawData?.char_name || rawData?.character_name || rawData?.data?.name || rawData?.data?.char_name || rawData?.data?.character_name);
+  const isPreset = !hasCharIdentity && !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined || rawData.system_prompt !== undefined);
   const isStandaloneWorldbook = rawData.entries !== undefined;
   const isTheme = rawData?.blur_strength !== undefined || rawData?.main_text_color !== undefined || rawData?.chat_display !== undefined;
   const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0]?.label !== undefined : (rawData?.quick_replies !== undefined || rawData?.qrList !== undefined) && rawData?.spec !== "chara_card_v2" && rawData?.spec !== "chara_card_v3" && rawData?.first_mes === undefined && rawData?.personality === undefined;
   const isScript = rawData?.type === 'script' && rawData?.content !== undefined && rawData?.name !== undefined;
-  const isSpecialData = isTheme || isQR || isScript;
+  const isSpecialData = isTheme || isQR || isScript || isPreset;
 
   const getSafeFilename = (name: string) => {
     return name.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5\-]/g, '_') || 'character';
@@ -417,51 +421,83 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
       return;
     }
 
-    let baseBlob = character.avatarBlob;
-    let localBuffer: ArrayBuffer | null = null;
-    if (character.localFilePath) {
-      localBuffer = await readLocalFileBuffer(character.localFilePath);
-    } else if (!baseBlob && character.originalFile && (character.originalFile.type === 'image/png' || character.originalFile.name.endsWith('.png'))) {
-      baseBlob = character.originalFile;
-    }
-
-    if (!baseBlob && !localBuffer) {
-      setStFeedback({ msg: '缺少头像，无法发送', type: 'error' });
-      setTimeout(() => setStFeedback(null), 3000);
-      return;
-    }
-
     const aiSettings = getAISettings();
-    let stUrl = aiSettings.sillyTavernUrl?.trim();
+    const stUrl = normalizeSillyTavernUrl(aiSettings.sillyTavernUrl);
     if (!stUrl) {
       setStFeedback({ msg: '请先在"设置"中配置酒馆 API 地址', type: 'error' });
       setTimeout(() => setStFeedback(null), 3000);
       return;
     }
 
-    if (stUrl.endsWith('/')) stUrl = stUrl.slice(0, -1);
+    let baseBlob = character.avatarBlob;
+    let localBuffer: ArrayBuffer | null = null;
+    const localImagePath =
+      character.localFilePath &&
+      /\.(png|jpe?g|webp|gif|bmp)$/i.test(character.localFilePath)
+        ? character.localFilePath
+        : undefined;
+
+    if (localImagePath) {
+      localBuffer = await readLocalFileBuffer(localImagePath);
+    } else if (!baseBlob && character.originalFile && (character.originalFile.type === 'image/png' || character.originalFile.name.endsWith('.png'))) {
+      baseBlob = character.originalFile;
+    }
+
+    const sendAsJson = !baseBlob && !localBuffer;
     
     setIsSendingToST(true);
     setStFeedback(null);
     try {
-      const buffer = localBuffer || await baseBlob!.arrayBuffer();
-      const newBuffer = injectTavernData(buffer, getNormalizedExportData());
-      const pngBlob = new Blob([newBuffer], { type: 'image/png' });
+      const authHeaders = getSillyTavernAuthHeaders(aiSettings);
 
-      const formData = new FormData();
-      formData.append('avatar', pngBlob, `${getSafeFilename(character.name)}.png`);
-      formData.append('file_type', 'png');
+      let csrf = "";
+      try {
+        const csrfRes = await fetch(`${stUrl}/csrf-token`, { headers: authHeaders });
+        if (csrfRes.ok) {
+          const csrfData = await csrfRes.json().catch(() => ({}));
+          csrf = csrfData.token || "";
+        }
+      } catch {}
 
-      const headers: Record<string, string> = {};
-      if (aiSettings.sillyTavernUsername && aiSettings.sillyTavernPassword) {
-         headers['Authorization'] = `Basic ${btoa(`${aiSettings.sillyTavernUsername}:${aiSettings.sillyTavernPassword}`)}`;
-      } 
+      const doPush = async () => {
+        const headers: Record<string, string> = { ...authHeaders };
+        if (csrf) headers['X-CSRF-Token'] = csrf;
+        if (sendAsJson) {
+          const jsonStr = JSON.stringify(getNormalizedExportData(), null, 2);
+          const jsonBlob = new Blob([jsonStr], { type: 'application/json' });
+          const safeName = await getExportBaseName();
+          return multipartPost(
+            `${stUrl}/api/characters/import`,
+            [{ name: 'file_type', value: 'json' }],
+            { name: 'avatar', blob: jsonBlob, filename: `${safeName}.json` },
+            headers,
+          );
+        }
 
-      const res = await fetch(`${stUrl}/api/characters/import`, {
-        method: 'POST',
-        body: formData,
-        headers
-      });
+        const buffer = localBuffer || await baseBlob!.arrayBuffer();
+        const newBuffer = injectTavernData(buffer, getNormalizedExportData());
+        const pngBlob = new Blob([newBuffer], { type: 'image/png' });
+        return multipartPost(
+          `${stUrl}/api/characters/import`,
+          [{ name: 'file_type', value: 'png' }],
+          { name: 'avatar', blob: pngBlob, filename: `${getSafeFilename(character.name)}.png` },
+          headers,
+        );
+      };
+
+      let res = await doPush();
+
+      if (res.status === 403) {
+        // CSRF token 过期/无效，刷新一次再试
+        try {
+          const csrfRes = await fetch(`${stUrl}/csrf-token`, { headers: authHeaders });
+          if (csrfRes.ok) {
+            const csrfData = await csrfRes.json().catch(() => ({}));
+            csrf = csrfData.token || "";
+          }
+        } catch {}
+        res = await doPush();
+      }
 
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${await res.text()}`);
@@ -944,7 +980,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
         {/* Content Area - Glassmorphism Card */}
         <div className="flex-1 px-2 sm:px-4 pb-32">
           <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl min-h-[50vh] [.light-theme_&]:bg-[#FCFCFC]/70 [.light-theme_&]:backdrop-blur-3xl [.light-theme_&]:border-black/5 [.light-theme_&]:shadow-xl">
-            <AnimatePresence mode="wait">
+            <AnimatePresence initial={false}>
 
               {activeTab === 'data_viewer' && (
                 <motion.div
@@ -960,7 +996,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
                       </div>
                       <div className="p-4 overflow-auto max-h-[70vh] custom-scrollbar">
                           <pre className="text-[13px] text-slate-300 font-mono whitespace-pre-wrap break-all">
-                              {JSON.stringify(rawData, null, 2)}
+                              {(() => { try { const str = JSON.stringify(rawData, null, 2); if (str.length > 50000) { return str.substring(0, 50000) + "\n\n... (数据过大，为防止卡顿已截断显示，请使用导出功能查看完整内容)"; } return str; } catch (e) { return "无法解析此数据"; } })()}
                           </pre>
                       </div>
                   </div>
@@ -1218,8 +1254,10 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
 
               {activeTab === 'regex' && character && (
                 <motion.div
+                  key="regex"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.3 }}
                 >
                   <CharacterRegexSection character={character} onUpdate={setCharacter} />
@@ -1378,7 +1416,7 @@ function TextPreview({ title, content, onSave, initialEditMode }: { title: strin
         className="group relative cursor-pointer bg-white/5 hover:bg-white/10 p-3 rounded-xl border border-white/10 transition-colors w-full overflow-hidden"
       >
         <div className="text-white/70 text-sm line-clamp-3 pr-8 break-words w-full">
-          {content || <span className="text-white/30 italic">空内容...</span>}
+          {content ? (content.length > 50000 ? content.substring(0, 50000) + "...(过长已截断)" : content) : <span className="text-white/30 italic">空内容...</span>}
         </div>
         <div className="mt-1.5 text-purple-400 text-xs font-medium flex justify-between items-center opacity-80 group-hover:opacity-100 transition-opacity">
           <span className="flex items-center gap-1">展开全文 <ChevronDown className="w-3 h-3" /></span>
@@ -1483,7 +1521,7 @@ function AlternateGreetingCard({ index, content, onSave, onDelete }: { key?: str
           onClick={() => setIsExpanded(true)}
         >
           <div className="text-white/70 text-sm line-clamp-3 break-words w-full">
-            {content || <span className="text-white/30 italic">空内容...</span>}
+            {content ? (content.length > 50000 ? content.substring(0, 50000) + "...(过长已截断)" : content) : <span className="text-white/30 italic">空内容...</span>}
           </div>
           <div className="mt-1.5 text-purple-400 text-xs font-medium flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
             <span>展开全文</span>
@@ -1629,49 +1667,141 @@ export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any; onUpd
   };
 
   const renderEditForm = () => {
-    if (editingEntryIndex === null) return null;
-    return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-[#0f111a] border border-white/10 rounded-2xl p-5 sm:p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col gap-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold text-white">
-              {editingEntryIndex === -1 ? '添加世界书条目' : '编辑世界书条目'}
-            </h3>
-            <button onClick={() => setEditingEntryIndex(null)} className="p-2 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition">
-              <XIcon className="w-5 h-5" />
-            </button>
-          </div>
-          
-          <div className="flex flex-col gap-3">
-            <div>
-              <label className="block text-white/60 text-sm mb-1">关键词 (逗号分隔)</label>
-              <input 
-                type="text" 
-                value={(editingEntry.keys || []).join(', ')}
-                onChange={(e) => setEditingEntry({...editingEntry, keys: e.target.value.split(',').map((k: string)=>k.trim()).filter((k: string)=>k)})}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-white/60 text-sm mb-1">内容</label>
-              <textarea 
-                value={editingEntry.content || editingEntry.entry || ''}
-                onChange={(e) => setEditingEntry({...editingEntry, content: e.target.value, entry: e.target.value})}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 min-h-[150px] resize-none"
-              />
-            </div>
-          </div>
-          
-          <div className="flex justify-end gap-2 mt-2">
-            <button onClick={() => setEditingEntryIndex(null)} className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white hover:bg-white/10 rounded-xl transition">
-              取消
-            </button>
-            <button onClick={saveEntry} className="px-4 py-2 text-sm font-medium bg-purple-500 hover:bg-purple-600 text-white rounded-xl transition shadow-lg shadow-purple-500/20">
-              保存
-            </button>
-          </div>
-        </div>
-      </div>
+    return createPortal(
+      <AnimatePresence>
+        {editingEntryIndex !== null && (
+          <motion.div
+            key="worldbook-edit-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 sm:p-6 [.light-theme_&]:bg-black/40"
+            onClick={() => {
+              setEditingEntryIndex(null);
+              setEditingEntry(null);
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+              className="bg-slate-900 flex flex-col w-full max-h-[85vh] border border-white/10 rounded-2xl shadow-2xl max-w-3xl overflow-hidden [.light-theme_&]:bg-[#FCFCFC] [.light-theme_&]:border-black/5"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20 [.light-theme_&]:border-black/5 [.light-theme_&]:bg-black/5">
+                <h3 className="text-lg font-semibold text-white [.light-theme_&]:text-[#1c1c1e]">
+                  {editingEntryIndex === -1 ? '新增世界书条目' : '编辑世界书条目'}
+                </h3>
+                <button 
+                  onClick={() => {
+                    setEditingEntryIndex(null);
+                    setEditingEntry(null);
+                  }} 
+                  className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition [.light-theme_&]:hover:bg-black/10 [.light-theme_&]:text-slate-500 [.light-theme_&]:hover:text-[#1c1c1e]"
+                >
+                  <XIcon className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">标题 / 注释 (可选)</label>
+                  <input 
+                    type="text" 
+                    value={editingEntry.comment || editingEntry.name || ''}
+                    onChange={(e) => setEditingEntry({...editingEntry, comment: e.target.value, name: e.target.value})}
+                    className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500 transition [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
+                    placeholder="条目的标题，不影响匹配"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">关键词 (逗号分隔)</label>
+                  <input 
+                    type="text" 
+                    value={(editingEntry.keys || []).join(', ')}
+                    onChange={(e) => setEditingEntry({...editingEntry, keys: e.target.value.split(',').map((k: string)=>k.trim()).filter((k: string)=>k)})}
+                    className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500 transition [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">插入顺序 (Order)</label>
+                    <input 
+                      type="number" 
+                      value={editingEntry.order ?? 100}
+                      onChange={(e) => setEditingEntry({...editingEntry, order: parseInt(e.target.value) || 0})}
+                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500 transition [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">插入位置 (Position)</label>
+                    <select
+                      value={editingEntry.extensions?.position ?? editingEntry.position ?? 1}
+                      onChange={(e) => setEditingEntry({...editingEntry, extensions: {...(editingEntry.extensions || {}), position: parseInt(e.target.value)}})}
+                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500 transition [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
+                    >
+                      <option value={0}>0 - 角色设定前 (Before Char Def)</option>
+                      <option value={1}>1 - 角色设定后 (After Char Def)</option>
+                      <option value={2}>2 - 示例对话前 (Before Example Msgs)</option>
+                      <option value={3}>3 - 示例对话后 (After Example Msgs)</option>
+                      <option value={4}>4 - 深度插入 (At Depth)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-6 pb-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-white/70 [.light-theme_&]:text-[#1c1c1e]">
+                    <input 
+                      type="checkbox"
+                      checked={!!editingEntry.constant}
+                      onChange={(e) => setEditingEntry({...editingEntry, constant: e.target.checked})}
+                      className="rounded bg-black/30 border-white/10 text-purple-500 focus:ring-purple-500/20 [.light-theme_&]:bg-white [.light-theme_&]:border-black/20"
+                    />
+                    常驻激活 (Constant)
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-white/70 [.light-theme_&]:text-[#1c1c1e]">
+                    <input 
+                      type="checkbox"
+                      checked={editingEntry.selective !== false}
+                      onChange={(e) => setEditingEntry({...editingEntry, selective: e.target.checked})}
+                      className="rounded bg-black/30 border-white/10 text-purple-500 focus:ring-purple-500/20 [.light-theme_&]:bg-white [.light-theme_&]:border-black/20"
+                    />
+                    条件触发 (Selective)
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">内容</label>
+                  <textarea 
+                    value={editingEntry.content || editingEntry.entry || ''}
+                    onChange={(e) => setEditingEntry({...editingEntry, content: e.target.value, entry: e.target.value})}
+                    className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500 transition min-h-[150px] resize-none [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-none p-4 sm:p-6 border-t border-white/10 bg-black/20 flex justify-end gap-3 [.light-theme_&]:border-black/5 [.light-theme_&]:bg-black/5">
+                <button 
+                  onClick={() => {
+                    setEditingEntryIndex(null);
+                    setEditingEntry(null);
+                  }} 
+                  className="px-4 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition [.light-theme_&]:text-slate-500 [.light-theme_&]:hover:text-[#1c1c1e] [.light-theme_&]:hover:bg-black/10"
+                >
+                  取消
+                </button>
+                <button onClick={saveEntry} className="px-6 py-2 rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition flex items-center gap-2 shadow-lg shadow-purple-500/20">
+                  保存
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>,
+      document.body
     );
   };
 

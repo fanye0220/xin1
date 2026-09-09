@@ -274,76 +274,78 @@ export function CharacterRegexSection({ character, onUpdate }: Props) {
         <AnimatePresence>
           {editingIndex !== null && (
             <motion.div
+              key="regex-edit-modal"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[120] bg-slate-900 sm:bg-black/80 sm:backdrop-blur-sm flex flex-col sm:items-center sm:justify-center sm:p-6"
+              transition={{ duration: 0.18 }}
+              className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 sm:p-6 [.light-theme_&]:bg-black/40"
               onClick={() => setEditingIndex(null)}
             >
               <motion.div
-                initial={{ scale: 0.95, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.95, y: 20 }}
+                initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 20 }}
                 transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-                className="bg-slate-900 flex flex-col w-full h-full sm:h-auto sm:border border-white/10 sm:rounded-2xl shadow-2xl sm:max-w-3xl sm:max-h-[85vh] overflow-hidden"
+                className="bg-slate-900 flex flex-col w-full max-h-[85vh] border border-white/10 rounded-2xl shadow-2xl max-w-3xl overflow-hidden [.light-theme_&]:bg-[#FCFCFC] [.light-theme_&]:border-black/5"
                 onClick={e => e.stopPropagation()}
               >
-                <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
-                  <h3 className="text-lg font-semibold">{editingIndex === -1 ? '新增正则规则' : '编辑正则规则'}</h3>
-                  <button onClick={() => setEditingIndex(null)} className="p-1 hover:bg-white/10 rounded-full">
+                <div className="flex-none p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20 [.light-theme_&]:border-black/5 [.light-theme_&]:bg-black/5">
+                  <h3 className="text-lg font-semibold text-white [.light-theme_&]:text-[#1c1c1e]">{editingIndex === -1 ? '新增正则规则' : '编辑正则规则'}</h3>
+                  <button onClick={() => setEditingIndex(null)} className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition [.light-theme_&]:hover:bg-black/10 [.light-theme_&]:text-slate-500 [.light-theme_&]:hover:text-[#1c1c1e]">
                     <XIcon className="w-5 h-5" />
                   </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-white/70 mb-1">规则名称</label>
+                    <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">规则名称</label>
                     <input
                       type="text"
                       value={editForm.scriptName || editForm.name || ''}
                       onChange={(e) => setEditForm({ ...editForm, scriptName: e.target.value })}
-                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition"
+                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 transition [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
                       placeholder="例如: 屏蔽特定格式的星号动作"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-white/70 mb-1">匹配正则表达式 (RegEx)</label>
+                    <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">匹配正则表达式 (RegEx)</label>
                     <textarea
                       value={editForm.regex || editForm.findRegex || ''}
                       onChange={(e) => setEditForm({ ...editForm, regex: e.target.value })}
-                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition font-mono min-h-[100px]"
+                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 transition font-mono min-h-[100px] [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
                       placeholder="输入合法的正则表达式"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-white/70 mb-1">替换为内容 (Replacement)</label>
+                    <label className="block text-sm font-medium text-white/70 mb-1 [.light-theme_&]:text-[#1c1c1e]">替换为内容 (Replacement)</label>
                     <textarea
                       value={editForm.replacementString ?? editForm.replaceString ?? ''}
                       onChange={(e) => setEditForm({ ...editForm, replacementString: e.target.value })}
-                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500 transition font-mono min-h-[100px]"
+                      className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 transition font-mono min-h-[100px] [.light-theme_&]:bg-black/5 [.light-theme_&]:border-black/10 [.light-theme_&]:text-[#1c1c1e]"
                       placeholder="输入替换内容，可使用 $1, $2 等捕获组"
                     />
                   </div>
                   
                   <div className="flex gap-4 items-center">
-                     <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-white/70">
+                     <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-white/70 [.light-theme_&]:text-[#1c1c1e]">
                        <input
                          type="checkbox"
                          checked={!editForm.disabled}
                          onChange={(e) => setEditForm({ ...editForm, disabled: !e.target.checked })}
-                         className="rounded bg-black/30 border-white/10 text-purple-500 focus:ring-purple-500/20"
+                         className="rounded bg-black/30 border-white/10 text-purple-500 focus:ring-purple-500/20 [.light-theme_&]:bg-white [.light-theme_&]:border-black/20"
                        />
                        启用
                      </label>
                   </div>
                 </div>
 
-                <div className="flex-none p-4 sm:p-6 border-t border-white/10 bg-black/20 flex justify-end gap-3">
+                <div className="flex-none p-4 sm:p-6 border-t border-white/10 bg-black/20 flex justify-end gap-3 [.light-theme_&]:border-black/5 [.light-theme_&]:bg-black/5">
                   <button
                     onClick={() => setEditingIndex(null)}
-                    className="px-4 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition"
+                    className="px-4 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition [.light-theme_&]:text-slate-500 [.light-theme_&]:hover:text-[#1c1c1e] [.light-theme_&]:hover:bg-black/10"
                   >
                     取消
                   </button>
@@ -358,7 +360,7 @@ export function CharacterRegexSection({ character, onUpdate }: Props) {
                       saveRegexScripts(newScripts);
                       setEditingIndex(null);
                     }}
-                    className="px-6 py-2 rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition flex items-center gap-2"
+                    className="px-6 py-2 rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition flex items-center gap-2 shadow-lg shadow-purple-500/20"
                   >
                     <Save className="w-4 h-4" />
                     保存

@@ -31,6 +31,77 @@ export async function getCloudFolderId(token: string): Promise<string> {
   return createData.id;
 }
 
+// 云同步之前是"不管你在 App 里怎么分文件夹, 所有角色卡的同步文件一律平铺
+// 堆在同一个云端根目录里"——卡一多(几千张)这个根目录本身就没法看。
+// 这里按角色在 App 内的文件夹路径, 在云端也建出同名的一层层子文件夹, 让云端
+// 结构跟 App 里的文件夹结构对上。同一次批量同步里, 相同路径只查/建一次。
+const driveSubfolderCache = new Map<string, Promise<string>>();
+
+export function clearDriveSubfolderCache() {
+  driveSubfolderCache.clear();
+}
+
+async function getOrCreateDriveSubfolder(
+  token: string,
+  parentId: string,
+  name: string,
+): Promise<string> {
+  const safeName = name.replace(/'/g, "\\'");
+  const q = `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name)`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (res.ok) {
+    const data = await res.json();
+    if (data.files && data.files.length > 0) {
+      return data.files[0].id;
+    }
+  }
+
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId]
+    })
+  });
+  if (!createRes.ok) throw new Error("创建云端子文件夹失败");
+  const createData = await createRes.json();
+  return createData.id;
+}
+
+async function resolveDriveFolderPath(
+  token: string,
+  rootFolderId: string,
+  pathParts: string[],
+): Promise<string> {
+  if (pathParts.length === 0) return rootFolderId;
+  const cacheKey = pathParts.join('/');
+  const cached = driveSubfolderCache.get(cacheKey);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    let currentParent = rootFolderId;
+    for (const part of pathParts) {
+      currentParent = await getOrCreateDriveSubfolder(token, currentParent, part);
+    }
+    return currentParent;
+  })();
+
+  driveSubfolderCache.set(cacheKey, promise);
+  try {
+    return await promise;
+  } catch (e) {
+    driveSubfolderCache.delete(cacheKey); // 失败了不要缓存, 下次还能重试
+    throw e;
+  }
+}
+
 import JSZip from 'jszip';
 import { getSafeFilename } from './db';
 import { injectTavernData } from './png';
@@ -148,16 +219,20 @@ export async function uploadCharacterToCloud(
   }
 
   let folderPath = "";
+  let pathParts: string[] = [];
   if (char.folderId) {
     const allFolders = await getFolders();
+    const visitedFolderIds = new Set<string>();
     let currentF = allFolders.find(f => f.id === char.folderId);
-    const pathParts = [];
     while (currentF) {
+      if (visitedFolderIds.has(currentF.id)) break; // 环形引用兜底
+      visitedFolderIds.add(currentF.id);
       pathParts.unshift(currentF.name);
       currentF = allFolders.find(f => f.id === currentF.parentId);
     }
     folderPath = pathParts.join('/');
   }
+  const targetParentId = await resolveDriveFolderPath(token, folderId, pathParts);
 
   let finalBlob: Blob;
   let fileName = "";

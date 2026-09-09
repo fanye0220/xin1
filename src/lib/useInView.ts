@@ -24,7 +24,7 @@ function getObserver() {
   return observer;
 }
 
-export function useInView(ref: React.RefObject<Element>) {
+export function useInView<T extends Element>(ref: React.RefObject<T>) {
   const [isInView, setIsInView] = useState(false);
 
   useEffect(() => {

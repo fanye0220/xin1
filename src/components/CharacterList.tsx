@@ -245,11 +245,17 @@ export function CharacterList({
   // 引用, 下次覆盖前先批量释放旧的, 避免每次翻页/切换文件夹都泄漏一批。
   const folderPreviewUrlsRef = useRef<string[]>([]);
   const setFolderPreviewsWithCleanup = (previews: Record<string, string[]>) => {
-    folderPreviewUrlsRef.current.forEach((u) => {
-      if (u.startsWith("blob:")) URL.revokeObjectURL(u);
-    });
-    folderPreviewUrlsRef.current = Object.values(previews).flat();
+    const oldUrls = folderPreviewUrlsRef.current;
+    const newUrls = Object.values(previews).flat();
+    folderPreviewUrlsRef.current = newUrls;
     setFolderPreviews(previews);
+    if (oldUrls.length > 0) {
+      requestAnimationFrame(() => {
+        oldUrls.forEach((u) => {
+          if (u.startsWith("blob:")) URL.revokeObjectURL(u);
+        });
+      });
+    }
   };
   useEffect(() => {
     return () => {
@@ -919,13 +925,18 @@ export function CharacterList({
     folderId: string | undefined,
     folders: Folder[],
   ): string => {
-    if (!folderId) return "";
-    const folder = folders.find((f) => f.id === folderId);
-    if (!folder) return "";
-    const parentPath = getFolderPath(folder.parentId || undefined, folders);
-    return parentPath
-      ? `${parentPath}/${getSafeFilename(folder.name)}`
-      : getSafeFilename(folder.name);
+    const parts: string[] = [];
+    const visited = new Set<string>();
+    let currentId = folderId;
+    while (currentId) {
+      if (visited.has(currentId)) break; // 环形引用兜底：不让它无限走下去卡死主线程
+      visited.add(currentId);
+      const folder = folders.find((f) => f.id === currentId);
+      if (!folder) break;
+      parts.unshift(getSafeFilename(folder.name));
+      currentId = folder.parentId || undefined;
+    }
+    return parts.join('/');
   };
 
   const checkIsQR = (char: CharacterCard) => {

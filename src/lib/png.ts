@@ -286,3 +286,30 @@ export function injectTavernData(originalBuffer: ArrayBuffer, data: any): ArrayB
 
   return result.buffer;
 }
+
+// 纯 JSON 导入的角色卡本来就没有底图 —— 推送/写入酒馆需要一张真实 PNG 才能
+// 往里面塞数据。这里现场画一张简单的占位图当底图用，而不是直接拒绝推送。
+export async function generatePlaceholderAvatarPng(name: string): Promise<ArrayBuffer> {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('无法创建占位头像画布');
+
+  const palette = ['#8b5cf6', '#6366f1', '#ec4899', '#0ea5e9', '#14b8a6', '#f59e0b'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  ctx.fillStyle = palette[hash % palette.length];
+  ctx.fillRect(0, 0, 512, 512);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = 'bold 240px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText((name || '?').trim().charAt(0) || '?', 256, 276);
+
+  const blob: Blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('生成占位头像失败'))), 'image/png');
+  });
+  return blob.arrayBuffer();
+}

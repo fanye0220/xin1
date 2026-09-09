@@ -62,6 +62,33 @@ export function saveAISettings(settings: AISettings) {
   localStorage.setItem('ai_settings', JSON.stringify(settings));
 }
 
+export function normalizeSillyTavernUrl(raw?: string): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  let url = trimmed;
+  if (!/^https?:\/\//i.test(url)) {
+    url = `http://${url}`;
+  }
+  url = url.replace(/\/+$/, '');
+  return url;
+}
+
+function encodeBasicCredentials(username: string, password: string): string {
+  const credentials = `${username}:${password}`;
+  const bytes = new TextEncoder().encode(credentials);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+export function getSillyTavernAuthHeaders(settings: AISettings): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (settings.sillyTavernUsername && settings.sillyTavernPassword) {
+    headers['Authorization'] = `Basic ${encodeBasicCredentials(settings.sillyTavernUsername, settings.sillyTavernPassword)}`;
+  }
+  return headers;
+}
+
 export async function fetchCustomModels(url: string, key: string): Promise<string[]> {
   let baseUrl = url;
   if (baseUrl.endsWith('/chat/completions')) {
