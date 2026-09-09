@@ -16,6 +16,7 @@ import { CharacterMemosSection } from './CharacterMemosSection';
 import JSZip from 'jszip';
 import { isAndroid, saveToGallery, shareFileOnAndroid, exportFileToMIU, readLocalFileBuffer } from '../lib/appBridge';
 import { multipartPost } from '../lib/multipart';
+import { useBackHandler } from '../lib/useBackHandler';
 
 interface Props {
   id: string;
@@ -52,6 +53,37 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const hasDetailOverlay = Boolean(
+    showDeleteConfirm ||
+    showExportAlert ||
+    showAvatarViewer ||
+    isAddingAlternate ||
+    isMetadataOpen ||
+    isEditingTags ||
+    isEditingSource ||
+    isEditingName ||
+    isEditingCreator ||
+    isEditingVersion ||
+    stFeedback
+  );
+
+  const handleDetailBack = () => {
+    if (isAddingAlternate) { setIsAddingAlternate(false); return true; }
+    if (showAvatarViewer) { setShowAvatarViewer(false); return true; }
+    if (showDeleteConfirm) { setShowDeleteConfirm(false); return true; }
+    if (showExportAlert) { setShowExportAlert(false); return true; }
+    if (stFeedback) { setStFeedback(null); return true; }
+    if (isMetadataOpen) { setIsMetadataOpen(false); return true; }
+    if (isEditingTags) { setIsEditingTags(false); return true; }
+    if (isEditingSource) { setIsEditingSource(false); return true; }
+    if (isEditingName) { setIsEditingName(false); return true; }
+    if (isEditingCreator) { setIsEditingCreator(false); return true; }
+    if (isEditingVersion) { setIsEditingVersion(false); return true; }
+    return false;
+  };
+
+  useBackHandler(hasDetailOverlay, handleDetailBack);
 
   useEffect(() => {
     getCharacter(id).then(async (char) => {
@@ -1324,6 +1356,11 @@ function FullScreenTextModal({
   const [isEditing, setIsEditing] = useState(initialEditMode);
   const [editValue, setEditValue] = useState(content);
 
+  useBackHandler(isOpen, () => {
+    onClose();
+    return true;
+  });
+
   const handleSave = () => {
     if (onSave) {
       onSave(editValue);
@@ -1599,6 +1636,12 @@ export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any; onUpd
   const [viewingEntryIndex, setViewingEntryIndex] = useState<number | null>(null);
   const [editingEntryIndex, setEditingEntryIndex] = useState<number | null>(null);
   const [editingEntry, setEditingEntry] = useState<any>(null);
+
+  useBackHandler(editingEntryIndex !== null, () => {
+    setEditingEntryIndex(null);
+    setEditingEntry(null);
+    return true;
+  });
 
   const entries = book.entries ? (Array.isArray(book.entries) ? book.entries : Object.values(book.entries)) : [];
 

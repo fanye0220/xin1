@@ -19,6 +19,7 @@ import { SyncWidget } from './components/SyncWidget';
 import { migrateDatabase } from './lib/db';
 import { useTaggerState } from './lib/taggerState';
 import { isAndroid } from './lib/appBridge';
+import { handleBackRequest } from './lib/useBackHandler';
 import { syncWithAndroidLocalDirectory } from './lib/androidSync';
 import { Tag, Loader2, AlertCircle, Pause, X } from 'lucide-react';
 
@@ -222,7 +223,9 @@ export default function App() {
       const state = stateRefs.current;
       let closedSomething = false;
 
-      if (state.isImportModalOpen) {
+      if (handleBackRequest()) {
+        closedSomething = true;
+      } else if (state.isImportModalOpen) {
         setIsImportModalOpen(false); closedSomething = true;
       } else if (state.isSettingsOpen) {
         setIsSettingsOpen(false); closedSomething = true;
@@ -298,7 +301,9 @@ export default function App() {
             const state = stateRefs.current;
             let closedSomething = false;
 
-            if (state.isImportModalOpen) {
+            if (handleBackRequest()) {
+              closedSomething = true;
+            } else if (state.isImportModalOpen) {
               setIsImportModalOpen(false); closedSomething = true;
             } else if (state.isSettingsOpen) {
               setIsSettingsOpen(false); closedSomething = true;

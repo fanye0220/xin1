@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Upload, Download, Share2, Trash2, Edit2, Check, X as XIcon, ChevronDown, ChevronUp, Plus, Save } from 'lucide-react';
 import { CharacterCard, saveCharacter } from '../lib/db';
+import { useBackHandler } from '../lib/useBackHandler';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Props {
@@ -14,6 +15,11 @@ export function CharacterRegexSection({ character, onUpdate }: Props) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>({});
+
+  useBackHandler(editingIndex !== null, () => {
+    setEditingIndex(null);
+    return true;
+  });
 
   const targetData = character.data.data ? character.data.data : character.data;
   const regexScripts: any[] = targetData.extensions?.regex_scripts || [];
