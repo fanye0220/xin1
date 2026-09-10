@@ -1652,11 +1652,11 @@ export function WorldbookViewer({ book, onUpdate, onDelete }: { book: any; onUpd
 
     const handleToggleEnable = (i: number) => {
     const newEntries = [...entries];
-    if (newEntries[i].enabled !== undefined) {
-      newEntries[i].enabled = !newEntries[i].enabled;
-    } else {
-      newEntries[i].enabled = false; // default is true if undefined, so toggle makes it false
-    }
+    const entry = { ...newEntries[i] };
+    const currentlyEnabled = entry.disable !== undefined ? !entry.disable : entry.enabled !== false;
+    entry.enabled = !currentlyEnabled;
+    entry.disable = currentlyEnabled;
+    newEntries[i] = entry;
     const newBook = { ...book };
     if (Array.isArray(book.entries)) {
        newBook.entries = newEntries;
