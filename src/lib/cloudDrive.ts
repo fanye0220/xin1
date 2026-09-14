@@ -1,34 +1,48 @@
+import { Capacitor } from '@capacitor/core';
 import { getAuth } from 'firebase/auth';
-import { getCharacter, getFolders, getCachedMeta } from './db';
+import { getCharacter, getFolders, getCachedMeta, getChatsForCharacter, getChatById, isActualCharacterCard } from './db';
 import { uploadBlobToDrive } from './driveUpload';
 
 const CLOUD_FOLDER_NAME = 'AIs_Studio_Cloud_Cards';
 
-export async function getCloudFolderId(token: string): Promise<string> {
-  const q = `name='${CLOUD_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive`, {
-    headers: { Authorization: `Bearer ${token}` }
+const cloudFolderPromiseCache = new Map<string, Promise<string>>();
+
+export function getCloudFolderId(token: string): Promise<string> {
+  const cached = cloudFolderPromiseCache.get(token);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    const q = `name='${CLOUD_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error("Failed to query folder");
+    const data = await response.json();
+    if (data.files && data.files.length > 0) {
+      return data.files[0].id;
+    }
+    
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: CLOUD_FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder'
+      })
+    });
+    if (!createRes.ok) throw new Error("Failed to create cloud folder");
+    const createData = await createRes.json();
+    return createData.id;
+  })().catch((err) => {
+    cloudFolderPromiseCache.delete(token);
+    throw err;
   });
-  if (!response.ok) throw new Error("Failed to query folder");
-  const data = await response.json();
-  if (data.files && data.files.length > 0) {
-    return data.files[0].id;
-  }
-  
-  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name: CLOUD_FOLDER_NAME,
-      mimeType: 'application/vnd.google-apps.folder'
-    })
-  });
-  if (!createRes.ok) throw new Error("Failed to create cloud folder");
-  const createData = await createRes.json();
-  return createData.id;
+
+  cloudFolderPromiseCache.set(token, promise);
+  return promise;
 }
 
 // 云同步之前是"不管你在 App 里怎么分文件夹, 所有角色卡的同步文件一律平铺
@@ -189,6 +203,487 @@ async function convertToPNG(blob: Blob): Promise<Blob> {
 }
 
 
+type CloudCardType = 'character' | 'preset' | 'worldbook' | 'theme' | 'qr' | 'script';
+
+function unwrapCharacterData(rawData: any): any {
+  if (rawData?.data && typeof rawData.data === 'object' && !Array.isArray(rawData.data)) {
+    return rawData.data;
+  }
+  return rawData;
+}
+
+function detectCloudCardType(rawData: any): CloudCardType {
+  if (!rawData || isActualCharacterCard(rawData)) return 'character';
+
+  if (Array.isArray(rawData)) {
+    if (rawData.length > 0 && (rawData[0]?.message !== undefined || rawData[0]?.label !== undefined)) {
+      return 'qr';
+    }
+    return 'character';
+  }
+
+  const data = unwrapCharacterData(rawData);
+  const toolTarget = data || rawData || {};
+
+  if (
+    toolTarget.temperature !== undefined ||
+    toolTarget.top_p !== undefined ||
+    toolTarget.prompts !== undefined ||
+    toolTarget.system_prompt !== undefined
+  ) return 'preset';
+
+  if (toolTarget.entries !== undefined) return 'worldbook';
+  if (toolTarget.blur_strength !== undefined || toolTarget.main_text_color !== undefined || toolTarget.chat_display !== undefined) return 'theme';
+
+  if (
+    toolTarget.run !== undefined ||
+    toolTarget.type === 'tool' ||
+    (toolTarget.type === 'script' && toolTarget.content !== undefined && toolTarget.name !== undefined)
+  ) return 'script';
+
+  const qrTarget = toolTarget.extensions || toolTarget;
+  if (
+    qrTarget.quick_replies !== undefined ||
+    qrTarget.qrList !== undefined ||
+    qrTarget.tavern_qr_sets !== undefined
+  ) return 'qr';
+
+  return 'character';
+}
+
+function extractSourceUrl(rawData: any): string {
+  const value =
+    rawData?.data?.extensions?.source ||
+    rawData?.data?.source ||
+    rawData?.extensions?.source ||
+    rawData?.source ||
+    '';
+  return typeof value === 'string' ? value.trim() : String(value || '');
+}
+
+function hasQuickReplies(rawData: any): boolean {
+  const target = rawData?.data?.extensions || rawData?.data || rawData?.extensions || rawData || {};
+  const qr = target?.quick_replies || target?.qrList || target?.tavern_qr_sets;
+  return Array.isArray(qr) && qr.length > 0;
+}
+
+function cloudTypeFolder(type: CloudCardType): string {
+  if (type === 'preset') return '工具区/预设';
+  if (type === 'worldbook') return '工具区/世界书';
+  if (type === 'theme') return '工具区/美化';
+  if (type === 'qr') return '工具区/QR';
+  if (type === 'script') return '工具区/脚本';
+  return '角色卡';
+}
+
+function buildQuickRepliesExport(rawData: any, charName: string): any | null {
+  const target = rawData?.data?.extensions || rawData?.data || rawData?.extensions || rawData || {};
+  const qrList =
+    target?.extensions?.quick_replies ||
+    target?.quick_replies ||
+    target?.qrList ||
+    '';
+  const qrSets = target?.extensions?.tavern_qr_sets || target?.tavern_qr_sets;
+  let qrContent: any = qrList;
+
+  if (qrSets && qrSets.length > 0) {
+    const metadata = qrSets.find((s: any) => s.metadata)?.metadata;
+    if (metadata) {
+      qrContent = { ...metadata };
+      if (qrContent.qrList) qrContent.qrList = qrList;
+      else if (qrContent.quick_replies) qrContent.quick_replies = qrList;
+    } else {
+      qrContent = { version: 2, name: charName, qrList };
+    }
+  } else if (Array.isArray(qrList) && qrList.length > 0) {
+    qrContent = { version: 2, name: charName, qrList };
+  } else {
+    return null;
+  }
+
+  return qrContent;
+}
+
+function chatMessagesToJsonl(messages: any[]): string {
+  return (messages || [])
+    .map((m) =>
+      JSON.stringify({
+        name: m.name,
+        is_user: m.is_user,
+        is_name: m.is_name,
+        send_date: m.send_date,
+        mes: m.mes,
+        extra: m.extra,
+      }),
+    )
+    .join('\n');
+}
+
+async function hashString(value: string): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function buildCloudZip(
+  char: any,
+  chats: any[],
+  hasExtras: boolean,
+  sourceUrl: string,
+): Promise<Blob> {
+  const safeName = getSafeFilename(char.name || 'Character');
+  const extraAvatars = (char.avatarHistory || []).filter((b: any) => !char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type));
+
+  const zip = new JSZip();
+
+  zip.file('card.json', JSON.stringify(char.data, null, 2));
+
+  const addAvatar = (folder: JSZip) => {
+    if (!char.avatarBlob) return;
+    let ext = 'png';
+    if (char.avatarBlob.type === 'image/jpeg') ext = 'jpg';
+    else if (char.avatarBlob.type === 'image/webp') ext = 'webp';
+    else if (char.avatarBlob.type === 'image/gif') ext = 'gif';
+    folder.file(`avatar.${ext}`, char.avatarBlob);
+  };
+
+  const addHistory = (folder: JSZip) => {
+    if (!char.avatarHistory || char.avatarHistory.length === 0) return;
+    const historyFolder = folder.folder('替换头像');
+    if (!historyFolder) return;
+    for (let i = 0; i < extraAvatars.length; i++) {
+      const ab = extraAvatars[i];
+      let ext = 'png';
+      let fileName = `替换头像_${i + 1}.${ext}`;
+      if (ab instanceof File) {
+        fileName = ab.name;
+      } else {
+        if (ab.type === 'image/jpeg') ext = 'jpg';
+        else if (ab.type === 'image/webp') ext = 'webp';
+        fileName = `替换头像_${i + 1}.${ext}`;
+      }
+      historyFolder.file(fileName, ab);
+    }
+  };
+
+  addAvatar(zip);
+  addHistory(zip);
+
+  if (hasExtras) {
+    const cardFolder = zip.folder(safeName);
+    if (cardFolder) {
+      cardFolder.file('card.json', JSON.stringify(char.data, null, 2));
+      addAvatar(cardFolder);
+      addHistory(cardFolder);
+
+      const qrExport = buildQuickRepliesExport(char.data, safeName);
+      if (qrExport) {
+        cardFolder.file(`${safeName}_qr.json`, JSON.stringify(qrExport, null, 2));
+      }
+
+      if (chats.length > 0) {
+        const chatsFolder = cardFolder.folder('聊天记录');
+        if (chatsFolder) {
+          for (let i = 0; i < chats.length; i++) {
+            const chat = chats[i];
+            const dateStr = new Date(chat.createdAt).toISOString().replace(/:/g, '-');
+            const chatSafeName = getSafeFilename(chat.name || 'Chat');
+            chatsFolder.file(`${chatSafeName}_${dateStr}.jsonl`, chatMessagesToJsonl(chat.messages));
+          }
+        }
+      }
+    }
+  }
+
+  zip.file(
+    'studio_meta.json',
+    JSON.stringify({
+      folderPath: '',
+      sourceUrl,
+      cardType: detectCloudCardType(char.data),
+      createdAt: char.createdAt,
+    }),
+  );
+
+  return await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+}
+
+async function buildCloudUploadPayload(
+  char: any,
+  chats: any[],
+  hasExtras: boolean,
+  sourceUrl: string,
+  safeName: string,
+): Promise<{ blob: Blob; fileName: string; mimeType: string }> {
+  const extraAvatars = (char.avatarHistory || []).filter(b => !char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type));
+  const hasHistory = extraAvatars.length > 0;
+
+  // 没有需要打包的额外内容时，尽量保留源文件格式，和旧版行为一致。
+  if (!hasExtras && !hasHistory) {
+    if (!char.avatarBlob) {
+      return {
+        blob: new Blob([JSON.stringify(char.data ?? {}, null, 2)], { type: 'application/json' }),
+        fileName: `${safeName}_${char.id}.json`,
+        mimeType: 'application/json',
+      };
+    }
+
+    const originalType = char.avatarBlob.type || '';
+    if (!originalType || originalType === 'image/png') {
+      try {
+        const buffer = await char.avatarBlob.arrayBuffer();
+        const injectedBuffer = injectTavernData(buffer, char.data);
+        return {
+          blob: new Blob([injectedBuffer], { type: 'image/png' }),
+          fileName: `${safeName}_${char.id}.png`,
+          mimeType: 'image/png',
+        };
+      } catch (e) {
+        console.error('Failed to inject PNG, falling back to ZIP', e);
+      }
+    }
+  }
+
+  const blob = await buildCloudZip(char, chats, hasExtras, sourceUrl);
+  return {
+    blob,
+    fileName: `${safeName}_${char.id}.zip`,
+    mimeType: 'application/zip',
+  };
+}
+
+type CloudFilePayload = {
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+  appProperties: Record<string, string>;
+  contentHash: string;
+  extraMetadata?: Record<string, any>;
+};
+
+async function upsertCloudFile(
+  token: string,
+  folderId: string,
+  payload: CloudFilePayload,
+  searchQuery: string,
+): Promise<'uploaded' | 'skipped'> {
+  const searchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQuery)}&spaces=drive&fields=files(id,name,appProperties)`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!searchRes.ok) throw new Error(`云端查询失败: HTTP ${searchRes.status}`);
+  const searchData = await searchRes.json();
+
+  if (searchData.files && searchData.files.length > 0) {
+    const existing = searchData.files[0];
+    if (existing.appProperties?.contentHash === payload.contentHash) {
+      return 'skipped';
+    }
+
+    const patchMeta: any = {
+      name: payload.fileName,
+      appProperties: payload.appProperties,
+    };
+    if (payload.extraMetadata) Object.assign(patchMeta, payload.extraMetadata);
+
+    await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-HTTP-Method-Override': 'PATCH',
+      },
+      body: JSON.stringify(patchMeta),
+    });
+
+    const uploadRes = await uploadBlobToDrive(
+      token,
+      existing.id,
+      payload.blob,
+      payload.mimeType,
+    );
+    if (!uploadRes.ok) throw new Error('上传失败: ' + uploadRes.statusText);
+    return 'uploaded';
+  }
+
+  const metadata: any = {
+    name: payload.fileName,
+    appProperties: payload.appProperties,
+    parents: [folderId],
+  };
+  if (payload.extraMetadata) Object.assign(metadata, payload.extraMetadata);
+
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(metadata),
+  });
+  if (!createRes.ok) throw new Error('Failed to create file');
+  const createdData = await createRes.json();
+  const uploadRes = await uploadBlobToDrive(
+    token,
+    createdData.id,
+    payload.blob,
+    payload.mimeType,
+  );
+  if (!uploadRes.ok) throw new Error('上传失败: ' + uploadRes.statusText);
+  return 'uploaded';
+}
+
+async function hashBlobLight(blob: Blob, extra: string = ''): Promise<string> {
+  const file = blob as any;
+  const info = [
+    blob.size,
+    blob.type,
+    file?.name || '',
+    file?.lastModified || 0,
+    extra,
+  ].join('|');
+  return hashString(info);
+}
+
+function getAvatarExtension(blob: Blob): string {
+  const type = blob.type || '';
+  if (type === 'image/jpeg') return 'jpg';
+  if (type === 'image/webp') return 'webp';
+  if (type === 'image/gif') return 'gif';
+  if (!type) return 'png';
+  return type.split('/')[1] || 'png';
+}
+
+function guessMimeFromExt(ext: string): string {
+  const normalized = ext.toLowerCase();
+  if (normalized === 'jpg' || normalized === 'jpeg') return 'image/jpeg';
+  if (normalized === 'webp') return 'image/webp';
+  if (normalized === 'gif') return 'image/gif';
+  return 'image/png';
+}
+
+async function uploadCharacterWithSeparateFiles(
+  token: string,
+  folderId: string,
+  char: any,
+  safeName: string,
+  sourceUrl: string,
+  charType: string,
+  folderPath: string,
+  thumbB64: string | null,
+  onProgress?: (msg: string) => void,
+): Promise<'uploaded' | 'skipped'> {
+  const baseFolderPath = folderPath ? `${folderPath}/${safeName}` : `角色卡/${safeName}`;
+  const mainHash = await hashString(`${JSON.stringify(char.data || {})}|${sourceUrl}`);
+  const mainPayload: CloudFilePayload = {
+    blob: new Blob([JSON.stringify(char.data ?? {}, null, 2)], { type: 'application/json' }),
+    fileName: `${safeName}_${char.id}.json`,
+    mimeType: 'application/json',
+    appProperties: {
+      isChar: 'true',
+      charId: char.id,
+      charName: char.name || '',
+      cardType: charType,
+      folderPath: baseFolderPath,
+      sourceUrl,
+      hasBundle: 'true',
+      createdAt: char.createdAt.toString(),
+      contentHash: mainHash,
+    },
+    contentHash: mainHash,
+  };
+
+  if (thumbB64) {
+    mainPayload.extraMetadata = {
+      contentHints: {
+        thumbnail: {
+          image: thumbB64,
+          mimeType: 'image/jpeg',
+        },
+      },
+    };
+  }
+
+  let uploadedSomething = false;
+  const mainResult = await upsertCloudFile(
+    token,
+    folderId,
+    mainPayload,
+    `appProperties has { key='charId' and value='${char.id}' } and '${folderId}' in parents and trashed=false`,
+  );
+  if (mainResult === 'uploaded') uploadedSomething = true;
+
+  const sideFiles: CloudFilePayload[] = [];
+  if (char.avatarBlob) {
+    const ext = getAvatarExtension(char.avatarBlob);
+    const fileHash = await hashBlobLight(char.avatarBlob, 'avatar');
+    sideFiles.push({
+      blob: char.avatarBlob,
+      fileName: `avatar.${ext}`,
+      mimeType: char.avatarBlob.type || guessMimeFromExt(ext),
+      appProperties: {
+        isChar: 'true',
+        charId: char.id,
+        relatedCharId: char.id,
+        fileKind: 'avatar_0',
+        charName: char.name || '',
+        folderPath: baseFolderPath,
+        sourceUrl,
+        createdAt: char.createdAt.toString(),
+        contentHash: fileHash,
+      },
+      contentHash: fileHash,
+    });
+  }
+
+  const extraAvatars = (char.avatarHistory || []).filter((b: any) => !char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type));
+  const hasExtraAvatars = extraAvatars.length > 0;
+  const chats = await getChatsForCharacter(char.id);
+
+  if (hasExtraAvatars) {
+    for (let i = 0; i < extraAvatars.length; i++) {
+      const ab = extraAvatars[i];
+      const ext = getAvatarExtension(ab);
+      const rawName = (ab as any)?.name || '';
+      const baseName = getSafeFilename(rawName || `替换头像_${i + 1}`);
+      const fileName = baseName.includes('.') ? baseName : `${baseName}.${ext}`;
+      const fileHash = await hashBlobLight(ab, `history_${i}`);
+      sideFiles.push({
+        blob: ab,
+        fileName,
+        mimeType: ab.type || guessMimeFromExt(ext),
+        appProperties: {
+          isChar: 'true',
+          charId: char.id,
+          relatedCharId: char.id,
+          fileKind: `avatar_history_${i}`,
+          charName: char.name || '',
+          folderPath: `${baseFolderPath}/替换头像`,
+          sourceUrl,
+          createdAt: char.createdAt.toString(),
+          contentHash: fileHash,
+        },
+        contentHash: fileHash,
+      });
+    }
+  }
+
+  for (let i = 0; i < sideFiles.length; i++) {
+    const side = sideFiles[i];
+    if (onProgress) onProgress(`上传头像文件... (${i + 1}/${sideFiles.length})`);
+    const result = await upsertCloudFile(
+      token,
+      folderId,
+      side,
+      `appProperties has { key='relatedCharId' and value='${char.id}' } and appProperties has { key='fileKind' and value='${side.appProperties.fileKind}' } and '${folderId}' in parents and trashed=false`,
+    );
+    if (result === 'uploaded') uploadedSomething = true;
+  }
+
+  return uploadedSomething ? 'uploaded' : 'skipped';
+}
+
 export async function uploadCharacterToCloud(
   token: string,
   charId: string,
@@ -200,14 +695,7 @@ export async function uploadCharacterToCloud(
   
 
   const rawData = char.data;
-  let charType = 'character';
-  if (rawData) {
-      if (!!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined)) charType = 'preset';
-      else if (rawData.entries !== undefined || (rawData.data && rawData.data.entries !== undefined)) charType = 'worldbook';
-      else if (rawData.blur_strength !== undefined || rawData.main_text_color !== undefined || rawData.chat_display !== undefined) charType = 'theme';
-      else if (Array.isArray(rawData) && rawData.length > 0 && rawData[0].message !== undefined) charType = 'qr';
-      else if (rawData.name && rawData.code !== undefined && rawData.trigger !== undefined) charType = 'script';
-  }
+  const charType = detectCloudCardType(rawData);
 
   const folderId = await getCloudFolderId(token);
   const safeName = char.name ? char.name.replace(/[\\/:*?"<>|]/g, "_") : "Character";
@@ -220,19 +708,71 @@ export async function uploadCharacterToCloud(
 
   let folderPath = "";
   let pathParts: string[] = [];
-  if (char.folderId) {
-    const allFolders = await getFolders();
-    const visitedFolderIds = new Set<string>();
-    let currentF = allFolders.find(f => f.id === char.folderId);
-    while (currentF) {
-      if (visitedFolderIds.has(currentF.id)) break; // 环形引用兜底
-      visitedFolderIds.add(currentF.id);
-      pathParts.unshift(currentF.name);
-      currentF = allFolders.find(f => f.id === currentF.parentId);
+  let wrapInFolder = false;
+
+  if (charType !== 'character') {
+    pathParts.push('工具区');
+    if (charType === 'preset') pathParts.push('预设');
+    else if (charType === 'theme') pathParts.push('美化');
+    else if (charType === 'qr') pathParts.push('快速回复');
+    else if (charType === 'worldbook') pathParts.push('世界书');
+    else if (charType === 'script') pathParts.push('正则');
+    else pathParts.push('其他');
+  } else {
+    pathParts.push('角色卡');
+    if (char.folderId) {
+      const allFolders = await getFolders();
+      const visitedFolderIds = new Set<string>();
+      let currentF = allFolders.find(f => f.id === char.folderId);
+      while (currentF) {
+        if (visitedFolderIds.has(currentF.id)) break;
+        visitedFolderIds.add(currentF.id);
+        const isTopLevelGroup = currentF.name === '角色卡' && (currentF.parentId === null || currentF.parentId === undefined);
+        if (!isTopLevelGroup) {
+          pathParts.splice(1, 0, currentF.name);
+        }
+        currentF = allFolders.find(f => f.id === currentF.parentId);
+      }
     }
-    folderPath = pathParts.join('/');
   }
+  
+  const { getChatsForCharacter } = await import('./db');
+  const extraAvatars = (char.avatarHistory || []).filter(b => !char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type));
+  
+  const hasExtraAvatars = extraAvatars.length > 0;
+  const chats = await getChatsForCharacter(char.id);
+
+  if ((chats && chats.length > 0) || hasExtraAvatars) {
+    wrapInFolder = true;
+  }
+  
+  const wrapperName = `${safeName}_${char.id}`;
+  const lastPathPart = pathParts.length > 0 ? pathParts[pathParts.length - 1] : "";
+  const alreadyWrapped = lastPathPart === wrapperName || lastPathPart.endsWith(`_${char.id}`);
+  if (wrapInFolder && !alreadyWrapped) {
+    pathParts.push(wrapperName);
+  }
+
+  folderPath = pathParts.join('/');
+
   const targetParentId = await resolveDriveFolderPath(token, folderId, pathParts);
+
+  const moveCloudFileToParent = async (fileId: string, currentParents: string[] = []) => {
+    const shouldMove = currentParents.length !== 1 || currentParents[0] !== targetParentId;
+    if (!shouldMove) return;
+    const removeParents = currentParents.filter((id) => id !== targetParentId);
+    let moveUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${encodeURIComponent(targetParentId)}&fields=id,parents`;
+    if (removeParents.length > 0) {
+      moveUrl += `&removeParents=${encodeURIComponent(removeParents.join(','))}`;
+    }
+    await fetch(moveUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-HTTP-Method-Override': 'PATCH',
+      },
+    });
+  };
 
   let finalBlob: Blob;
   let fileName = "";
@@ -250,11 +790,11 @@ export async function uploadCharacterToCloud(
       zip.file(`avatar.${ext}`, char.avatarBlob);
     }
     
-    if (char.avatarHistory && char.avatarHistory.length > 0) {
+    if (hasExtraAvatars) {
       const historyFolder = zip.folder("替换头像");
       if (historyFolder) {
-        for (let i = 0; i < char.avatarHistory.length; i++) {
-          const ab = char.avatarHistory[i];
+        for (let i = 0; i < extraAvatars.length; i++) {
+          const ab = extraAvatars[i];
           let ext = "png";
           if (ab instanceof File) {
             ext = ab.name.split('.').pop() || "png";
@@ -268,15 +808,26 @@ export async function uploadCharacterToCloud(
       }
     }
     
-    const studioMeta = {
+    const studioMeta: any = {
       folderPath,
       createdAt: char.createdAt
     };
+    if ((char as any).sourceUrl) studioMeta.sourceUrl = (char as any).sourceUrl;
+    
+    if (wrapInFolder) {
+
+      for (const chat of chats) {
+        zip.file(`chat_${chat.name}_${chat.id}.json`, JSON.stringify(chat, null, 2));
+      }
+    }
     zip.file('studio_meta.json', JSON.stringify(studioMeta));
+    // Yield to main thread for Android performance
+    await new Promise(r => setTimeout(r, 10));
     return await zip.generateAsync({ type: 'blob', compression: 'STORE' });
   }
 
-  const hasHistory = char.avatarHistory && char.avatarHistory.length > 0;
+  
+  const hasHistory = extraAvatars.length > 0;
   if (!hasHistory && char.avatarBlob && (char.avatarBlob.type === 'image/png' || !char.avatarBlob.type)) {
     if (onProgress) onProgress("打包角色数据(PNG)...");
     try {
@@ -307,7 +858,7 @@ export async function uploadCharacterToCloud(
   if (onProgress) onProgress("计算数据指纹...");
   const dataStr = JSON.stringify(char.data);
   const avatarInfo = char.avatarBlob ? char.avatarBlob.size.toString() : 'no-avatar';
-  const historyInfo = char.avatarHistory ? char.avatarHistory.map(b => b.size.toString()).join(',') : 'no-history';
+  const historyInfo = extraAvatars.length > 0 ? extraAvatars.map(b => b.size.toString()).join(',') : 'no-history';
   const rawHashData = dataStr + "|" + avatarInfo + "|" + historyInfo;
   const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawHashData));
   const contentHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -335,8 +886,8 @@ export async function uploadCharacterToCloud(
     };
   }
 
-  const q = `appProperties has { key='charId' and value='${char.id}' } and '${folderId}' in parents and trashed=false`;
-  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,appProperties)`, {
+  const q = `appProperties has { key='charId' and value='${char.id}' } and trashed=false`;
+  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,appProperties,parents)`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!searchRes.ok) {
@@ -349,10 +900,14 @@ export async function uploadCharacterToCloud(
 
   if (searchData.files && searchData.files.length > 0) {
     const existingFile = searchData.files[0];
+    const existingParents = Array.isArray(existingFile.parents) ? existingFile.parents : [];
+
     if (existingFile.appProperties?.contentHash === contentHash) {
-      if (onProgress) onProgress("内容未变更，跳过上传");
+      if (onProgress) onProgress("内容未变更，同步云端目录位置");
+      await moveCloudFileToParent(existingFile.id, existingParents);
       return 'skipped';
     }
+
     targetFileId = existingFile.id;
     finalCharName = existingFile.appProperties?.charName || finalCharName;
     metadata.appProperties.charName = finalCharName;
@@ -367,10 +922,11 @@ export async function uploadCharacterToCloud(
       },
       body: JSON.stringify(metadata)
     });
+    await moveCloudFileToParent(targetFileId, existingParents);
   } else {
     if (onProgress) onProgress("检查同名卡片...");
     const safeQueryName = finalCharName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const qName = `name contains '${safeQueryName}' and '${folderId}' in parents and trashed=false`;
+    const qName = `name contains '${safeQueryName}' and '${targetParentId}' in parents and trashed=false`;
     const searchResName = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(qName)}&spaces=drive&fields=files(id,name,appProperties)`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -393,7 +949,7 @@ export async function uploadCharacterToCloud(
     }
 
     if (onProgress) onProgress("创建云端文件...");
-    metadata.parents = [folderId];
+    metadata.parents = [targetParentId];
     const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: {
@@ -417,10 +973,9 @@ export async function uploadCharacterToCloud(
   if (onProgress) onProgress("上传完成！");
   return 'uploaded';
 }
-
 export async function listCloudCharacters(token: string) {
   const folderId = await getCloudFolderId(token);
-  const q = `'${folderId}' in parents and trashed=false`;
+  const q = `(appProperties has { key='isChar' and value='true' } or appProperties has { key='isChatRecord' and value='true' }) and trashed=false`;
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,thumbnailLink,appProperties,size,createdTime)&pageSize=1000`, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -545,7 +1100,8 @@ export async function syncLibraryToCloud(token: string, onProgress?: (msg: strin
   let failCount = 0;
   let completedCount = 0;
 
-  const CONCURRENCY = 5;
+  const isAndroid = Capacitor.isNativePlatform();
+  const CONCURRENCY = isAndroid ? 3 : 5;
   let currentIndex = 0;
 
   const uploadWorker = async () => {
@@ -565,6 +1121,7 @@ export async function syncLibraryToCloud(token: string, onProgress?: (msg: strin
       } finally {
         completedCount++;
         if (onProgress) onProgress(`正在批量同步至云端... (${completedCount}/${allChars.length})`);
+        await new Promise(r => setTimeout(r, isAndroid ? 200 : 50));
       }
     }
   };
@@ -586,3 +1143,65 @@ export async function deleteCloudCharacter(token: string, fileId: string) {
   });
   if (!response.ok) throw new Error("Delete failed");
 }
+
+export async function uploadChatsToCloud(
+  token: string,
+  chatIds: string[],
+  onProgress?: (msg: string) => void
+): Promise<{ success: number; skipped: number; failed: number }> {
+  const { getChatById, getCharacter } = await import('./db');
+  let success = 0;
+  let skipped = 0;
+  let failed = 0;
+  
+  for (let i = 0; i < chatIds.length; i++) {
+    const chatId = chatIds[i];
+    if (onProgress) onProgress(`(${i + 1}/${chatIds.length})`);
+    try {
+      const chat = await getChatById(chatId);
+      if (!chat) {
+        failed++;
+        continue;
+      }
+      const char = await getCharacter(chat.characterId);
+      const safeCharName = char && char.name ? char.name.replace(/[\\/:*?"<>|]/g, "_") : "Unknown";
+      const safeChatName = chat.name ? chat.name.replace(/[\\/:*?"<>|]/g, "_") : "Unnamed";
+      const formattedDate = new Date(chat.createdAt).toISOString().replace(/[:.]/g, "-");
+      const filename = `${safeChatName}_${formattedDate}.jsonl`;
+      const folderPath = `Chats/${safeCharName}`;
+      
+      const jsonlString = chat.messages.map((m: any) => JSON.stringify(m)).join('\n');
+      const blob = new Blob([jsonlString], { type: 'application/jsonl' });
+      
+      const fileHash = await hashBlobLight(blob, 'chat');
+      const folderId = await getCloudFolderId(token);
+      
+      const payload: CloudFilePayload = {
+        blob,
+        fileName: filename,
+        mimeType: 'application/jsonl',
+        appProperties: {
+           isChat: 'true',
+           chatId: chat.id,
+           charId: chat.characterId,
+           folderPath,
+           contentHash: fileHash
+        },
+        contentHash: fileHash
+      };
+      
+      const result = await upsertCloudFile(token, folderId, payload, `appProperties has { key='chatId' and value='${chat.id}' } and '${folderId}' in parents and trashed=false`);
+      if (result === 'uploaded') success++;
+      else skipped++;
+    } catch(e) {
+      console.error(e);
+      failed++;
+    }
+  }
+  return { success, skipped, failed };
+}
+
+
+
+
+

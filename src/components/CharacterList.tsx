@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { getFallbackAvatar } from "../lib/avatar";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1275,7 +1276,7 @@ export function CharacterList({
 
       let success = 0;
       let completed = 0;
-      const CONCURRENCY = 5;
+      const CONCURRENCY = Capacitor.isNativePlatform() ? 3 : 5;
       let currentIndex = 0;
 
       setProgress({
@@ -1299,6 +1300,7 @@ export function CharacterList({
               total: charsArray.length,
               message: `正在批量同步至云端...`,
             });
+            await new Promise(r => setTimeout(r, Capacitor.isNativePlatform() ? 200 : 50));
           }
         }
       };
@@ -1374,7 +1376,7 @@ export function CharacterList({
         addAndroidZipEntry,
         finishAndroidZip,
       } = await import("../lib/appBridge");
-      if (isAndroid()) {
+      if (Capacitor.isNativePlatform()) {
         const charIdsToExport = new Set<string>();
 
         for (const id of Array.from(idsToProcess)) {
@@ -1426,7 +1428,7 @@ export function CharacterList({
                     const { injectTavernData } = await import("../lib/png");
                     const newBuffer = injectTavernData(buffer, exportData);
                     const exportFileName = `${safeName}.png`;
-                    if (isAndroid()) {
+                    if (Capacitor.isNativePlatform()) {
                         await exportFileToMIU(exportFileName, newBuffer, 'image/png', true);
                     } else {
                         const blob = new Blob([newBuffer], { type: 'image/png' });
@@ -1446,7 +1448,7 @@ export function CharacterList({
             // Fallback to JSON
             const exportFileName = `${safeName}.json`;
             const bytes = new TextEncoder().encode(JSON.stringify(exportData, null, 2));
-            if (isAndroid()) {
+            if (Capacitor.isNativePlatform()) {
                 await exportFileToMIU(exportFileName, bytes.buffer, 'application/json', true);
             } else {
                 const blob = new Blob([bytes.buffer], { type: 'application/json' });
@@ -1718,8 +1720,11 @@ export function CharacterList({
       if (!targetId) return false;
       if (folderIdToCheck === targetId) return true;
       const allFolders = await getFolders();
+      const visited = new Set<string>();
       let current = allFolders.find((f) => f.id === targetId);
       while (current && current.parentId) {
+        if (visited.has(current.id)) break; // 环形引用兜底
+        visited.add(current.id);
         if (current.parentId === folderIdToCheck) return true;
         current = allFolders.find((f) => f.id === current.parentId);
       }

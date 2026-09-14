@@ -642,7 +642,7 @@ function FileContentModal({ memo, onClose }: { memo: CharacterMemo, onClose: () 
                   <div className="flex items-center justify-center h-full text-white/50">正在解析数据...</div>
                ) : (
                   <pre className="text-[13px] text-slate-300 font-mono whitespace-pre-wrap break-all">
-                     {content}
+                     {content.length > 50000 ? content.substring(0, 50000) + "\n\n... (内容过大，为防止卡顿已截断显示)" : content}
                   </pre>
                )}
             </div>

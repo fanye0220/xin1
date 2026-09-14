@@ -1140,6 +1140,51 @@ export function ChatViewer({
     setSelectedChatIds(new Set());
   };
 
+  const handleChatsCloudUpload = async () => {
+    if (selectedChatIds.size === 0) return;
+
+    const { getAccessToken } = await import("../lib/drive");
+    const token = await getAccessToken();
+    if (!token) {
+      alert("请先前往「云端同步」页面登录 Google 账号。");
+      return;
+    }
+
+    const idsToUpload = Array.from(selectedChatIds);
+    setIsBatchMode(false);
+    setSelectedChatIds(new Set());
+    setShowDuplicatesOnly(false);
+
+    try {
+      setImportProgress({
+        show: true,
+        current: 0,
+        total: idsToUpload.length,
+        message: "正在准备上传聊天记录到云端...",
+      });
+
+      const { uploadChatsToCloud } = await import("../lib/cloudDrive");
+      const result = await uploadChatsToCloud(token, idsToUpload, (msg) => {
+        const m = msg.match(/\((\d+)\/(\d+)\)/);
+        setImportProgress((prev) => ({
+          show: true,
+          current: m ? Number(m[1]) : prev.current,
+          total: m ? Number(m[2]) : prev.total,
+          message: msg,
+        }));
+      });
+
+      setImportProgress({ show: false, current: 0, total: 0, message: "" });
+      alert(
+        `云端上传完成！成功 ${result.success} 条，跳过 ${result.skipped} 条，失败 ${result.failed} 条。`,
+      );
+    } catch (err: any) {
+      console.error(err);
+      setImportProgress({ show: false, current: 0, total: 0, message: "" });
+      alert("上传聊天记录失败: " + err.message);
+    }
+  };
+
   const handleBatchDelete = async () => {
     if (
       confirm(
@@ -2193,6 +2238,17 @@ export function ChatViewer({
                 <Download className="w-5 h-5" />
               </div>
               <span className="font-medium text-[10px]">导出</span>
+            </button>
+            <div className="w-px h-8 bg-white/10 shrink-0" />
+            <button
+              onClick={handleChatsCloudUpload}
+              disabled={selectedChatIds.size === 0}
+              className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-blue-500/10 text-white/70 hover:text-blue-400 transition disabled:opacity-50 group shrink-0"
+            >
+              <div className="p-2 rounded-full bg-white/5 group-hover:bg-blue-400/20 transition">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <span className="font-medium text-[10px]">传云盘</span>
             </button>
             <div className="w-px h-8 bg-white/10 shrink-0" />
             <button

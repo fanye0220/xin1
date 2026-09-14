@@ -4,7 +4,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { getFolders, getCachedMeta, getCharacter, getAllChatsMetadata, getChatById, saveFolder, saveCharacter, saveChatsBulk, invalidateCache, initDB } from './db';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { createDriveFileWithContent } from './driveUpload';
+import { resumableUploadToDrive } from './driveUpload';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -113,7 +113,7 @@ function startAutoSyncRunner() {
   if (autoSyncInterval) return;
   
   autoSyncInterval = setInterval(async () => {
-    const isEnabled = localStorage.getItem('auto_backup_enabled') === 'true';
+    const isEnabled = localStorage.getItem('miu_auto_backup') === '1';
     if (!isEnabled || !currentAccessToken || syncState.isActive) return;
     
     updateSyncState({ isActive: true, taskName: '自动备份', message: '准备备份...', isError: false, completed: false });
@@ -208,33 +208,46 @@ const BACKUP_SETTING_KEYS = [
   'tavern_foldersExpanded',
   'tavern_sidebarFoldersExpanded',
   'chatViewer_customTags',
-  'auto_backup_enabled',
+  'miu_auto_backup',
 ];
 
-async function getOrCreateBackupFolder(accessToken: string): Promise<string> {
-  // Check if folder exists
-  let res = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  let data = await res.json();
-  if (data.files && data.files.length > 0) {
-    return data.files[0].id; // Return existing folder ID
-  }
+const backupFolderPromiseCache = new Map<string, Promise<string>>();
 
-  // Create folder
-  res = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: FOLDER_NAME,
-      mimeType: 'application/vnd.google-apps.folder',
-    }),
+function getOrCreateBackupFolder(accessToken: string): Promise<string> {
+  const cached = backupFolderPromiseCache.get(accessToken);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    // Check if folder exists
+    let res = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    let data = await res.json();
+    if (data.files && data.files.length > 0) {
+      return data.files[0].id; // Return existing folder ID
+    }
+
+    // Create folder
+    res = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder',
+      }),
+    });
+    data = await res.json();
+    return data.id;
+  })().catch((err) => {
+    backupFolderPromiseCache.delete(accessToken);
+    throw err;
   });
-  data = await res.json();
-  return data.id;
+
+  backupFolderPromiseCache.set(accessToken, promise);
+  return promise;
 }
 
 export async function exportAllDataForBackup(onProgress: (msg: string) => void): Promise<Blob> {
@@ -367,12 +380,16 @@ export async function uploadBackupToDrive(accessToken: string, onProgress: (msg:
     ? `MIU_AutoBackup_${timestamp}.zip`
     : `MIU_Backup_${timestamp}.zip`;
 
-  onProgress("正在上传完整备份...");
-  const uploadRes = await createDriveFileWithContent(
+  onProgress("正在上传完整备份...(0%)");
+  const uploadRes = await resumableUploadToDrive(
     accessToken,
     { name: filename, parents: [folderId], mimeType: "application/zip" },
     zipBlob,
     "application/zip",
+    (uploaded, total) => {
+      const pct = total > 0 ? Math.floor((uploaded / total) * 100) : 0;
+      onProgress(`正在上传完整备份...(${pct}%)`);
+    },
   );
   if (!uploadRes.ok) {
     const errText = await uploadRes.text().catch(() => "");
@@ -796,3 +813,4 @@ export const triggerRestore = (token: string, fileId: string) => {
     }
   })();
 };
+
