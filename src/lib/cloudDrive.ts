@@ -708,35 +708,51 @@ export async function uploadCharacterToCloud(
 
   let folderPath = "";
   let pathParts: string[] = [];
-  let wrapInFolder = false;
+  const { getCharacterCategoryPrefix, getChatsForCharacter } = await import('./db');
+  const toolCategory = getCharacterCategoryPrefix(char);
 
-  if (charType !== 'character') {
+  if (toolCategory !== "未归类") {
     pathParts.push('工具区');
-    if (charType === 'preset') pathParts.push('预设');
-    else if (charType === 'theme') pathParts.push('美化');
-    else if (charType === 'qr') pathParts.push('快速回复');
-    else if (charType === 'worldbook') pathParts.push('世界书');
-    else if (charType === 'script') pathParts.push('正则');
-    else pathParts.push('其他');
+    if (toolCategory === '美化') pathParts.push('美化');
+    else if (toolCategory === '预设') pathParts.push('预设');
+    else if (toolCategory === '世界书') pathParts.push('世界书');
+    else if (toolCategory === '快速回复') pathParts.push('快速回复');
+    else pathParts.push('脚本');
+
+    if (char.folderId) {
+      const allFolders = await getFolders();
+      const visitedFolderIds = new Set<string>();
+      let currentF = allFolders.find(f => f.id === char.folderId);
+      const subParts: string[] = [];
+      while (currentF) {
+        if (visitedFolderIds.has(currentF.id)) break;
+        visitedFolderIds.add(currentF.id);
+        subParts.unshift(currentF.name);
+        currentF = allFolders.find(f => f.id === currentF.parentId);
+      }
+      pathParts.push(...subParts);
+    }
   } else {
     pathParts.push('角色卡');
     if (char.folderId) {
       const allFolders = await getFolders();
       const visitedFolderIds = new Set<string>();
       let currentF = allFolders.find(f => f.id === char.folderId);
+      const subParts: string[] = [];
       while (currentF) {
         if (visitedFolderIds.has(currentF.id)) break;
         visitedFolderIds.add(currentF.id);
         const isTopLevelGroup = currentF.name === '角色卡' && (currentF.parentId === null || currentF.parentId === undefined);
         if (!isTopLevelGroup) {
-          pathParts.splice(1, 0, currentF.name);
+          subParts.unshift(currentF.name);
         }
         currentF = allFolders.find(f => f.id === currentF.parentId);
       }
+      pathParts.push(...subParts);
     }
   }
-  
-  const { getChatsForCharacter } = await import('./db');
+
+  const { getChatsForCharacter: _unused } = await import('./db');
   const extraAvatars = (char.avatarHistory || []).filter(b => !char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type));
   
   const hasExtraAvatars = extraAvatars.length > 0;
@@ -963,14 +979,19 @@ export async function uploadCharacterToCloud(
   return 'uploaded';
 }
 export async function listCloudCharacters(token: string) {
-  const folderId = await getCloudFolderId(token);
   const q = `(appProperties has { key='isChar' and value='true' } or appProperties has { key='isChatRecord' and value='true' }) and trashed=false`;
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,thumbnailLink,appProperties,size,createdTime)&pageSize=1000`, {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,thumbnailLink,appProperties,size,createdTime,parents)&pageSize=1000`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!response.ok) throw new Error("Failed to list cloud characters");
   const data = await response.json();
-  return data.files || [];
+  const files = data.files || [];
+  return files.filter((f: any) => {
+    if (f.appProperties?.fileKind && f.appProperties.fileKind.startsWith('avatar_')) {
+      return false;
+    }
+    return true;
+  });
 }
 
 
@@ -1117,8 +1138,85 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
        }
      }
   }
-if (!jsonData) throw new Error("无效的云端卡片格式或未找到卡片数据");
-  
+  // 如果未提取到数据（如单张未内嵌 Tavern 数据的普通 PNG 头像），在云端查找配套的 JSON 描述文件
+  if (!jsonData) {
+    try {
+      const fileInfoRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,parents,appProperties`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (fileInfoRes.ok) {
+        const fileInfo = await fileInfoRes.json();
+        const charId = fileInfo.appProperties?.charId || fileInfo.appProperties?.relatedCharId;
+        const parentId = fileInfo.parents && fileInfo.parents[0];
+        let jsonQuery = '';
+        if (charId) {
+          jsonQuery = `(appProperties has { key='charId' and value='${charId}' } or appProperties has { key='relatedCharId' and value='${charId}' }) and mimeType='application/json' and trashed=false`;
+        } else if (parentId) {
+          jsonQuery = `'${parentId}' in parents and mimeType='application/json' and trashed=false`;
+        }
+        if (jsonQuery) {
+          const findJsonRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(jsonQuery)}&spaces=drive&fields=files(id,name)`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (findJsonRes.ok) {
+            const findJsonData = await findJsonRes.json();
+            if (findJsonData.files && findJsonData.files.length > 0) {
+              const targetJsonFile = findJsonData.files[0];
+              const jsonContentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetJsonFile.id}?alt=media`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (jsonContentRes.ok) {
+                const text = await jsonContentRes.text();
+                jsonData = JSON.parse(text);
+                avatarBlob = blob;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Companion JSON search failed:", e);
+    }
+  }
+
+  // 如果提取到了 JSON 但没有头像（如单独下载了 JSON 文件），尝试寻找配套头像
+  if (jsonData && !avatarBlob) {
+    try {
+      const fileInfoRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,parents,appProperties`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (fileInfoRes.ok) {
+        const fileInfo = await fileInfoRes.json();
+        const charId = fileInfo.appProperties?.charId || fileInfo.appProperties?.relatedCharId;
+        const parentId = fileInfo.parents && fileInfo.parents[0];
+        let avatarQuery = '';
+        if (charId) {
+          avatarQuery = `(appProperties has { key='charId' and value='${charId}' } or appProperties has { key='relatedCharId' and value='${charId}' }) and (name contains 'avatar' or mimeType contains 'image/') and trashed=false`;
+        } else if (parentId) {
+          avatarQuery = `'${parentId}' in parents and (name contains 'avatar' or mimeType contains 'image/') and trashed=false`;
+        }
+        if (avatarQuery) {
+          const findAvatarRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(avatarQuery)}&spaces=drive&fields=files(id,name,mimeType)`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (findAvatarRes.ok) {
+            const findAvatarData = await findAvatarRes.json();
+            if (findAvatarData.files && findAvatarData.files.length > 0) {
+              const targetAvatarFile = findAvatarData.files[0];
+              const avatarContentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetAvatarFile.id}?alt=media`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (avatarContentRes.ok) {
+                avatarBlob = await avatarContentRes.blob();
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!jsonData) throw new Error("无效的云端卡片格式或未找到卡片数据");
   return { jsonData, avatarBlob, studioMeta, avatarHistory };
 }
 export async function syncLibraryToCloud(token: string, onProgress?: (msg: string) => void) {

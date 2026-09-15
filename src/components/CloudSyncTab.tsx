@@ -90,7 +90,7 @@ export function CloudSyncTab() {
           : existingChars.find(c => c.name?.trim() === extractedName?.trim());
         
         let targetId: string = crypto.randomUUID();
-        let folderId = undefined;
+        let folderId: string | undefined = undefined;
         let createTime = Date.now();
         
         if (existing) {
@@ -100,27 +100,36 @@ export function CloudSyncTab() {
         }
         
         let mergedMeta = { ...studioMeta, ...appProperties };
-        if (!existing && !mergedMeta.folderPath) {
-           const isTheme = jsonData.name === "theme_config" || jsonData.type === "theme";
-           const isAIPreset = jsonData.type === "preset" || (jsonData.name && typeof jsonData.name === 'string' && (jsonData.name.includes("Preset") || jsonData.name.includes("Prompt")));
+        if (!mergedMeta.folderPath) {
+           const isTheme = jsonData.name === "theme_config" || jsonData.type === "theme" || jsonData.blur_strength !== undefined;
+           const isAIPreset = jsonData.type === "preset" || jsonData.temperature !== undefined || (jsonData.name && typeof jsonData.name === 'string' && (jsonData.name.includes("Preset") || jsonData.name.includes("Prompt")));
            const isWorldbook = jsonData.entries !== undefined || jsonData.name === "Worldbook" || jsonData.data?.entries !== undefined;
-           const isQR = jsonData.qrList !== undefined || jsonData.version === 2 || jsonData.quick_replies !== undefined;
+           const isQR = (jsonData.qrList !== undefined || jsonData.quick_replies !== undefined) && !isActualCharacterCard(jsonData);
            const isScript = jsonData.type === "script" && jsonData.content !== undefined && jsonData.name !== undefined;
            
-           if (isTheme) mergedMeta.folderPath = "美化";
-           else if (isAIPreset) mergedMeta.folderPath = "预设";
-           else if (isWorldbook) mergedMeta.folderPath = "世界书";
-           else if (isQR) mergedMeta.folderPath = "快速回复";
-           else if (isScript) mergedMeta.folderPath = "工具区";
+           if (isTheme) mergedMeta.folderPath = "工具区/美化";
+           else if (isAIPreset) mergedMeta.folderPath = "工具区/预设";
+           else if (isWorldbook) mergedMeta.folderPath = "工具区/世界书";
+           else if (isQR) mergedMeta.folderPath = "工具区/快速回复";
+           else if (isScript) mergedMeta.folderPath = "工具区/脚本";
         }
         
-        if (!existing && mergedMeta?.folderPath) {
+        if (mergedMeta?.folderPath) {
            const allFolders = await getFolders();
            let parts = (mergedMeta.folderPath as string).split('/').filter(Boolean);
-           // 云端顶层的 "角色卡" 目录在 App 本地对应根目录（未归类），不建立本地同名文件夹
+           
+           // 1. "角色卡" 顶层分类对应 App 根目录（主页），不建同名文件夹
            if (parts.length > 0 && parts[0] === '角色卡') {
                parts = parts.slice(1);
            }
+           // 2. "工具区" 顶层分类对应 App 工具分类，不建同名文件夹
+           if (parts.length > 0 && parts[0] === '工具区') {
+               parts = parts.slice(1);
+               if (parts.length > 0 && ['预设', '世界书', '美化', '快速回复', '脚本', '其他'].includes(parts[0])) {
+                   parts = parts.slice(1);
+               }
+           }
+           
            let currentParentId: string | undefined = undefined;
            for (const part of parts) {
                let found = allFolders.find(f => f.name === part && f.parentId === currentParentId);
