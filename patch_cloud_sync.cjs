@@ -1,180 +1,94 @@
 const fs = require('fs');
-let content = fs.readFileSync('src/components/CloudSyncTab.tsx', 'utf8');
+let code = fs.readFileSync('src/components/CloudSyncTab.tsx', 'utf8');
 
-// Imports
-content = content.replace("import { initAuth,", "import { listCloudCharacters, downloadCloudCharacter, deleteCloudCharacter } from '../lib/cloudDrive';\nimport { getCachedMeta, saveCharacter } from '../lib/db';\nimport { initAuth,");
+const newFunc = `
+  const [oneClickProgress, setOneClickProgress] = useState<{current: number, total: number, message: string} | null>(null);
 
-// States
-const states = `  const [activeTab, setActiveTab] = useState<'backup' | 'cloud_drive'>('backup');
-  const [cloudChars, setCloudChars] = useState<any[]>([]);
-  const [isLoadingCloud, setIsLoadingCloud] = useState(false);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-
-  const loadCloudChars = async (t: string) => {
-    setIsLoadingCloud(true);
-    try {
-        const list = await listCloudCharacters(t);
-        setCloudChars(list);
-    } catch (err: any) {
-        console.error('List cloud chars failed:', err);
-    } finally {
-        setIsLoadingCloud(false);
-    }
-  };
-
-  useEffect(() => {
-    if (token && activeTab === 'cloud_drive') {
-        loadCloudChars(token);
-    }
-  }, [token, activeTab]);
-
-  const handleDownloadCloudChar = async (fileId: string, charName: string) => {
+  const handleOneClickCloudSync = async () => {
     if (!token) return;
-    setDownloadingId(fileId);
+    const confirm = window.confirm("确定要将所有本地卡片逐一同步至云端文件夹吗？\\n\\n这可能需要一些时间，请保持应用在前台运行。");
+    if (!confirm) return;
+
     try {
-        const { jsonData, avatarBlob } = await downloadCloudCharacter(token, fileId, (msg) => console.log(msg));
-        const existingChars = await getCachedMeta();
-        const existing = existingChars.find(c => c.name?.trim() === jsonData.name?.trim());
-        
-        let targetId = crypto.randomUUID();
-        let folderId = undefined;
-        let createTime = Date.now();
-        
-        if (existing) {
-            targetId = existing.id;
-            folderId = existing.folderId;
-            createTime = existing.createdAt || Date.now();
+      setOneClickProgress({ current: 0, total: 0, message: '正在准备...' });
+      const { getCachedMeta } = await import('../lib/db');
+      const { uploadCharacterToCloud } = await import('../lib/cloudDrive');
+      const chars = await getCachedMeta();
+      
+      setOneClickProgress({ current: 0, total: chars.length, message: '正在同步...' });
+      let success = 0;
+      let skipped = 0;
+      
+      const isAndroid = !!(window as any).Capacitor;
+      const CONCURRENCY = isAndroid ? 1 : 2;
+      let currentIndex = 0;
+      
+      const uploadWorker = async () => {
+        while (currentIndex < chars.length) {
+          const i = currentIndex++;
+          try {
+             const res = await uploadCharacterToCloud(token, chars[i].id);
+             if (res === 'uploaded') success++;
+             else skipped++;
+          } catch(e) {
+             console.error("Failed", e);
+          } finally {
+             setOneClickProgress(prev => prev ? { ...prev, current: prev.current + 1 } : null);
+             await new Promise(r => setTimeout(r, isAndroid ? 800 : 100));
+          }
         }
-        
-        jsonData.id = targetId;
-        
-        const charToSave: any = {
-            id: targetId,
-            name: jsonData.name || charName,
-            data: jsonData,
-            createdAt: createTime,
-            folderId,
-            avatarHistory: []
-        };
-        
-        if (avatarBlob) {
-            charToSave.avatarBlob = avatarBlob;
-        }
-        
-        await saveCharacter(charToSave);
-        alert(\`「\${charToSave.name}」已成功下载至本地！\`);
-    } catch (err: any) {
-        alert("下载失败: " + err.message);
-    } finally {
-        setDownloadingId(null);
+      };
+
+      const workers = [];
+      for (let w = 0; w < CONCURRENCY; w++) {
+        workers.push(uploadWorker());
+      }
+      await Promise.all(workers);
+      
+      setOneClickProgress(null);
+      alert(\`一键同步完成！\\n成功上传: \${success}\\n跳过已存在: \${skipped}\`);
+      if (activeTab === 'cloud_drive') {
+        loadCloudChars(token);
+      }
+    } catch(err: any) {
+       console.error(err);
+       setOneClickProgress(null);
+       alert("同步发生错误: " + err.message);
     }
   };
-
-  const handleDeleteCloudChar = async (fileId: string, name: string) => {
-      if (!token) return;
-      if (!window.confirm(\`确定要从云盘彻底删除「\${name}」吗？\`)) return;
-      try {
-          await deleteCloudCharacter(token, fileId);
-          setCloudChars(prev => prev.filter(c => c.id !== fileId));
-      } catch (err: any) {
-          alert("删除失败: " + err.message);
-      }
-  };
 `;
 
-content = content.replace("useEffect(() => {", states + "\n  useEffect(() => {");
+// Insert the new function before handleUploadBackup
+code = code.replace('  const handleUploadBackup = () => {', newFunc + '\n  const handleUploadBackup = () => {');
 
-// UI modifications
-const tabsUI = `
-      <div className="flex bg-black/20 p-1 rounded-xl mb-6">
-        <button
-          onClick={() => setActiveTab('backup')}
-          className={\`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition \${activeTab === 'backup' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}\`}
-        >
-          完整备份库
-        </button>
-        <button
-          onClick={() => setActiveTab('cloud_drive')}
-          className={\`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition \${activeTab === 'cloud_drive' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}\`}
-        >
-          云端卡库
-        </button>
-      </div>
-`;
-
-content = content.replace("      {/* Backup Controls */}", tabsUI + "\n      {activeTab === 'backup' && (\n        <>\n      {/* Backup Controls */}");
-content = content.replace("        </div>\n\n        {/* Backups List */}", "        </div>\n\n        {/* Backups List */}");
-content = content.replace("      </div>\n    </div>\n  );\n}", "        </>\n      )}\n\n" + 
-`      {activeTab === 'cloud_drive' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white/90">我的云端角色卡</h3>
+const newButton = `
+          <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-4">
             <button
-              onClick={() => { if(token) loadCloudChars(token); }}
-              className="text-sm px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/70 transition"
+              onClick={handleOneClickCloudSync}
+              disabled={oneClickProgress !== null}
+              className="w-full py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-medium flex justify-center items-center gap-2 transition disabled:opacity-50"
             >
-              刷新
+              {oneClickProgress ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>正在同步... {oneClickProgress.current} / {oneClickProgress.total}</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-5 h-5" />
+                  一键同步所有本地卡片到云库
+                </>
+              )}
             </button>
+            <p className="text-xs text-white/50 text-center">逐一将所有本地卡片同步到云端，避免内存不足闪退。</p>
           </div>
-          
-          <div className="bg-black/20 rounded-2xl p-4 border border-white/5 min-h-[300px]">
-            {isLoadingCloud ? (
-              <div className="flex flex-col items-center justify-center py-12 text-white/50">
-                <Loader2 className="w-8 h-8 animate-spin mb-4" />
-                <p>正在拉取云端卡库...</p>
-              </div>
-            ) : cloudChars.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-white/40">
-                <Cloud className="w-12 h-12 mb-4 opacity-20" />
-                <p>云端卡库空空如也</p>
-                <p className="text-sm mt-2">在角色列表中勾选卡片即可上传至云盘</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
-                {cloudChars.map(char => {
-                  const charName = char.appProperties?.charName || char.name?.replace('.zip', '');
-                  return (
-                    <div key={char.id} className="relative group rounded-xl overflow-hidden bg-white/5 border border-white/10 aspect-[3/4] flex flex-col">
-                      <div className="flex-1 relative overflow-hidden bg-black/40">
-                        {char.thumbnailLink ? (
-                          <img src={char.thumbnailLink} alt={charName} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" crossOrigin="anonymous" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Cloud className="w-8 h-8 text-white/20" />
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition" />
-                        
-                        {/* Hover Actions */}
-                        <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
-                           <button 
-                             onClick={() => handleDownloadCloudChar(char.id, charName)}
-                             disabled={downloadingId === char.id}
-                             className="p-2 rounded-full bg-blue-500/80 hover:bg-blue-500 text-white transition"
-                           >
-                             {downloadingId === char.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                           </button>
-                           <button
-                             onClick={() => handleDeleteCloudChar(char.id, charName)}
-                             className="p-2 rounded-full bg-red-500/80 hover:bg-red-500 text-white transition"
-                           >
-                             <Trash2 className="w-4 h-4" />
-                           </button>
-                        </div>
-                      </div>
-                      
-                      <div className="p-2 truncate text-center text-xs text-white/80 font-medium">
-                        {charName}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-`
-+ "      </div>\n    </div>\n  );\n}");
 
-fs.writeFileSync('src/components/CloudSyncTab.tsx', content);
+          <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-4 mt-6">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-white/80">旧版完整压缩包备份 (易闪退)</h4>
+`;
+
+// Replace the old monolithic button area
+code = code.replace(/<div className="p-4 bg-white\/5 border border-white\/10 rounded-xl space-y-4">[\s\S]*?<h4 className="text-sm font-medium text-white\/80">遗留 Zip 备份档案<\/h4>/m, newButton);
+
+fs.writeFileSync('src/components/CloudSyncTab.tsx', code);

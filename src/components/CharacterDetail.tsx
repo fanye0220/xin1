@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Download, Trash2, Book, MessageSquare, User, StickyNote, ChevronRight, Plus, Edit2, Power, X as XIcon, ChevronDown, ChevronUp, ExternalLink, Check, Upload, Send, Loader2, Share2 } from 'lucide-react';
-import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders, resolveFolderPath, getCachedMeta } from '../lib/db';
+import { getCharacter, deleteCharacter, saveCharacter, CharacterCard, getFolders, resolveFolderPath, getCachedMeta, getCharacterCategoryPrefix } from '../lib/db';
 import { parseTavernCard } from '../types/tavern';
 import { injectTavernData } from '../lib/png';
 import { normalizeWorldbookEntries } from '../lib/worldbook';
@@ -89,16 +89,11 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
     getCharacter(id).then(async (char) => {
       setCharacter(char);
       if (char) {
-        const raw = char.data;
-        const isTheme = raw?.blur_strength !== undefined || raw?.main_text_color !== undefined || raw?.chat_display !== undefined;
-        const isQR = Array.isArray(raw) ? raw.length > 0 && raw[0]?.label !== undefined : (raw?.quick_replies !== undefined || raw?.qrList !== undefined) && raw?.spec !== "chara_card_v2" && raw?.spec !== "chara_card_v3" && raw?.first_mes === undefined && raw?.personality === undefined;
-        const isScript = raw?.type === 'script' && raw?.content !== undefined && raw?.name !== undefined;
-        const hasCharIdentity = !!(raw?.name || raw?.char_name || raw?.character_name || raw?.data?.name || raw?.data?.char_name || raw?.data?.character_name);
-        const isPreset = !hasCharIdentity && !!(raw?.prompts || raw?.temperature !== undefined || raw?.top_p !== undefined || raw?.system_prompt !== undefined);
-        if (isTheme || isQR || isScript || isPreset) {
-            setActiveTab('data_viewer');
-        } else if (raw.entries !== undefined && !raw.name && !raw.char_name) {
+        const category = getCharacterCategoryPrefix(char);
+        if (category === '世界书') {
             setActiveTab('worldbook');
+        } else if (category !== '未归类') {
+            setActiveTab('data_viewer');
         } else {
             setActiveTab('profile');
         }
@@ -264,12 +259,12 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
   const card = parseTavernCard(character.data);
   const data = card.data;
   const rawData = character.data;
-  const hasCharIdentity = !!(rawData?.name || rawData?.char_name || rawData?.character_name || rawData?.data?.name || rawData?.data?.char_name || rawData?.data?.character_name);
-  const isPreset = !hasCharIdentity && !!(rawData.prompts || rawData.temperature !== undefined || rawData.top_p !== undefined || rawData.system_prompt !== undefined);
-  const isStandaloneWorldbook = rawData.entries !== undefined;
-  const isTheme = rawData?.blur_strength !== undefined || rawData?.main_text_color !== undefined || rawData?.chat_display !== undefined;
-  const isQR = Array.isArray(rawData) ? rawData.length > 0 && rawData[0]?.label !== undefined : (rawData?.quick_replies !== undefined || rawData?.qrList !== undefined) && rawData?.spec !== "chara_card_v2" && rawData?.spec !== "chara_card_v3" && rawData?.first_mes === undefined && rawData?.personality === undefined;
-  const isScript = rawData?.type === 'script' && rawData?.content !== undefined && rawData?.name !== undefined;
+  const category = getCharacterCategoryPrefix(character);
+  const isPreset = category === '预设';
+  const isStandaloneWorldbook = category === '世界书';
+  const isTheme = category === '美化';
+  const isQR = category === '快速回复';
+  const isScript = category === '脚本' || category === '工具区';
   const isSpecialData = isTheme || isQR || isScript || isPreset;
 
   const getSafeFilename = (name: string) => {
@@ -577,7 +572,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
       {/* Blurred Background */}
       <div 
         className="fixed inset-0 bg-cover bg-center opacity-30 blur-3xl scale-110 [.light-theme_&]:opacity-40"
-        style={{ backgroundImage: `url(${avatarUrl})` }}
+        style={{ backgroundImage: avatarUrl ? `url(${avatarUrl})` : undefined }}
       />
       
       <div className="relative z-10 min-h-screen flex flex-col">
@@ -673,7 +668,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
         {/* Avatar & Name */}
         <div className="flex flex-col items-center pt-8 pb-6 px-4">
           <img
-            src={avatarUrl}
+            src={avatarUrl || getFallbackAvatar(character.name || character.id)}
             alt={character.name}
             onClick={() => setShowAvatarViewer(true)}
             onError={(e) => {

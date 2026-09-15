@@ -12,6 +12,7 @@ import {
   getChatsForCharacter,
   enqueueAndroidSync,
   isActualCharacterCard,
+  getCharacterCategoryPrefix,
 } from "./db";
 import { extractTavernData, injectTavernData } from "./png";
 
@@ -52,26 +53,7 @@ export async function resolveFolderPath(
   return pathParts.map(getSafeFilename).join("/");
 }
 
-function getCharacterCategoryPrefix(char: CharacterCard): string {
-  const rawData = char.data?.data || char.data || {};
-  const isChar = isActualCharacterCard(rawData);
-  const isPreset =
-    !isChar && (rawData.temperature !== undefined ||
-    rawData.prompts !== undefined ||
-    rawData.top_p !== undefined);
-  const isStandaloneWorldbook =
-    !isChar && (rawData.entries !== undefined ||
-    (rawData.data && rawData.data.entries !== undefined));
-  const isTheme = !isChar && (rawData?.blur_strength !== undefined || rawData?.main_text_color !== undefined || rawData?.chat_display !== undefined);
-  const isQR = !isChar && (Array.isArray(rawData) ? (rawData.length > 0 && rawData[0]?.label !== undefined && rawData[0]?.message !== undefined) : ((rawData?.quick_replies !== undefined || rawData?.qrList !== undefined) && rawData?.spec !== "chara_card_v2" && rawData?.spec !== "chara_card_v3" && rawData?.first_mes === undefined && rawData?.personality === undefined));
-  const isScript = !isChar && rawData?.type === "script" && rawData?.content !== undefined && rawData?.name !== undefined;
-  if (isPreset) return "预设";
-  if (isStandaloneWorldbook) return "世界书";
-  if (isQR) return "快速回复";
-  if (isScript) return "工具区";
 
-  return "未归类";
-}
 
 export async function _tryCleanupOldAndroidFilesWorker(char: CharacterCard, newPath?: string) {
   if (!isAndroid()) return;
@@ -190,22 +172,10 @@ async function _syncCharacterToAndroidWorker(
 
   const safeName = getSafeFilename(char.name);
 
-  const rawData = char.data?.data || char.data || {};
-  const isChar = isActualCharacterCard(rawData);
-  const isPreset =
-    !isChar && (rawData.temperature !== undefined ||
-    rawData.prompts !== undefined ||
-    rawData.top_p !== undefined);
-  const isStandaloneWorldbook =
-    !isChar && (rawData.entries !== undefined ||
-    (rawData.data && rawData.data.entries !== undefined));
-  const isTheme = !isChar && (rawData?.blur_strength !== undefined || rawData?.main_text_color !== undefined || rawData?.chat_display !== undefined);
-  const isQR = !isChar && (Array.isArray(rawData) ? (rawData.length > 0 && rawData[0]?.label !== undefined && rawData[0]?.message !== undefined) : ((rawData?.quick_replies !== undefined || rawData?.qrList !== undefined) && rawData?.spec !== "chara_card_v2" && rawData?.spec !== "chara_card_v3" && rawData?.first_mes === undefined && rawData?.personality === undefined));
-  const isScript = !isChar && rawData?.type === "script" && rawData?.content !== undefined && rawData?.name !== undefined;
-
   let savedPaths: string[] = [];
+  const isTool = prefix !== "未归类";
 
-  if (isPreset || isStandaloneWorldbook || isTheme || isQR || isScript) {
+  if (isTool) {
     let buffer: ArrayBuffer;
     let ext = "json";
     let fileName = "";

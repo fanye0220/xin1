@@ -34,32 +34,100 @@ export function getSafeFilename(name: string): string {
 }
 
 export function getCharacterCategoryPrefix(char: any): string {
-  const rawData = char.data?.data || char.data || {};
+  const rawData = char?.data?.data || char?.data || char || {};
+  const outer = char?.data || char || {};
+
+  // Real character cards are not tool categories
+  if (isActualCharacterCard(rawData) || isActualCharacterCard(outer)) {
+    return "未归类";
+  }
+
+  // 1. Quick Reply
+  if (
+    Array.isArray(rawData) ||
+    Array.isArray(outer) ||
+    Array.isArray(rawData.qrList) ||
+    Array.isArray(outer.qrList) ||
+    Array.isArray(rawData.quick_replies) ||
+    Array.isArray(outer.quick_replies) ||
+    Array.isArray(rawData.tavern_qr_sets) ||
+    Array.isArray(outer.tavern_qr_sets) ||
+    rawData.qrList !== undefined ||
+    outer.qrList !== undefined ||
+    rawData.quick_replies !== undefined ||
+    outer.quick_replies !== undefined
+  ) {
+    return "快速回复";
+  }
+
+  // 2. Theme / Beautify
   if (
     rawData.blur_strength !== undefined ||
+    outer.blur_strength !== undefined ||
     rawData.main_text_color !== undefined ||
-    rawData.chat_display !== undefined
-  )
+    outer.main_text_color !== undefined ||
+    rawData.chat_display !== undefined ||
+    outer.chat_display !== undefined
+  ) {
     return "美化";
+  }
+
+  // 3. Preset
   if (
+    Array.isArray(rawData.prompts) ||
+    Array.isArray(outer.prompts) ||
+    Array.isArray(rawData.prompt_order) ||
+    Array.isArray(outer.prompt_order) ||
     rawData.temperature !== undefined ||
+    outer.temperature !== undefined ||
     rawData.top_p !== undefined ||
-    rawData.prompts !== undefined
-  )
+    outer.top_p !== undefined ||
+    rawData.top_k !== undefined ||
+    outer.top_k !== undefined ||
+    rawData.min_p !== undefined ||
+    outer.min_p !== undefined ||
+    rawData.repetition_penalty !== undefined ||
+    outer.repetition_penalty !== undefined ||
+    rawData.openai_max_context !== undefined ||
+    outer.openai_max_context !== undefined ||
+    rawData.openai_max_tokens !== undefined ||
+    outer.openai_max_tokens !== undefined ||
+    rawData.max_context_length !== undefined ||
+    outer.max_context_length !== undefined ||
+    rawData.preset_type !== undefined ||
+    outer.preset_type !== undefined ||
+    rawData.prompts !== undefined ||
+    outer.prompts !== undefined ||
+    rawData.system_prompt !== undefined ||
+    outer.system_prompt !== undefined
+  ) {
     return "预设";
-  if (rawData.entries !== undefined || rawData.data?.entries !== undefined)
-    return "世界书";
+  }
+
+  // 4. Worldbook
   if (
-    Array.isArray(rawData) ? rawData.length > 0 && rawData[0].label !== undefined && rawData[0].message !== undefined : (rawData.quick_replies !== undefined || rawData.qrList !== undefined) && rawData.spec !== "chara_card_v2" && rawData.spec !== "chara_card_v3" && rawData.description === undefined && rawData.first_mes === undefined && rawData.personality === undefined && rawData.mes_example === undefined && rawData.char_name === undefined && rawData.character_name === undefined && rawData.name === undefined && rawData.data?.name === undefined)
-    return "快速回复";
+    rawData.entries !== undefined ||
+    outer.entries !== undefined ||
+    rawData.data?.entries !== undefined ||
+    outer.data?.entries !== undefined
+  ) {
+    return "世界书";
+  }
+
+  // 5. Script / Tool / Regex
   if (
     rawData.run !== undefined ||
+    outer.run !== undefined ||
     rawData.type === "tool" ||
-    (rawData.type === "script" &&
-      rawData.content !== undefined &&
-      rawData.name !== undefined)
-  )
-    return "工具区";
+    outer.type === "tool" ||
+    rawData.type === "script" ||
+    outer.type === "script" ||
+    (rawData.extensions && Array.isArray(rawData.extensions.regex_scripts)) ||
+    (outer.extensions && Array.isArray(outer.extensions.regex_scripts))
+  ) {
+    return "脚本";
+  }
+
   return "未归类";
 }
 
@@ -249,12 +317,15 @@ export function initDB() {
 
 export function isActualCharacterCard(rawData: any): boolean {
   if (!rawData) return false;
+  if (Array.isArray(rawData)) return false;
+
   const outer = rawData;
   const target =
     outer.data && typeof outer.data === 'object' && !Array.isArray(outer.data)
       ? outer.data
       : outer;
 
+  // 1. Explicit V2/V3 spec character card
   if (
     outer.spec === "chara_card_v2" ||
     outer.spec === "chara_card_v3" ||
@@ -264,16 +335,95 @@ export function isActualCharacterCard(rawData: any): boolean {
     return true;
   }
 
-  // 明确的角色字段优先：即使某些卡带了 temperature/prompts 等扩展字段，
-  // 只要确实是角色卡，也不要因为工具字段而误判成预设/脚本。
+  // 2. Character-specific fields (personality, first_mes, mes_example)
   if (
-    target.personality !== undefined ||
-    target.first_mes !== undefined ||
-    target.mes_example !== undefined
+    (typeof target.first_mes === 'string' && target.first_mes.trim().length > 0) ||
+    (typeof target.personality === 'string' && target.personality.trim().length > 0) ||
+    (typeof target.mes_example === 'string' && target.mes_example.trim().length > 0)
   ) {
     return true;
   }
 
+  // 3. Check for Quick Reply (QR) signatures -> NOT a character card
+  if (
+    Array.isArray(outer.qrList) ||
+    Array.isArray(target.qrList) ||
+    Array.isArray(outer.quick_replies) ||
+    Array.isArray(target.quick_replies) ||
+    Array.isArray(outer.tavern_qr_sets) ||
+    Array.isArray(target.tavern_qr_sets) ||
+    outer.qrList !== undefined ||
+    target.qrList !== undefined ||
+    outer.quick_replies !== undefined ||
+    target.quick_replies !== undefined
+  ) {
+    return false;
+  }
+
+  // 4. Check for Preset signatures -> NOT a character card
+  if (
+    Array.isArray(outer.prompts) ||
+    Array.isArray(target.prompts) ||
+    Array.isArray(outer.prompt_order) ||
+    Array.isArray(target.prompt_order) ||
+    outer.temperature !== undefined ||
+    target.temperature !== undefined ||
+    outer.top_p !== undefined ||
+    target.top_p !== undefined ||
+    outer.top_k !== undefined ||
+    target.top_k !== undefined ||
+    outer.min_p !== undefined ||
+    target.min_p !== undefined ||
+    outer.repetition_penalty !== undefined ||
+    target.repetition_penalty !== undefined ||
+    outer.openai_max_context !== undefined ||
+    target.openai_max_context !== undefined ||
+    outer.openai_max_tokens !== undefined ||
+    target.openai_max_tokens !== undefined ||
+    outer.max_context_length !== undefined ||
+    target.max_context_length !== undefined ||
+    outer.preset_type !== undefined ||
+    target.preset_type !== undefined
+  ) {
+    return false;
+  }
+
+  // 5. Check for Worldbook / Lorebook signatures -> NOT a character card
+  if (
+    outer.entries !== undefined ||
+    target.entries !== undefined ||
+    (outer.data && outer.data.entries !== undefined)
+  ) {
+    return false;
+  }
+
+  // 6. Check for Theme / Beautify signatures -> NOT a character card
+  if (
+    outer.blur_strength !== undefined ||
+    target.blur_strength !== undefined ||
+    outer.main_text_color !== undefined ||
+    target.main_text_color !== undefined ||
+    outer.chat_display !== undefined ||
+    target.chat_display !== undefined
+  ) {
+    return false;
+  }
+
+  // 7. Check for Script / Regex signatures -> NOT a character card
+  if (
+    outer.run !== undefined ||
+    target.run !== undefined ||
+    outer.type === "script" ||
+    target.type === "script" ||
+    outer.type === "tool" ||
+    target.type === "tool" ||
+    (outer.extensions && Array.isArray(outer.extensions.regex_scripts)) ||
+    (target.extensions && Array.isArray(target.extensions.regex_scripts))
+  ) {
+    return false;
+  }
+
+  // 8. If none of the tool signatures match, check if it has character name and description/scenario
   const charName =
     target.name ||
     target.char_name ||
@@ -284,31 +434,11 @@ export function isActualCharacterCard(rawData: any): boolean {
   const hasCharacterContent =
     target.description !== undefined ||
     target.scenario !== undefined ||
-    target.system_prompt !== undefined ||
-    target.creator_notes !== undefined ||
     Array.isArray(target.tags);
 
   if (charName && hasCharacterContent) {
     return true;
   }
-
-  // 明确的非角色卡类型先排除，避免把工具/预设/世界书/美化/快捷回复误当角色。
-  const looksLikeTool =
-    Array.isArray(target) ||
-    target.type === "script" ||
-    target.type === "tool" ||
-    target.run !== undefined ||
-    target.temperature !== undefined ||
-    target.top_p !== undefined ||
-    target.prompts !== undefined ||
-    target.entries !== undefined ||
-    target.blur_strength !== undefined ||
-    target.main_text_color !== undefined ||
-    target.chat_display !== undefined ||
-    (target.quick_replies !== undefined && !charName) ||
-    (target.qrList !== undefined && !charName);
-
-  if (looksLikeTool) return false;
 
   return !!charName;
 }
@@ -874,14 +1004,8 @@ export interface CharMeta {
 function buildCharMeta(val: any): CharMeta {
   let charTags = val.data?.data?.tags || val.data?.tags;
   if (!Array.isArray(charTags)) charTags = [];
-  const data = val.data || {};
-  const isQR = Array.isArray(data)
-    ? data.length > 0 && data[0].label !== undefined
-    : (data.quick_replies !== undefined || data.qrList !== undefined) &&
-        data.spec !== "chara_card_v2" &&
-        data.spec !== "chara_card_v3" &&
-        data.first_mes === undefined &&
-        data.personality === undefined;
+  const isTool = getCharacterCategoryPrefix(val) !== "未归类";
+  const isQR = getCharacterCategoryPrefix(val) === "快速回复";
   return {
     id: val.id,
     createdAt: val.createdAt,
@@ -892,7 +1016,7 @@ function buildCharMeta(val: any): CharMeta {
     deletedAt: val.deletedAt,
     folderId: val.folderId,
     tags: charTags,
-    isTool: getCharacterCategoryPrefix(val) !== "未归类",
+    isTool,
     isQR,
     localFilePath: val.localFilePath,
     hasBlobsSeparated: val.hasBlobsSeparated,

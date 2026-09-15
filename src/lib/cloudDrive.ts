@@ -224,29 +224,78 @@ function detectCloudCardType(rawData: any): CloudCardType {
 
   const data = unwrapCharacterData(rawData);
   const toolTarget = data || rawData || {};
+  const outer = rawData || {};
 
+  // 1. QR
   if (
+    Array.isArray(outer.qrList) ||
+    Array.isArray(toolTarget.qrList) ||
+    Array.isArray(outer.quick_replies) ||
+    Array.isArray(toolTarget.quick_replies) ||
+    Array.isArray(outer.tavern_qr_sets) ||
+    Array.isArray(toolTarget.tavern_qr_sets) ||
+    outer.qrList !== undefined ||
+    toolTarget.qrList !== undefined ||
+    outer.quick_replies !== undefined ||
+    toolTarget.quick_replies !== undefined
+  ) return 'qr';
+
+  // 2. Preset
+  if (
+    Array.isArray(outer.prompts) ||
+    Array.isArray(toolTarget.prompts) ||
+    Array.isArray(outer.prompt_order) ||
+    Array.isArray(toolTarget.prompt_order) ||
+    outer.temperature !== undefined ||
     toolTarget.temperature !== undefined ||
+    outer.top_p !== undefined ||
     toolTarget.top_p !== undefined ||
+    outer.top_k !== undefined ||
+    toolTarget.top_k !== undefined ||
+    outer.min_p !== undefined ||
+    toolTarget.min_p !== undefined ||
+    outer.repetition_penalty !== undefined ||
+    toolTarget.repetition_penalty !== undefined ||
+    outer.openai_max_context !== undefined ||
+    toolTarget.openai_max_context !== undefined ||
+    outer.openai_max_tokens !== undefined ||
+    toolTarget.openai_max_tokens !== undefined ||
+    outer.max_context_length !== undefined ||
+    toolTarget.max_context_length !== undefined ||
+    outer.preset_type !== undefined ||
+    toolTarget.preset_type !== undefined ||
     toolTarget.prompts !== undefined ||
     toolTarget.system_prompt !== undefined
   ) return 'preset';
 
-  if (toolTarget.entries !== undefined) return 'worldbook';
-  if (toolTarget.blur_strength !== undefined || toolTarget.main_text_color !== undefined || toolTarget.chat_display !== undefined) return 'theme';
-
+  // 3. Worldbook
   if (
+    outer.entries !== undefined ||
+    toolTarget.entries !== undefined ||
+    (outer.data && outer.data.entries !== undefined)
+  ) return 'worldbook';
+
+  // 4. Theme
+  if (
+    outer.blur_strength !== undefined ||
+    toolTarget.blur_strength !== undefined ||
+    outer.main_text_color !== undefined ||
+    toolTarget.main_text_color !== undefined ||
+    outer.chat_display !== undefined ||
+    toolTarget.chat_display !== undefined
+  ) return 'theme';
+
+  // 5. Script
+  if (
+    outer.run !== undefined ||
     toolTarget.run !== undefined ||
+    outer.type === 'tool' ||
     toolTarget.type === 'tool' ||
-    (toolTarget.type === 'script' && toolTarget.content !== undefined && toolTarget.name !== undefined)
+    outer.type === 'script' ||
+    toolTarget.type === 'script' ||
+    (outer.extensions && Array.isArray(outer.extensions.regex_scripts)) ||
+    (toolTarget.extensions && Array.isArray(toolTarget.extensions.regex_scripts))
   ) return 'script';
-
-  const qrTarget = toolTarget.extensions || toolTarget;
-  if (
-    qrTarget.quick_replies !== undefined ||
-    qrTarget.qrList !== undefined ||
-    qrTarget.tavern_qr_sets !== undefined
-  ) return 'qr';
 
   return 'character';
 }
@@ -271,7 +320,7 @@ function cloudTypeFolder(type: CloudCardType): string {
   if (type === 'preset') return '工具区/预设';
   if (type === 'worldbook') return '工具区/世界书';
   if (type === 'theme') return '工具区/美化';
-  if (type === 'qr') return '工具区/QR';
+  if (type === 'qr') return '工具区/快速回复';
   if (type === 'script') return '工具区/脚本';
   return '角色卡';
 }
@@ -713,11 +762,9 @@ export async function uploadCharacterToCloud(
 
   if (toolCategory !== "未归类") {
     pathParts.push('工具区');
-    if (toolCategory === '美化') pathParts.push('美化');
-    else if (toolCategory === '预设') pathParts.push('预设');
-    else if (toolCategory === '世界书') pathParts.push('世界书');
-    else if (toolCategory === '快速回复') pathParts.push('快速回复');
-    else pathParts.push('脚本');
+    const categoryName = (toolCategory === '美化' || toolCategory === '预设' || toolCategory === '世界书' || toolCategory === '快速回复')
+      ? toolCategory
+      : '脚本';
 
     if (char.folderId) {
       const allFolders = await getFolders();
@@ -730,7 +777,20 @@ export async function uploadCharacterToCloud(
         subParts.unshift(currentF.name);
         currentF = allFolders.find(f => f.id === currentF.parentId);
       }
-      pathParts.push(...subParts);
+
+      // Filter out redundant '工具区' or category names to prevent nested '工具区/世界书/世界书'
+      const cleanSubParts = subParts.filter((part, idx) => {
+        if (idx === 0 && part === '工具区') return false;
+        if (idx === 0 && (part === categoryName || part === toolCategory)) return false;
+        return true;
+      });
+
+      pathParts.push(categoryName);
+      if (cleanSubParts.length > 0) {
+        pathParts.push(...cleanSubParts);
+      }
+    } else {
+      pathParts.push(categoryName);
     }
   } else {
     pathParts.push('角色卡');

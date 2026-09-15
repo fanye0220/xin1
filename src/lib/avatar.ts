@@ -2,20 +2,24 @@ import { createAvatar } from '@dicebear/core';
 import { bottts } from '@dicebear/collection';
 
 export function getFallbackAvatar(seed: string): string {
-  const avatar = createAvatar(bottts, {
-    seed: seed,
-  });
-  
-  const svgStr = avatar.toString();
-  // Properly encode unicode (e.g., em-dashes in SVG metadata) to base64
   try {
-    const encoded = encodeURIComponent(svgStr).replace(/%([0-9A-F]{2})/g,
-        (match, p1) => String.fromCharCode(parseInt(p1, 16))
-    );
-    const base64 = typeof window !== 'undefined' ? window.btoa(encoded) : btoa(encoded);
-    return `data:image/svg+xml;base64,${base64}`;
-  } catch (err) {
-    return `data:image/svg+xml,${encodeURIComponent(svgStr)}`;
+    const avatar = createAvatar(bottts, {
+      seed: seed || 'default',
+    });
+    
+    const svgStr = avatar.toString();
+    try {
+      const encoded = encodeURIComponent(svgStr).replace(/%([0-9A-F]{2})/g,
+          (match, p1) => String.fromCharCode(parseInt(p1, 16))
+      );
+      const base64 = typeof window !== 'undefined' ? window.btoa(encoded) : (typeof Buffer !== 'undefined' ? Buffer.from(svgStr).toString('base64') : btoa(encoded));
+      return `data:image/svg+xml;base64,${base64}`;
+    } catch {
+      return `data:image/svg+xml;utf8,${encodeURIComponent(svgStr)}`;
+    }
+  } catch {
+    const fallbackSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#6366f1" rx="20"/><circle cx="35" cy="45" r="8" fill="#ffffff"/><circle cx="65" cy="45" r="8" fill="#ffffff"/><rect x="30" y="65" width="40" height="8" rx="4" fill="#ffffff"/></svg>';
+    return `data:image/svg+xml;utf8,${encodeURIComponent(fallbackSvg)}`;
   }
 }
 

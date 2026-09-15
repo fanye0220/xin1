@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Cloud, Download, Upload, Trash2, Github, Loader2, Search, Folder, ChevronRight, MessageSquare, FileText } from 'lucide-react';
 import { listCloudCharacters, downloadCloudCharacter, deleteCloudCharacter } from '../lib/cloudDrive';
-import { getCachedMeta, saveCharacter, getFolders, saveFolder, saveChat } from '../lib/db';
+import { getCachedMeta, saveCharacter, getFolders, saveFolder, saveChat, getCharacterCategoryPrefix } from '../lib/db';
+import { getFallbackAvatar } from '../lib/avatar';
 import { initAuth, googleSignIn, logout, getAccessToken, listBackupsFromDrive, deleteBackupFromDrive, triggerManualBackup, triggerRestore, onSyncStateChange, SyncState } from '../lib/drive';
 
 const formatCloudName = (name: string) => name.replace(/_[a-f0-9-]{36}$/i, "");
@@ -101,17 +102,10 @@ export function CloudSyncTab() {
         
         let mergedMeta = { ...studioMeta, ...appProperties };
         if (!mergedMeta.folderPath) {
-           const isTheme = jsonData.name === "theme_config" || jsonData.type === "theme" || jsonData.blur_strength !== undefined;
-           const isAIPreset = jsonData.type === "preset" || jsonData.temperature !== undefined || (jsonData.name && typeof jsonData.name === 'string' && (jsonData.name.includes("Preset") || jsonData.name.includes("Prompt")));
-           const isWorldbook = jsonData.entries !== undefined || jsonData.name === "Worldbook" || jsonData.data?.entries !== undefined;
-           const isQR = (jsonData.qrList !== undefined || jsonData.quick_replies !== undefined) && !isActualCharacterCard(jsonData);
-           const isScript = jsonData.type === "script" && jsonData.content !== undefined && jsonData.name !== undefined;
-           
-           if (isTheme) mergedMeta.folderPath = "工具区/美化";
-           else if (isAIPreset) mergedMeta.folderPath = "工具区/预设";
-           else if (isWorldbook) mergedMeta.folderPath = "工具区/世界书";
-           else if (isQR) mergedMeta.folderPath = "工具区/快速回复";
-           else if (isScript) mergedMeta.folderPath = "工具区/脚本";
+           const prefix = getCharacterCategoryPrefix(jsonData);
+           if (prefix !== '未归类') {
+             mergedMeta.folderPath = `工具区/${prefix}`;
+           }
         }
         
         if (mergedMeta?.folderPath) {
@@ -169,7 +163,8 @@ export function CloudSyncTab() {
             data: jsonData,
             createdAt: createTime,
             folderId,
-            avatarHistory: avatarHistory || []
+            avatarHistory: avatarHistory || [],
+            avatarUrlFallback: avatarBlob ? undefined : getFallbackAvatar(extractedName)
         };
         
         if (avatarBlob) {

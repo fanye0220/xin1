@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search, Check } from 'lucide-react';
-import { CharacterCard, getCharacters } from '../lib/db';
+import { CharacterCard, getCharacters, getCharacterCategoryPrefix } from '../lib/db';
 
 interface Props {
   isOpen: boolean;
@@ -23,11 +23,7 @@ export function SelectQRModal({ isOpen, onClose, onSelect }: Props) {
   }, [isOpen]);
 
   const validQRs = useMemo(() => {
-    return characters.filter(c => {
-      const data = c.data || {};
-      const isQR = Array.isArray(data) ? data.length > 0 && data[0].label !== undefined && data[0].message !== undefined : (data.quick_replies !== undefined || data.qrList !== undefined);
-      return isQR;
-    });
+    return characters.filter(c => getCharacterCategoryPrefix(c) === '快速回复');
   }, [characters]);
 
   const filteredQRs = useMemo(() => {
