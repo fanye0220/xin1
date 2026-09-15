@@ -1,4 +1,4 @@
-import { getFallbackAvatar } from '../lib/avatar';
+import { getFallbackAvatar, resolveAvatarUrl } from '../lib/avatar';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Trash2, RotateCcw, X, AlertTriangle, CheckCircle2, CheckCircle } from 'lucide-react';
@@ -25,7 +25,7 @@ const TrashedCharacterCard = ({
   onToggleSelect: (id: string) => void
 }) => {
   const defaultFallback = getFallbackAvatar(char.name || char.id);
-  const [avatarUrl, setAvatarUrl] = useState<string>((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
+  const [avatarUrl, setAvatarUrl] = useState<string>(resolveAvatarUrl(char.avatarUrlFallback, char.name || char.id));
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {

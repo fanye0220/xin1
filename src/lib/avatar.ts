@@ -23,6 +23,24 @@ export function getFallbackAvatar(seed: string): string {
   }
 }
 
+export function resolveAvatarUrl(avatarFallback: string | undefined | null, seed: string): string {
+  if (
+    avatarFallback &&
+    typeof avatarFallback === 'string' &&
+    avatarFallback.trim().length > 0 &&
+    avatarFallback !== 'undefined' &&
+    avatarFallback !== 'null' &&
+    !avatarFallback.includes('api.dicebear.com') &&
+    (avatarFallback.startsWith('data:image/') ||
+     avatarFallback.startsWith('http://') ||
+     avatarFallback.startsWith('https://') ||
+     avatarFallback.startsWith('blob:'))
+  ) {
+    return avatarFallback;
+  }
+  return getFallbackAvatar(seed);
+}
+
 /**
  * 把一张原图压成一张小缩略图, 专门给列表/卡片这种小尺寸展示场景用,
  * 避免列表里也要解码整张原图(参考卡库的做法: 列表只读小缩略图,

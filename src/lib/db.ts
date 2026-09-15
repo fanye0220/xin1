@@ -1,4 +1,4 @@
-import { getFallbackAvatar } from "./avatar";
+import { getFallbackAvatar, resolveAvatarUrl } from "./avatar";
 import { openDB, DBSchema, IDBPDatabase } from "idb";
 import { getLocalImageUrl, isAndroid } from "./appBridge";
 import { sanitizeChatMessages } from "./chatParse";
@@ -448,7 +448,7 @@ export async function migrateDatabase(
 ) {
   const db = await initDB();
 
-  // First, just count how many need migration without loading full objects into RAM, or we just rely on counting via cursor
+  // First pass: just count how many need migration without loading full objects into RAM
   let totalToMigrate = 0;
   let txCheck = db.transaction("characters", "readonly");
   let cursorCheck = await txCheck.objectStore("characters").openCursor();
@@ -501,93 +501,9 @@ export async function migrateDatabase(
     }
   }
 
-  // Second pass: retroactively fix missing folderId for scripts/worldbooks/presets that were put in root
-  const txCheckCategories = db.transaction("characters", "readonly");
-  let cursorCat = await txCheckCategories
-    .objectStore("characters")
-    .openCursor();
-  const charsToFix: CharacterCard[] = [];
-  while (cursorCat) {
-    const char = cursorCat.value;
-    if (!char.folderId && char.data) {
-      const isChar = isActualCharacterCard(char.data);
-      const isPreset =
-        !isChar && (char.data.temperature !== undefined ||
-        char.data.prompts !== undefined ||
-        char.data.top_p !== undefined);
-      const isWorldbook =
-        !isChar && (char.data.entries !== undefined ||
-        (char.data.data && char.data.data.entries !== undefined));
-      const isTheme =
-        !isChar && (char.data.blur_strength !== undefined ||
-        char.data.main_text_color !== undefined ||
-        char.data.chat_display !== undefined);
-      const isQR = !isChar && (Array.isArray(char.data)
-        ? char.data.length > 0 &&
-          char.data[0].label !== undefined &&
-          char.data[0].message !== undefined
-        : (char.data.quick_replies !== undefined ||
-          char.data.qrList !== undefined) && !char.data.name && !char.data.data?.name && !char.data.char_name && !char.data.data?.char_name && !char.data.character_name && !char.data.data?.character_name);
-      const isScript =
-        !isChar && (char.data.run !== undefined ||
-        char.data.type === "tool" ||
-        (char.data.type === "script" &&
-          char.data.content !== undefined &&
-          char.data.name !== undefined));
 
-      if (isPreset || isWorldbook || isTheme || isQR || isScript) {
-        charsToFix.push(char);
-      }
-    }
-    cursorCat = await cursorCat.continue();
-  }
 
-  if (charsToFix.length > 0) {
-    for (const char of charsToFix) {
-      const isPreset =
-        char.data.temperature !== undefined ||
-        char.data.prompts !== undefined ||
-        char.data.top_p !== undefined;
-      const isWorldbook =
-        char.data.entries !== undefined ||
-        (char.data.data && char.data.data.entries !== undefined);
-      const isTheme =
-        char.data.blur_strength !== undefined ||
-        char.data.main_text_color !== undefined ||
-        char.data.chat_display !== undefined;
-      const isQR = Array.isArray(char.data)
-        ? char.data.length > 0 &&
-          char.data[0].label !== undefined &&
-          char.data[0].message !== undefined
-        : (char.data.quick_replies !== undefined ||
-          char.data.qrList !== undefined) && !char.data.name && !char.data.data?.name && !char.data.char_name && !char.data.data?.char_name && !char.data.character_name && !char.data.data?.character_name;
-      const isScript =
-        char.data.run !== undefined ||
-        char.data.type === "tool" ||
-        (char.data.type === "script" &&
-          char.data.content !== undefined &&
-          char.data.name !== undefined);
-
-      let typeFolder = "";
-      if (isPreset) typeFolder = "预设";
-      else if (isWorldbook) typeFolder = "世界书";
-      else if (isTheme) typeFolder = "美化";
-      else if (isQR) typeFolder = "快速回复";
-      else if (isScript) typeFolder = "工具区";
-
-      if (typeFolder) {
-        const newFolderId = await getOrCreateNestedFolder([typeFolder]);
-        if (newFolderId) {
-          char.folderId = newFolderId;
-          const writeTx = db.transaction(["characters", "char_meta"], "readwrite");
-          await writeTx.objectStore("characters").put(char);
-          await writeTx.objectStore("char_meta").put(buildCharMeta(char));
-          await writeTx.done;
-        }
-      }
-    }
-    invalidateCache();
-  }
+  invalidateCache();
 }
 
 export async function getFolders(): Promise<Folder[]> {
@@ -1006,6 +922,7 @@ function buildCharMeta(val: any): CharMeta {
   if (!Array.isArray(charTags)) charTags = [];
   const isTool = getCharacterCategoryPrefix(val) !== "未归类";
   const isQR = getCharacterCategoryPrefix(val) === "快速回复";
+  const fallbackAvatar = resolveAvatarUrl(val.avatarUrlFallback, val.name || val.id);
   return {
     id: val.id,
     createdAt: val.createdAt,
@@ -1020,7 +937,7 @@ function buildCharMeta(val: any): CharMeta {
     isQR,
     localFilePath: val.localFilePath,
     hasBlobsSeparated: val.hasBlobsSeparated,
-    avatarUrlFallback: val.avatarUrlFallback,
+    avatarUrlFallback: fallbackAvatar,
   };
 }
 

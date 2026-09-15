@@ -1,4 +1,4 @@
-import { getFallbackAvatar } from '../lib/avatar';
+import { getFallbackAvatar, resolveAvatarUrl } from '../lib/avatar';
 import { useState, useEffect, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -106,8 +106,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
             const { getLocalImageUrl } = await import('../lib/appBridge');
             setAvatarUrl(getLocalImageUrl(char.localFilePath, char.updatedAt || char.createdAt));
         } else {
-          const defaultFallback = getFallbackAvatar(char.name || char.id);
-          setAvatarUrl((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
+          setAvatarUrl(resolveAvatarUrl(char.avatarUrlFallback, char.name || char.id));
         }
         
         // If it's a standalone worldbook, default to the worldbook tab

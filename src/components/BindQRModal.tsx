@@ -1,4 +1,4 @@
-import { getFallbackAvatar } from '../lib/avatar';
+import { getFallbackAvatar, resolveAvatarUrl } from '../lib/avatar';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search } from 'lucide-react';
@@ -14,7 +14,7 @@ interface Props {
 
 function CharacterOption({ char, onClick }: { char: CharacterCard, onClick: () => void }) {
   const defaultFallback = getFallbackAvatar(char.name || char.id);
-  const [url, setUrl] = useState<string>((char.avatarUrlFallback && !char.avatarUrlFallback.includes('api.dicebear.com') ? char.avatarUrlFallback : defaultFallback));
+  const [url, setUrl] = useState<string>(resolveAvatarUrl(char.avatarUrlFallback, char.name || char.id));
 
   useEffect(() => {
     let objectUrl: string | null = null;

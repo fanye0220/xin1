@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { getFallbackAvatar } from "../lib/avatar";
+import { getFallbackAvatar, resolveAvatarUrl } from "../lib/avatar";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Masonry from 'react-masonry-css';

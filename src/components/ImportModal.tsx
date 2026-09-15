@@ -1,4 +1,4 @@
-import { getFallbackAvatar } from "../lib/avatar";
+import { getFallbackAvatar, resolveAvatarUrl } from "../lib/avatar";
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {

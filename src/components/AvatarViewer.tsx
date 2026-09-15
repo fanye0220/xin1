@@ -1,4 +1,4 @@
-import { getFallbackAvatar } from '../lib/avatar';
+import { getFallbackAvatar, resolveAvatarUrl } from '../lib/avatar';
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -32,8 +32,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     } else if (character.localFilePath) {
       setCurrentAvatarUrl(getLocalImageUrl(character.localFilePath, character.updatedAt || character.createdAt));
     } else {
-      const defaultFallback = getFallbackAvatar(character.name || character.id);
-      setCurrentAvatarUrl((character.avatarUrlFallback && !character.avatarUrlFallback.includes('api.dicebear.com') ? character.avatarUrlFallback : defaultFallback));
+      setCurrentAvatarUrl(resolveAvatarUrl(character.avatarUrlFallback, character.name || character.id));
     }
     
     return () => {

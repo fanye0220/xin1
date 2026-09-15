@@ -1,4 +1,4 @@
-import { getFallbackAvatar } from '../lib/avatar';
+import { getFallbackAvatar, resolveAvatarUrl } from '../lib/avatar';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Tag, Play, CheckCircle2, Loader2, AlertCircle, Pause, Square, PlayCircle, RefreshCw, X, ArrowRightLeft, History, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -24,7 +24,7 @@ function RetagReviewCard({ item }: { item: RetagReviewItem }) {
 
   const charName = item.char.data?.data?.name || item.char.data?.name || '未知角色';
   const defaultFallback = getFallbackAvatar(charName || item.char.id);
-  const initialUrl = item.char.avatarUrlFallback && !item.char.avatarUrlFallback.includes('api.dicebear.com') ? item.char.avatarUrlFallback : defaultFallback;
+  const initialUrl = resolveAvatarUrl(item.char.avatarUrlFallback, item.char.name || item.char.id);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(initialUrl);
 
   useEffect(() => {
