@@ -333,7 +333,7 @@ async function buildCloudZip(
   sourceUrl: string,
 ): Promise<Blob> {
   const safeName = getSafeFilename(char.name || 'Character');
-  const extraAvatars = (char.avatarHistory || []).filter((b: any) => !char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type));
+  const extraAvatars = (char.avatarHistory || []).filter((b: any) => !b ? false : (!char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type)));
 
   const zip = new JSZip();
 
@@ -637,7 +637,7 @@ async function uploadCharacterWithSeparateFiles(
     });
   }
 
-  const extraAvatars = (char.avatarHistory || []).filter((b: any) => !char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type));
+  const extraAvatars = (char.avatarHistory || []).filter((b: any) => !b ? false : (!char.avatarBlob || !(b.size === char.avatarBlob.size && b.type === char.avatarBlob.type)));
   const hasExtraAvatars = extraAvatars.length > 0;
   const chats = await getChatsForCharacter(char.id);
 

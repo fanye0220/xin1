@@ -83,17 +83,21 @@ async function driveMultipartUpload(
 
     const nativeRes = await CapacitorHttp.request({
       url,
-      method: 'POST', // 实际动词永远是 POST，PATCH 语义靠上面的 override header
+      method: method,
       headers,
       data: base64Data,
       dataType: 'file',
     });
     const rawData = nativeRes.data;
     const asText = typeof rawData === 'string' ? rawData : JSON.stringify(rawData ?? '');
+    let errMsg = '';
+    if (nativeRes.status < 200 || nativeRes.status >= 300) {
+      errMsg = typeof rawData === 'object' ? (rawData?.error?.message || JSON.stringify(rawData)) : String(rawData || `HTTP ${nativeRes.status}`);
+    }
     return {
       ok: nativeRes.status >= 200 && nativeRes.status < 300,
       status: nativeRes.status,
-      statusText: '',
+      statusText: errMsg,
       text: async () => asText,
       json: async () => (typeof rawData === 'string' ? JSON.parse(rawData) : rawData),
     };
@@ -102,15 +106,25 @@ async function driveMultipartUpload(
   // Web 没有这个 bug，普通 Blob body 就行
   const body = new Blob([metadataPart, fileBytes, closingPart]);
   const res = await fetch(url, {
-    method: 'POST',
+    method: method,
     headers,
     body,
   });
+  let resText = '';
+  if (!res.ok) {
+    try {
+      resText = await res.text();
+      try {
+        const parsed = JSON.parse(resText);
+        resText = parsed?.error?.message || resText;
+      } catch {}
+    } catch {}
+  }
   return {
     ok: res.ok,
     status: res.status,
-    statusText: res.statusText,
-    text: () => res.text(),
+    statusText: resText || res.statusText || `HTTP ${res.status}`,
+    text: () => (resText ? Promise.resolve(resText) : res.text()),
     json: () => res.json(),
   };
 }
@@ -247,12 +261,13 @@ export async function uploadBlobToDrive(
   fileId: string,
   blob: Blob,
   mimeType: string,
+  metadata: Record<string, any> = {},
 ): Promise<DriveUploadResponse> {
   return driveMultipartUpload(
     `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
     'PATCH',
     accessToken,
-    {},
+    { mimeType, ...metadata },
     blob,
     mimeType,
   );

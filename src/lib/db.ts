@@ -274,6 +274,24 @@ export function isActualCharacterCard(rawData: any): boolean {
     return true;
   }
 
+  const charName =
+    target.name ||
+    target.char_name ||
+    target.character_name ||
+    target.data?.name ||
+    (typeof outer.name === 'string' ? outer.name : undefined);
+
+  const hasCharacterContent =
+    target.description !== undefined ||
+    target.scenario !== undefined ||
+    target.system_prompt !== undefined ||
+    target.creator_notes !== undefined ||
+    Array.isArray(target.tags);
+
+  if (charName && hasCharacterContent) {
+    return true;
+  }
+
   // 明确的非角色卡类型先排除，避免把工具/预设/世界书/美化/快捷回复误当角色。
   const looksLikeTool =
     Array.isArray(target) ||
@@ -287,23 +305,12 @@ export function isActualCharacterCard(rawData: any): boolean {
     target.blur_strength !== undefined ||
     target.main_text_color !== undefined ||
     target.chat_display !== undefined ||
-    target.quick_replies !== undefined ||
-    target.qrList !== undefined;
+    (target.quick_replies !== undefined && !charName) ||
+    (target.qrList !== undefined && !charName);
 
   if (looksLikeTool) return false;
 
-  // 老的裸 JSON 角色卡可能只有 name + description/scenario/tags，没有 personality/first_mes。
-  const name =
-    target.name ||
-    target.char_name ||
-    target.character_name ||
-    target.data?.name;
-  const hasCharacterContent =
-    target.description !== undefined ||
-    target.scenario !== undefined ||
-    Array.isArray(target.tags);
-
-  return !!(name && hasCharacterContent);
+  return !!charName;
 }
 
 export async function migrateDatabase(
