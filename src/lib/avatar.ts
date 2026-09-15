@@ -4,27 +4,6 @@ import { bottts } from '@dicebear/collection';
 export function getFallbackAvatar(seed: string, category?: string): string {
   const cat = (category || '').toLowerCase();
   
-  if (cat.includes('快') || cat === 'qr' || cat.includes('quick')) {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g-qr" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs><rect width="100" height="100" rx="24" fill="url(#g-qr)"/><path d="M30 36h40c3.3 0 6 2.7 6 6v20c0 3.3-2.7 6-6 6H46l-12 10v-10h-4c-3.3 0-6-2.7-6-6V42c0-3.3 2.7-6 6-6z" fill="#ffffff" fill-opacity="0.95"/><circle cx="40" cy="52" r="3" fill="#6366f1"/><circle cx="50" cy="52" r="3" fill="#6366f1"/><circle cx="60" cy="52" r="3" fill="#6366f1"/></svg>';
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-  if (cat.includes('预设') || cat === 'preset') {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g-pre" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1d4ed8"/></linearGradient></defs><rect width="100" height="100" rx="24" fill="url(#g-pre)"/><path d="M30 38h40M30 50h40M30 62h40" stroke="#ffffff" stroke-width="4" stroke-linecap="round" fill="none"/><circle cx="42" cy="38" r="6" fill="#ffffff"/><circle cx="58" cy="50" r="6" fill="#ffffff"/><circle cx="38" cy="62" r="6" fill="#ffffff"/></svg>';
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-  if (cat.includes('世界书') || cat === 'worldbook') {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g-wb" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#047857"/></linearGradient></defs><rect width="100" height="100" rx="24" fill="url(#g-wb)"/><path d="M26 34c8-4 16-4 24 2v34c-8-6-16-6-24-2V34zm48 0c-8-4-16-4-24 2v34c8-6 16-6 24-2V34z" fill="#ffffff" fill-opacity="0.95"/></svg>';
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-  if (cat.includes('美化') || cat === 'theme') {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g-th" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ec4899"/><stop offset="100%" stop-color="#be185d"/></linearGradient></defs><rect width="100" height="100" rx="24" fill="url(#g-th)"/><path d="M50 26c-13.3 0-24 10.7-24 24 0 10 6 18.5 14.5 21.5 2 .7 4.5-.8 4.5-3v-3c0-3.3 2.7-6 6-6h3c8.8 0 16-7.2 16-16 0-9.9-9-17.5-20-17.5z" fill="#ffffff" fill-opacity="0.95"/><circle cx="38" cy="42" r="3.5" fill="#ec4899"/><circle cx="48" cy="35" r="3.5" fill="#ec4899"/><circle cx="60" cy="40" r="3.5" fill="#ec4899"/><circle cx="66" cy="52" r="3.5" fill="#ec4899"/></svg>';
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-  if (cat.includes('脚本') || cat === 'script' || cat.includes('工具') || cat === 'tool') {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g-sc" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#d97706"/></linearGradient></defs><rect width="100" height="100" rx="24" fill="url(#g-sc)"/><path d="M34 40l10 10-10 10M48 60h18" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-
   try {
     const avatar = createAvatar(bottts, {
       seed: seed || 'default',
