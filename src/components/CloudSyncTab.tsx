@@ -116,7 +116,11 @@ export function CloudSyncTab() {
         
         if (!existing && mergedMeta?.folderPath) {
            const allFolders = await getFolders();
-           const parts = mergedMeta.folderPath.split('/');
+           let parts = (mergedMeta.folderPath as string).split('/').filter(Boolean);
+           // 云端顶层的 "角色卡" 目录在 App 本地对应根目录（未归类），不建立本地同名文件夹
+           if (parts.length > 0 && parts[0] === '角色卡') {
+               parts = parts.slice(1);
+           }
            let currentParentId: string | undefined = undefined;
            for (const part of parts) {
                let found = allFolders.find(f => f.name === part && f.parentId === currentParentId);

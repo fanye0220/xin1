@@ -483,7 +483,7 @@ export default function App() {
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => { setIsSettingsOpen(false); setRefreshKey(prev => prev + 1); }}
       />
 
       <AnimatePresence>

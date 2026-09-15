@@ -992,29 +992,29 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
   
   const fName = (fileName || "").toLowerCase();
   
-  const tryParseZip = async (blobData) => {
+  const tryParseZip = async (blobData: any) => {
      const zip = await JSZip.loadAsync(blobData);
-     let zipJson = null;
-     let zipAvatar = null;
-     let zipMeta = null;
+     let zipJson: any = null;
+     let fallbackJson: any = null;
+     let zipAvatar: Blob | null = null;
+     let zipMeta: any = null;
      let zipAvatarHistory: Blob[] = [];
      for (const [filename, file] of Object.entries(zip.files)) {
        if (file.dir) continue;
-       if (filename === 'studio_meta.json') {
+       const lowerName = filename.toLowerCase();
+       if (lowerName === 'studio_meta.json' || lowerName.endsWith('/studio_meta.json')) {
          const text = await file.async('text');
          try { zipMeta = JSON.parse(text); } catch(e){}
-       } else if (filename.endsWith('.json') && !filename.includes('/')) {
-         const text = await file.async('text');
-         zipJson = JSON.parse(text);
-       } else if (filename.startsWith('avatar.')) {
-         const ext = filename.split('.').pop()?.toLowerCase();
-         let mime = 'image/png';
-         if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
-         else if (ext === 'webp') mime = 'image/webp';
-         else if (ext === 'gif') mime = 'image/gif';
-         const b = await file.async('blob');
-         zipAvatar = new Blob([b], { type: mime });
-       } else if (filename.startsWith('替换头像/') || filename.startsWith('history/') || filename.startsWith('avatars/') || filename.startsWith('alt/') || filename.startsWith('alternate/')) {
+       } else if (
+         lowerName.startsWith('替换头像/') ||
+         lowerName.includes('/替换头像/') ||
+         lowerName.startsWith('history/') ||
+         lowerName.includes('/history/') ||
+         lowerName.startsWith('avatars/') ||
+         lowerName.includes('/avatars/') ||
+         lowerName.startsWith('alt/') ||
+         lowerName.startsWith('alternate/')
+       ) {
          const ext = filename.split('.').pop()?.toLowerCase();
          let mime = 'image/png';
          if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
@@ -1022,12 +1022,53 @@ export async function downloadCloudCharacter(token: string, fileId: string, file
          else if (ext === 'gif') mime = 'image/gif';
          const b = await file.async('blob');
          const ab = new Blob([b], { type: mime });
-         // attach filename for sorting later
          (ab as any)._filename = filename;
          zipAvatarHistory.push(ab);
+       } else if (
+         lowerName.startsWith('avatar.') ||
+         lowerName.includes('/avatar.') ||
+         lowerName.endsWith('/avatar.png') ||
+         lowerName.endsWith('/avatar.jpg') ||
+         lowerName.endsWith('/avatar.webp') ||
+         lowerName.endsWith('/avatar.gif')
+       ) {
+         const ext = filename.split('.').pop()?.toLowerCase();
+         let mime = 'image/png';
+         if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+         else if (ext === 'webp') mime = 'image/webp';
+         else if (ext === 'gif') mime = 'image/gif';
+         const b = await file.async('blob');
+         zipAvatar = new Blob([b], { type: mime });
+       } else if (
+         lowerName.endsWith('.json') &&
+         !lowerName.startsWith('chat_') &&
+         !lowerName.includes('/chat_') &&
+         !lowerName.endsWith('_qr.json') &&
+         !lowerName.includes('_qr.json')
+       ) {
+         const text = await file.async('text');
+         try {
+           const parsed = JSON.parse(text);
+           if (
+             lowerName === 'card.json' ||
+             lowerName.endsWith('/card.json') ||
+             lowerName === 'character.json' ||
+             lowerName.endsWith('/character.json')
+           ) {
+             zipJson = parsed;
+           } else if (parsed && (parsed.spec === 'chara_card_v2' || parsed.spec === 'chara_card_v3' || parsed.name || parsed.data?.name)) {
+             zipJson = parsed;
+           } else if (!fallbackJson) {
+             fallbackJson = parsed;
+           }
+         } catch(e){}
        }
      }
      
+     if (!zipJson && fallbackJson) {
+       zipJson = fallbackJson;
+     }
+
      // sort history to maintain 1, 2, 3... order
      zipAvatarHistory.sort((a: any, b: any) => {
          const getNum = (name: string) => {
