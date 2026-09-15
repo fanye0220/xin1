@@ -3062,9 +3062,12 @@ const CharacterCardItem = React.memo(function CharacterCardItem({
                 getCharacterBlob(char.id).then((b) => {
                   if (b && b.avatarBlob)
                     setUrlWithFallbackCleanup(URL.createObjectURL(b.avatarBlob), true);
-                  else setUrl(initialUrl);
+                  // initialUrl 可能就是刚刚加载失败的那个坏值(比如 avatarUrlFallback
+                  // 内容损坏/被截断), 兜回它等于什么都没做, 图片还是裂的。
+                  // 这里现场重新生成一张保证能用的兜底图, 参考详情页的做法。
+                  else setUrl(getFallbackAvatar(char.name || char.id));
                 });
-              } else setUrl(initialUrl);
+              } else setUrl(getFallbackAvatar(char.name || char.id));
             }}
           />
         </div>
@@ -3145,9 +3148,11 @@ const CharacterCardItem = React.memo(function CharacterCardItem({
           else if (char.hasBlobsSeparated) {
             getCharacterBlob(char.id).then((b) => {
               if (b && b.avatarBlob) setUrlWithFallbackCleanup(URL.createObjectURL(b.avatarBlob), true);
-              else setUrl(initialUrl);
+              // 同理: initialUrl 可能就是加载失败的坏值本身, 现场重新生成一张
+              // 保证能用的兜底图, 而不是兜回同一个可能已经损坏的字符串。
+              else setUrl(getFallbackAvatar(char.name || char.id));
             });
-          } else setUrl(initialUrl);
+          } else setUrl(getFallbackAvatar(char.name || char.id));
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-[var(--overlay-bottom)] via-[var(--overlay-mid)] to-transparent flex flex-col justify-end p-3 pointer-events-none">

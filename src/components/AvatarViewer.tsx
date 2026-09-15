@@ -38,7 +38,7 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [character.avatarBlob, character.localFilePath, character.avatarUrlFallback, previewBlob, character.updatedAt, character.createdAt]);
+  }, [character.avatarBlob, character.localFilePath, character.avatarUrlFallback, character.name, character.id, previewBlob, character.updatedAt, character.createdAt]);
 
   useEffect(() => {
     const urls = (character.avatarHistory || []).map(blob => ({
@@ -417,8 +417,12 @@ export function AvatarViewer({ isOpen, character, onClose, onUpdate }: Props) {
               className="w-full h-full object-contain cursor-grab active:cursor-grabbing"
               onError={(e) => {
                  const target = e.target as HTMLImageElement;
+                 // 注意: blob URL 加载失败(比如已被 revoke)不该被拦在这条兜底之外——
+                 // 之前 "!target.src.startsWith('blob:')" 这个条件会导致 blob 图裂了也
+                 // 不修复。这里只要当前 src 还不是 fallback 本身, 就现场重新生成一张
+                 // 保证能用的兜底图并换上去。
                  const fallback = getFallbackAvatar(character.name || character.id);
-                 if (target.src !== fallback && !target.src.startsWith("blob:")) {
+                 if (target.src !== fallback) {
                      target.src = fallback;
                      setCurrentAvatarUrl(fallback);
                  }
