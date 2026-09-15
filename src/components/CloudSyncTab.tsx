@@ -116,12 +116,9 @@ export function CloudSyncTab() {
            if (parts.length > 0 && parts[0] === '角色卡') {
                parts = parts.slice(1);
            }
-           // 2. "工具区" 顶层分类对应 App 工具分类，不建同名文件夹
+           // 2. "工具区" 顶层前缀在云端用于归纳，下载回本地时去除 "工具区" 根名，保留具体分类与多级子文件夹嵌套
            if (parts.length > 0 && parts[0] === '工具区') {
                parts = parts.slice(1);
-               if (parts.length > 0 && ['预设', '世界书', '美化', '快速回复', '脚本', '其他'].includes(parts[0])) {
-                   parts = parts.slice(1);
-               }
            }
            
            let currentParentId: string | undefined = undefined;
