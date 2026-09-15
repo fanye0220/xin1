@@ -24,7 +24,7 @@ const TrashedCharacterCard = ({
   isSelected: boolean,
   onToggleSelect: (id: string) => void
 }) => {
-  const defaultFallback = getFallbackAvatar(char.name || char.id);
+  const defaultFallback = getFallbackAvatar(char.name || char.id, char.tags?.join(',') || (char.isTool ? 'tool' : undefined));
   const [avatarUrl, setAvatarUrl] = useState<string>(resolveAvatarUrl(char.avatarUrlFallback, char.name || char.id));
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
 
@@ -101,7 +101,11 @@ const TrashedCharacterCard = ({
           alt={char.name} 
           className="w-full h-full object-cover" 
           referrerPolicy="no-referrer"
-          
+          onError={(e) => {
+            if (e.currentTarget.src !== defaultFallback) {
+              e.currentTarget.src = defaultFallback;
+            }
+          }}
         />
       </div>
       <div className="flex-1 min-w-0">

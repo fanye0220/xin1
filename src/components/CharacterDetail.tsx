@@ -667,7 +667,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
         {/* Avatar & Name */}
         <div className="flex flex-col items-center pt-8 pb-6 px-4">
           <img
-            src={avatarUrl || getFallbackAvatar(character.name || character.id)}
+            src={avatarUrl || getFallbackAvatar(character.name || character.id, character.tags?.join(',') || (character.isTool ? 'tool' : undefined))}
             alt={character.name}
             onClick={() => setShowAvatarViewer(true)}
             onError={(e) => {
@@ -680,7 +680,7 @@ export const CharacterDetail = memo(function CharacterDetail({ id, onBack, onOpe
                       return;
                   }
               }
-              const fallback = getFallbackAvatar(character.name || character.id);
+              const fallback = getFallbackAvatar(character.name || character.id, character.tags?.join(',') || (character.isTool ? 'tool' : undefined));
               if (target.src !== fallback) {
                  target.src = fallback;
                  setAvatarUrl(fallback);

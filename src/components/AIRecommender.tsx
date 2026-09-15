@@ -27,12 +27,21 @@ function RecommendResultAvatar({ char, name }: { char: CharacterCard; name: stri
       src={fallbackUrl || url}
       alt={name}
       className="w-full h-full object-cover"
-      onError={() => {
+      onError={(e) => {
         import('../lib/db').then((m) =>
           m.getCharacterBlob(char.id).then((b) => {
             if (b && b.avatarBlob) setBlobUrl(b.avatarBlob);
-          }),
-        );
+            else {
+              if (e.currentTarget.src !== fallback) {
+                e.currentTarget.src = fallback;
+              }
+            }
+          })
+        ).catch(() => {
+          if (e.currentTarget.src !== fallback) {
+            e.currentTarget.src = fallback;
+          }
+        });
       }}
     />
   );

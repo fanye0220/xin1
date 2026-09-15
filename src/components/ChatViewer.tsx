@@ -513,7 +513,7 @@ export function ChatViewer({
             urls[char.id] = char.avatarUrlFallback &&
                 !char.avatarUrlFallback.includes("api.dicebear.com")
               ? char.avatarUrlFallback
-              : getFallbackAvatar(char.name || char.id);
+              : getFallbackAvatar(char.name || char.id, char.tags?.join(',') || (char.isTool ? 'tool' : undefined));
             pendingThumbFetches.push(
               getCharacterThumb(char.id).then((thumbBlob: Blob | null) => {
                 if (thumbBlob && active) {
@@ -527,7 +527,7 @@ export function ChatViewer({
           urls[char.id] = char.avatarUrlFallback &&
               !char.avatarUrlFallback.includes("api.dicebear.com")
             ? char.avatarUrlFallback
-            : getFallbackAvatar(char.name || char.id);
+            : getFallbackAvatar(char.name || char.id, char.tags?.join(',') || (char.isTool ? 'tool' : undefined));
         }
       });
       if (active) setAvatarUrls(urls);
@@ -1636,7 +1636,7 @@ export function ChatViewer({
                                   src={avatarUrls[group.characterId]}
                                   alt="avatar"
                                   className="w-full h-full object-cover"
-                                  onError={(e) => {
+                                                                    onError={(e) => {
                                     const c = characters.find(
                                       (ch) => ch.id === group.characterId,
                                     );
@@ -1650,8 +1650,18 @@ export function ChatViewer({
                                             if (b && b.avatarBlob)
                                               e.currentTarget.src =
                                                 setFallbackAvatarBlobUrl(c.id, b.avatarBlob);
+                                            else {
+                                              const fb = getFallbackAvatar(c.name || c.id, c.tags?.join(',') || (c.isTool ? 'tool' : undefined));
+                                              if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
+                                            }
                                           }),
-                                        );
+                                        ).catch(() => {
+                                          const fb = getFallbackAvatar(c.name || c.id, c.tags?.join(',') || (c.isTool ? 'tool' : undefined));
+                                          if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
+                                        });
+                                      } else {
+                                        const fb = getFallbackAvatar(c.name || c.id, c.tags?.join(',') || (c.isTool ? 'tool' : undefined));
+                                        if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
                                       }
                                     }
                                   }}
@@ -1895,7 +1905,7 @@ export function ChatViewer({
                                 src={avatarUrls[activeCharacter.id]}
                                 alt="avatar"
                                 className="w-10 h-10 rounded-full object-cover shadow-lg border border-white/10"
-                                onError={(e) => {
+                                                                onError={(e) => {
                                   const c = activeCharacter;
                                   if (c) {
                                     if (c.avatarBlob)
@@ -1906,8 +1916,18 @@ export function ChatViewer({
                                           if (b && b.avatarBlob)
                                             e.currentTarget.src =
                                               setFallbackAvatarBlobUrl(c.id, b.avatarBlob);
+                                          else {
+                                            const fb = getFallbackAvatar(c.name || c.id, c.tags?.join(',') || (c.isTool ? 'tool' : undefined));
+                                            if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
+                                          }
                                         }),
-                                      );
+                                      ).catch(() => {
+                                        const fb = getFallbackAvatar(c.name || c.id, c.tags?.join(',') || (c.isTool ? 'tool' : undefined));
+                                        if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
+                                      });
+                                    } else {
+                                      const fb = getFallbackAvatar(c.name || c.id, c.tags?.join(',') || (c.isTool ? 'tool' : undefined));
+                                      if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
                                     }
                                   }
                                 }}

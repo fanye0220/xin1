@@ -13,7 +13,7 @@ interface Props {
 }
 
 function CharacterOption({ char, onClick }: { char: CharacterCard, onClick: () => void }) {
-  const defaultFallback = getFallbackAvatar(char.name || char.id);
+  const defaultFallback = getFallbackAvatar(char.name || char.id, char.tags?.join(',') || (char.isTool ? 'tool' : undefined));
   const [url, setUrl] = useState<string>(resolveAvatarUrl(char.avatarUrlFallback, char.name || char.id));
 
   useEffect(() => {
@@ -48,7 +48,7 @@ function CharacterOption({ char, onClick }: { char: CharacterCard, onClick: () =
       className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition text-left"
     >
       <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-black/40">
-        <img src={url || undefined} alt={char.name} className="w-full h-full object-cover"  />
+        <img src={url || undefined} alt={char.name} className="w-full h-full object-cover" onError={(e) => { if (e.currentTarget.src !== defaultFallback) e.currentTarget.src = defaultFallback; }} />
       </div>
       <div className="flex-1 min-w-0">
         <h4 className="font-medium text-white text-sm truncate">{char.name}</h4>

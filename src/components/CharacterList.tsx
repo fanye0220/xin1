@@ -123,6 +123,7 @@ function FolderCover({
                 src={previews[i]}
                 alt=""
                 className="w-full h-full object-cover pointer-events-none"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
               />
             )}
           </div>
@@ -2913,7 +2914,7 @@ const CharacterCardItem = React.memo(function CharacterCardItem({
   isSelected: boolean;
   viewMode: "grid" | "list" | "masonry";
 }) {
-  const defaultFallback = getFallbackAvatar(char.name || char.id);
+  const defaultFallback = getFallbackAvatar(char.name || char.id, char.tags?.join(',') || (char.isTool ? 'tool' : undefined));
   const initialUrl =
     char.avatarUrlFallback &&
     !char.avatarUrlFallback.includes("api.dicebear.com")
@@ -3057,17 +3058,19 @@ const CharacterCardItem = React.memo(function CharacterCardItem({
             alt={char.name}
             className="w-full h-full object-cover pointer-events-none"
             onError={() => {
+              if (url === defaultFallback) return;
+              if (fallbackObjectUrlRef.current) {
+                setUrl(defaultFallback);
+                return;
+              }
               if (char.avatarBlob) setUrlWithFallbackCleanup(URL.createObjectURL(char.avatarBlob), true);
               else if (char.hasBlobsSeparated) {
                 getCharacterBlob(char.id).then((b) => {
                   if (b && b.avatarBlob)
                     setUrlWithFallbackCleanup(URL.createObjectURL(b.avatarBlob), true);
-                  // initialUrl 可能就是刚刚加载失败的那个坏值(比如 avatarUrlFallback
-                  // 内容损坏/被截断), 兜回它等于什么都没做, 图片还是裂的。
-                  // 这里现场重新生成一张保证能用的兜底图, 参考详情页的做法。
-                  else setUrl(getFallbackAvatar(char.name || char.id));
+                  else setUrl(defaultFallback);
                 });
-              } else setUrl(getFallbackAvatar(char.name || char.id));
+              } else setUrl(defaultFallback);
             }}
           />
         </div>
@@ -3144,15 +3147,18 @@ const CharacterCardItem = React.memo(function CharacterCardItem({
         alt={char.name}
         className={`w-full ${viewMode === "masonry" ? "h-auto block" : "h-full"} object-cover pointer-events-none`}
         onError={() => {
+          if (url === defaultFallback) return;
+          if (fallbackObjectUrlRef.current) {
+            setUrl(defaultFallback);
+            return;
+          }
           if (char.avatarBlob) setUrlWithFallbackCleanup(URL.createObjectURL(char.avatarBlob), true);
           else if (char.hasBlobsSeparated) {
             getCharacterBlob(char.id).then((b) => {
               if (b && b.avatarBlob) setUrlWithFallbackCleanup(URL.createObjectURL(b.avatarBlob), true);
-              // 同理: initialUrl 可能就是加载失败的坏值本身, 现场重新生成一张
-              // 保证能用的兜底图, 而不是兜回同一个可能已经损坏的字符串。
-              else setUrl(getFallbackAvatar(char.name || char.id));
+              else setUrl(defaultFallback);
             });
-          } else setUrl(getFallbackAvatar(char.name || char.id));
+          } else setUrl(defaultFallback);
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-[var(--overlay-bottom)] via-[var(--overlay-mid)] to-transparent flex flex-col justify-end p-3 pointer-events-none">
