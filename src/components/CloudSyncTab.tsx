@@ -101,10 +101,10 @@ export function CloudSyncTab() {
         }
         
         let mergedMeta = { ...studioMeta, ...appProperties };
+        const cardCategory = getCharacterCategoryPrefix(jsonData);
         if (!mergedMeta.folderPath) {
-           const prefix = getCharacterCategoryPrefix(jsonData);
-           if (prefix !== '未归类') {
-             mergedMeta.folderPath = `工具区/${prefix}`;
+           if (cardCategory !== '未归类') {
+             mergedMeta.folderPath = `工具区/${cardCategory}`;
            }
         }
         
@@ -164,7 +164,7 @@ export function CloudSyncTab() {
             createdAt: createTime,
             folderId,
             avatarHistory: avatarHistory || [],
-            avatarUrlFallback: avatarBlob ? undefined : getFallbackAvatar(extractedName)
+            avatarUrlFallback: avatarBlob ? undefined : getFallbackAvatar(extractedName, cardCategory !== '未归类' ? cardCategory : (mergedMeta as any)?.cardType)
         };
         
         if (avatarBlob) {

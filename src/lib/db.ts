@@ -443,9 +443,16 @@ export function isActualCharacterCard(rawData: any): boolean {
   return !!charName;
 }
 
+const MIGRATION_V25_FLAG = 'tavern_migration_v25_done';
+
 export async function migrateDatabase(
   onProgress?: (current: number, total: number) => void,
 ) {
+  // Check migration gate to prevent startup CPU lag and device heating
+  if (typeof localStorage !== 'undefined' && localStorage.getItem(MIGRATION_V25_FLAG) === 'true') {
+    return;
+  }
+
   const db = await initDB();
 
   // First pass: just count how many need migration without loading full objects into RAM
@@ -501,7 +508,38 @@ export async function migrateDatabase(
     }
   }
 
+  // Second pass: retroactively categorize tool cards into designated tool folders and refresh char_meta
+  const txScan = db.transaction("characters", "readonly");
+  let cursorScan = await txScan.objectStore("characters").openCursor();
+  const allChars: CharacterCard[] = [];
+  while (cursorScan) {
+    allChars.push(cursorScan.value);
+    cursorScan = await cursorScan.continue();
+  }
 
+  for (const char of allChars) {
+    let changed = false;
+    const category = getCharacterCategoryPrefix(char);
+    if (category !== "未归类" && (!char.folderId || char.folderId === "all")) {
+      const folderName = category === "脚本" ? "工具区" : category;
+      const targetFolderId = await getOrCreateNestedFolder([folderName]);
+      if (targetFolderId && char.folderId !== targetFolderId) {
+        char.folderId = targetFolderId;
+        changed = true;
+      }
+    }
+
+    const writeTx = db.transaction(["characters", "char_meta"], "readwrite");
+    if (changed) {
+      await writeTx.objectStore("characters").put(char);
+    }
+    await writeTx.objectStore("char_meta").put(buildCharMeta(char));
+    await writeTx.done;
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(MIGRATION_V25_FLAG, 'true');
+  }
 
   invalidateCache();
 }
@@ -920,9 +958,10 @@ export interface CharMeta {
 function buildCharMeta(val: any): CharMeta {
   let charTags = val.data?.data?.tags || val.data?.tags;
   if (!Array.isArray(charTags)) charTags = [];
-  const isTool = getCharacterCategoryPrefix(val) !== "未归类";
-  const isQR = getCharacterCategoryPrefix(val) === "快速回复";
-  const fallbackAvatar = resolveAvatarUrl(val.avatarUrlFallback, val.name || val.id);
+  const cat = getCharacterCategoryPrefix(val);
+  const isTool = cat !== "未归类";
+  const isQR = cat === "快速回复";
+  const fallbackAvatar = resolveAvatarUrl(val.avatarUrlFallback, val.name || val.id, cat);
   return {
     id: val.id,
     createdAt: val.createdAt,
