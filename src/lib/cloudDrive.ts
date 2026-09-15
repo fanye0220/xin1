@@ -742,17 +742,6 @@ export async function uploadCharacterToCloud(
   const hasExtraAvatars = extraAvatars.length > 0;
   const chats = await getChatsForCharacter(char.id);
 
-  if ((chats && chats.length > 0) || hasExtraAvatars) {
-    wrapInFolder = true;
-  }
-  
-  const wrapperName = `${safeName}_${char.id}`;
-  const lastPathPart = pathParts.length > 0 ? pathParts[pathParts.length - 1] : "";
-  const alreadyWrapped = lastPathPart === wrapperName || lastPathPart.endsWith(`_${char.id}`);
-  if (wrapInFolder && !alreadyWrapped) {
-    pathParts.push(wrapperName);
-  }
-
   folderPath = pathParts.join('/');
 
   const targetParentId = await resolveDriveFolderPath(token, folderId, pathParts);
@@ -814,8 +803,7 @@ export async function uploadCharacterToCloud(
     };
     if ((char as any).sourceUrl) studioMeta.sourceUrl = (char as any).sourceUrl;
     
-    if (wrapInFolder) {
-
+    if (chats && chats.length > 0) {
       for (const chat of chats) {
         zip.file(`chat_${chat.name}_${chat.id}.json`, JSON.stringify(chat, null, 2));
       }
@@ -828,7 +816,8 @@ export async function uploadCharacterToCloud(
 
   
   const hasHistory = extraAvatars.length > 0;
-  if (!hasHistory && char.avatarBlob && (char.avatarBlob.type === 'image/png' || !char.avatarBlob.type)) {
+  const hasChats = Boolean(chats && chats.length > 0);
+  if (!hasHistory && !hasChats && char.avatarBlob && (char.avatarBlob.type === 'image/png' || !char.avatarBlob.type)) {
     if (onProgress) onProgress("打包角色数据(PNG)...");
     try {
       const buffer = await char.avatarBlob.arrayBuffer();
@@ -842,7 +831,7 @@ export async function uploadCharacterToCloud(
       fileName = `${safeName}_${char.id}.zip`;
       mimeType = 'application/zip';
     }
-  } else if (!char.avatarBlob) {
+  } else if (!hasHistory && !hasChats && !char.avatarBlob) {
     if (onProgress) onProgress("打包角色数据(JSON)...");
     finalBlob = new Blob([JSON.stringify(char.data, null, 2)], { type: 'application/json' });
     fileName = `${safeName}_${char.id}.json`;
@@ -1200,6 +1189,7 @@ export async function uploadChatsToCloud(
   }
   return { success, skipped, failed };
 }
+
 
 
 
